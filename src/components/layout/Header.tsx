@@ -80,14 +80,14 @@ export default function Header({ onOpenSearch }: { onOpenSearch?: () => void }) 
 
       {/* Right Controls */}
       <div className="flex items-center gap-2">
-        {/* Reset Demo Data Button */}
+        {/* Reset Database Button */}
         <button
           onClick={() => {
-            if (confirm(isAr ? "هل تريد إعادة تعيين البيانات للتجربة؟" : "Reset demo data?")) {
+            if (confirm(isAr ? "هل تريد إعادة تهيئة وتصفير بيانات النظام للحالة النظيفة؟" : "Reset database to clean production state?")) {
               resetToDemoData();
             }
           }}
-          title={isAr ? "إعادة تعيين البيانات التجريبية" : "Reset Demo Data"}
+          title={isAr ? "إعادة تهيئة قاعدة البيانات" : "Reset Database"}
           className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
         >
           <RotateCcw className="w-4 h-4" />
