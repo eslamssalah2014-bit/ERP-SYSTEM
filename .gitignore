@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scratch & generator scripts
+test*
+*writer.js
+build_seed_and_engine.js
+builder_engine.js
+create_part1.js
+gen_types.js
+make_seed_data.js
+
