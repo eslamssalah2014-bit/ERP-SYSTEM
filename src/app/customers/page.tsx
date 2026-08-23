@@ -36,7 +36,7 @@ export default function CustomersPage() {
 
     addCustomer({
       organizationId: organization.id,
-      code: code || ("CUST-" + (customers.length + 1001)),
+      code: code || ("CUST-" + (customers.length + 1).toString().padStart(3, "0")),
       nameAr,
       nameEn: nameEn || nameAr,
       mobile,
@@ -87,7 +87,7 @@ export default function CustomersPage() {
 
         <button
           onClick={() => {
-            setCode("CUST-" + (customers.length + 1001));
+            setCode("CUST-" + (customers.length + 1).toString().padStart(3, "0"));
             setIsAddModalOpen(true);
           }}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"

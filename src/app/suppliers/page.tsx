@@ -32,7 +32,7 @@ export default function SuppliersPage() {
 
     addSupplier({
       organizationId: organization.id,
-      code: code || ("SUPP-" + (suppliers.length + 1001)),
+      code: code || ("SUPP-" + (suppliers.length + 1).toString().padStart(3, "0")),
       nameAr,
       nameEn: nameEn || nameAr,
       mobile,

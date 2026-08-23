@@ -491,9 +491,15 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setSalesInvoices(initialSalesInvoices);
     setPurchaseInvoices(initialPurchaseInvoices);
     setTreasuryAccounts(initialTreasuryAccounts);
+    setCashReceipts([]);
+    setCashPayments([]);
     setChecks(initialChecks);
     setAccounts(initialAccounts);
+    setCostCenters(initialCostCenters);
+    setStockMovements(initialStockMovements);
     setJournalEntries(initialJournalEntries);
+    setNotifications(initialNotifications);
+    setAuditLogs(initialAuditLogs);
   };
 
   return (

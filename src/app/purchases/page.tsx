@@ -197,6 +197,19 @@ export default function PurchasesPage() {
                   </td>
                 </tr>
               ))}
+              {filteredInvoices.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-12 text-slate-500">
+                    <ShoppingBag className="w-8 h-8 mx-auto mb-2 stroke-[1.5] text-slate-700" />
+                    <p className="text-sm font-semibold text-slate-400">
+                      {isAr ? "لا توجد فواتير مشتريات مسجلة" : "No purchase invoices found"}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-1">
+                      {isAr ? "اضغط على زر (فاتورة مشتريات جديدة) لتسجيل توريد أصناف للمخزن" : "Click 'New Purchase Invoice' to record inventory supply"}
+                    </p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -208,7 +221,36 @@ export default function PurchasesPage() {
         title={isAr ? "تسجيل فاتورة مشتريات وتوريد مخزن" : "Record Purchase Invoice"}
         maxWidth="4xl"
       >
-        <form onSubmit={handleCreatePurchase} className="space-y-4 text-xs">
+        {suppliers.length === 0 || products.length === 0 ? (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center space-y-4">
+            <Building2 className="w-10 h-10 text-amber-400 mx-auto" />
+            <div>
+              <h3 className="text-sm font-bold text-white mb-1">
+                {isAr ? "متطلبات تسجيل فاتورة المشتريات" : "Purchase Prerequisites Required"}
+              </h3>
+              <p className="text-xs text-slate-300">
+                {suppliers.length === 0 && products.length === 0
+                  ? (isAr ? "يرجى إضافة مورد واحد ومنتج واحد على الأقل قبل تسجيل فاتورة المشتريات." : "Please add at least one supplier and one product first.")
+                  : suppliers.length === 0
+                  ? (isAr ? "يرجى إضافة مورد في دليل الموردين أولاً." : "Please add a supplier first.")
+                  : (isAr ? "يرجى إضافة صنف / منتج في المخزن أولاً." : "Please add a product first.")}
+              </p>
+            </div>
+            <div className="flex justify-center gap-3">
+              {suppliers.length === 0 && (
+                <a href="/suppliers" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs">
+                  {isAr ? "إضافة مورد" : "Add Supplier"}
+                </a>
+              )}
+              {products.length === 0 && (
+                <a href="/inventory" className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs">
+                  {isAr ? "إضافة منتج" : "Add Product"}
+                </a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleCreatePurchase} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المورد *" : "Supplier *"}</label>
@@ -361,6 +403,7 @@ export default function PurchasesPage() {
             </button>
           </div>
         </form>
+        )}
       </Modal>
     </div>
   );

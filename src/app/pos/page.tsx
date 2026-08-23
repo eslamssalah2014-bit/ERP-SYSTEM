@@ -84,7 +84,12 @@ export default function PosTerminal() {
   const handleCheckout = () => {
     if (cart.length === 0) return;
 
-    const customer = customers.find(c => c.id === selectedCustomerId) || customers[0];
+    const customer = customers.find(c => c.id === selectedCustomerId) || {
+      id: "walk_in_cash",
+      nameAr: isAr ? "عميل نقدي عام (نقاط البيع)" : "Walk-in Cash Customer",
+      nameEn: "Walk-in Cash Customer",
+      taxNumber: "",
+    };
     const invoiceNumber = "POS-" + Date.now().toString().slice(-6);
 
     const invoiceItems = cart.map((item, idx) => ({
@@ -139,36 +144,31 @@ export default function PosTerminal() {
         {/* Search & Category Tabs */}
         <div className="space-y-3 mb-4">
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder={isAr ? "امسح الباركود أو ابحث عن المنتج..." : "Scan barcode or search item..."}
+              placeholder={isAr ? "بحث سريع بالاسم، الباركود، أو الـ SKU..." : "Quick search by name, barcode, or SKU..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-10 pl-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-2xl pr-10 pl-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition-all font-medium shadow-inner"
             />
           </div>
 
-          {/* Category Filter Tabs */}
-          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs">
+          <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs font-bold">
             <button
               onClick={() => setSelectedCategory("all")}
-              className={"px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 " + (
-                selectedCategory === "all"
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-950"
-                  : "bg-slate-800 text-slate-400 hover:text-slate-200"
+              className={"px-3 py-1.5 rounded-xl whitespace-nowrap transition-all " + (
+                selectedCategory === "all" ? "bg-emerald-600 text-white shadow-md" : "bg-slate-950 text-slate-400 hover:text-white"
               )}
             >
-              {isAr ? "جميع الأصناف" : "All Items"}
+              {isAr ? "جميع الأصناف" : "All Products"} ({products.length})
             </button>
             {categories.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={"px-3.5 py-1.5 rounded-xl font-bold transition-all shrink-0 " + (
-                  selectedCategory === cat.id
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-950"
-                    : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                className={"px-3 py-1.5 rounded-xl whitespace-nowrap transition-all " + (
+                  selectedCategory === cat.id ? "bg-emerald-600 text-white shadow-md" : "bg-slate-950 text-slate-400 hover:text-white"
                 )}
               >
                 {isAr ? cat.nameAr : cat.nameEn}
@@ -179,41 +179,57 @@ export default function PosTerminal() {
 
         {/* Product Cards Grid */}
         <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 pr-1 custom-scrollbar">
-          {filteredProducts.map(prod => {
-            const totalStock = Object.values(prod.warehouseStock).reduce((a, b) => a + b, 0);
-            return (
-              <div
-                key={prod.id}
-                onClick={() => addToCart(prod)}
-                className="bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-emerald-500/50 rounded-2xl p-3 flex flex-col justify-between cursor-pointer transition-all active:scale-95 group shadow-sm"
-              >
-                <div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
-                      {prod.sku}
-                    </span>
-                    <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded " + (
-                      totalStock > prod.minStockLevel ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-                    )}>
-                      {totalStock} {isAr ? "قطعة" : "pcs"}
-                    </span>
+          {filteredProducts.length === 0 ? (
+            <div className="col-span-full h-full flex flex-col items-center justify-center text-center text-slate-500 py-16">
+              <Search className="w-10 h-10 mb-2 stroke-[1.5] text-slate-700" />
+              <span className="text-sm font-semibold text-slate-400">
+                {products.length === 0
+                  ? (isAr ? "لا توجد أصناف في الكتالوج بعد" : "No products in catalog yet")
+                  : (isAr ? "لا توجد نتائج مطابقة لبحثك" : "No matching products found")}
+              </span>
+              {products.length === 0 && (
+                <a href="/inventory" className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs">
+                  {isAr ? "إضافة أصناف جديدة" : "Add New Products"}
+                </a>
+              )}
+            </div>
+          ) : (
+            filteredProducts.map(prod => {
+              const totalStock = Object.values(prod.warehouseStock || {}).reduce((a, b) => a + b, 0);
+              return (
+                <div
+                  key={prod.id}
+                  onClick={() => addToCart(prod)}
+                  className="bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-emerald-500/50 rounded-2xl p-3 flex flex-col justify-between cursor-pointer transition-all active:scale-95 group shadow-sm"
+                >
+                  <div>
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
+                        {prod.sku}
+                      </span>
+                      <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded " + (
+                        totalStock > prod.minStockLevel ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                      )}>
+                        {totalStock} {isAr ? "قطعة" : "pcs"}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-100 mt-2 line-clamp-2 group-hover:text-emerald-400 transition-colors">
+                      {isAr ? prod.nameAr : prod.nameEn}
+                    </div>
                   </div>
-                  <div className="text-xs font-bold text-slate-100 mt-2 line-clamp-2 group-hover:text-emerald-400 transition-colors">
-                    {isAr ? prod.nameAr : prod.nameEn}
-                  </div>
-                </div>
 
-                <div className="flex items-baseline justify-between mt-3 pt-2 border-t border-slate-800/60">
-                  <div className="text-sm font-black text-emerald-400 font-mono">
-                    {formatCurrency(prod.sellingPrice, organization.currency, locale)}
+                  <div className="flex items-baseline justify-between mt-3 pt-2 border-t border-slate-800/60">
+                    <div className="text-sm font-black text-emerald-400 font-mono">
+                      {formatCurrency(prod.sellingPrice, organization.currency, locale)}
+                    </div>
+                    <button className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <button className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -249,6 +265,7 @@ export default function PosTerminal() {
               onChange={(e) => setSelectedCustomerId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
             >
+              <option value="walk_in_cash">{isAr ? "عميل نقدي عام (نقاط البيع)" : "Walk-in Cash Customer"}</option>
               {customers.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.nameAr} ({c.code})

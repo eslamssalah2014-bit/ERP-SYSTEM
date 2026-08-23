@@ -149,7 +149,7 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono">
                 {products.map(p => {
-                  const qty = Object.values(p.warehouseStock).reduce((a, b) => a + b, 0);
+                  const qty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
                   const costVal = qty * p.costPrice;
                   const sellVal = qty * p.sellingPrice;
 
@@ -165,6 +165,13 @@ export default function ReportsPage() {
                     </tr>
                   );
                 })}
+                {products.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center py-12 text-slate-500 font-sans">
+                      {isAr ? "لا توجد أصناف مسجلة بالمخازن لتقييمها حالياً" : "No inventory products registered yet"}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

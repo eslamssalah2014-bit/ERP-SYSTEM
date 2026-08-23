@@ -1,5 +1,26 @@
-import { Organization, Branch, User, ProductCategory, ProductUnit, Product, Customer, Supplier, Account, TreasuryAccount, CostCenter, CheckRecord, SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification, AuditLog, Warehouse } from "@/types/erp";
+import {
+  Organization,
+  Branch,
+  User,
+  ProductCategory,
+  ProductUnit,
+  Product,
+  Customer,
+  Supplier,
+  Account,
+  TreasuryAccount,
+  CostCenter,
+  CheckRecord,
+  SalesInvoice,
+  PurchaseInvoice,
+  StockMovement,
+  JournalEntry,
+  Notification,
+  AuditLog,
+  Warehouse
+} from "@/types/erp";
 
+// 1. Production Organization Base Settings
 export const initialOrganization: Organization = {
   id: "org_01",
   nameAr: "شركة سند الدولية للحلول التكنولوجية",
@@ -13,11 +34,12 @@ export const initialOrganization: Organization = {
   planTier: "enterprise",
 };
 
+// 2. Default Headquarter Branch
 export const initialBranches: Branch[] = [
   {
     id: "br_cairo_hq",
     organizationId: "org_01",
-    code: "CAI-01",
+    code: "HQ-01",
     nameAr: "الفرع الرئيسي - القاهرة",
     nameEn: "Cairo Headquarters",
     city: "القاهرة",
@@ -25,19 +47,9 @@ export const initialBranches: Branch[] = [
     phone: "+20 2 35350000",
     isHeadquarters: true,
   },
-  {
-    id: "br_riyadh_01",
-    organizationId: "org_01",
-    code: "RUH-01",
-    nameAr: "فرع الرياض - المملكة العربية السعودية",
-    nameEn: "Riyadh Branch",
-    city: "الرياض",
-    address: "طريق الملك فهد، حي العليا",
-    phone: "+966 11 4567890",
-    isHeadquarters: false,
-  },
 ];
 
+// 3. Default System Administrator User
 export const initialUsers: User[] = [
   {
     id: "usr_admin_01",
@@ -48,518 +60,135 @@ export const initialUsers: User[] = [
     branchId: "br_cairo_hq",
     isActive: true,
   },
-  {
-    id: "usr_accountant_01",
-    organizationId: "org_01",
-    email: "accounting@sanaderp.com",
-    name: "أحمد عبد الرحمن - المدير المالي",
-    role: "accountant",
-    branchId: "br_cairo_hq",
-    isActive: true,
-  },
-  {
-    id: "usr_cashier_01",
-    organizationId: "org_01",
-    email: "pos1@sanaderp.com",
-    name: "سارة محمود - كاشير نقطة البيع",
-    role: "cashier",
-    branchId: "br_cairo_hq",
-    isActive: true,
-  },
 ];
 
+// 4. Standard System Product Categories
 export const initialCategories: ProductCategory[] = [
-  { id: "cat_pos", organizationId: "org_01", code: "CAT-01", nameAr: "أنظمة نقاط البيع والكاشير", nameEn: "POS Systems" },
-  { id: "cat_hardware", organizationId: "org_01", code: "CAT-02", nameAr: "أجهزة كمبيوتر وخوادم", nameEn: "Hardware & Servers" },
-  { id: "cat_network", organizationId: "org_01", code: "CAT-03", nameAr: "شبكات واتصالات", nameEn: "Networking" },
-  { id: "cat_supplies", organizationId: "org_01", code: "CAT-04", nameAr: "مستلزمات وطابعات فواتير", nameEn: "POS Supplies" },
+  { id: "cat_general", organizationId: "org_01", code: "CAT-GEN", nameAr: "عام / منتجات رئيسية", nameEn: "General Products" },
+  { id: "cat_pos", organizationId: "org_01", code: "CAT-POS", nameAr: "أنظمة نقاط البيع والكاشير", nameEn: "POS Systems" },
+  { id: "cat_hardware", organizationId: "org_01", code: "CAT-HW", nameAr: "أجهزة كمبيوتر وخوادم", nameEn: "Hardware & Servers" },
+  { id: "cat_services", organizationId: "org_01", code: "CAT-SRV", nameAr: "خدمات ودعم فني", nameEn: "Services & Support" },
 ];
 
+// 5. Standard Units of Measure
 export const initialUnits: ProductUnit[] = [
   { id: "unit_piece", organizationId: "org_01", code: "PCS", nameAr: "قطعة", nameEn: "Piece", symbol: "قطعة" },
   { id: "unit_box", organizationId: "org_01", code: "BOX", nameAr: "صندوق / كرتونة", nameEn: "Box", symbol: "كرتونة" },
   { id: "unit_set", organizationId: "org_01", code: "SET", nameAr: "طقم متكامل", nameEn: "Set", symbol: "طقم" },
+  { id: "unit_kg", organizationId: "org_01", code: "KG", nameAr: "كيلوجرام", nameEn: "Kilogram", symbol: "كجم" },
+  { id: "unit_meter", organizationId: "org_01", code: "MTR", nameAr: "متر", nameEn: "Meter", symbol: "متر" },
 ];
 
+// 6. Default Central Warehouse
 export const initialWarehouses: Warehouse[] = [
-  { id: "wh_cairo_01", organizationId: "org_01", branchId: "br_cairo_hq", code: "WH-CAI", nameAr: "مستودع القاهرة المركزي", nameEn: "Cairo Central Warehouse", location: "المنطقة الصناعية، 6 أكتوبر", managerName: "م. حسام حسن", managerPhone: "+20 100 1112233", isDefault: true },
-  { id: "wh_alex_01", organizationId: "org_01", branchId: "br_cairo_hq", code: "WH-ALX", nameAr: "مستودع الإسكندرية والساحل", nameEn: "Alexandria Warehouse", location: "برج العرب الجديدة", managerName: "أ. طارق سمير", managerPhone: "+20 100 4445566", isDefault: false },
-  { id: "wh_riyadh_01", organizationId: "org_01", branchId: "br_riyadh_01", code: "WH-RUH", nameAr: "مستودع الرياض الإقليمي", nameEn: "Riyadh Regional Hub", location: "حي السلي، الرياض", managerName: "أ. فهد العتيبي", managerPhone: "+966 50 1234567", isDefault: false },
+  {
+    id: "wh_cairo_01",
+    organizationId: "org_01",
+    branchId: "br_cairo_hq",
+    code: "WH-01",
+    nameAr: "المستودع المركزي الرئيسي",
+    nameEn: "Main Central Warehouse",
+    location: "المنطقة الصناعية، 6 أكتوبر",
+    managerName: "المشرف العام",
+    managerPhone: "+20 100 0000000",
+    isDefault: true
+  },
 ];
 
-export const initialProducts: Product[] = [
-  {
-    id: "prod_01",
-    organizationId: "org_01",
-    sku: "POS-SUNMI-T2S",
-    barcode: "6221234567890",
-    nameAr: "جهاز كاشير Sunmi T2s شاشة مزدوجة 15.6 بوصة",
-    nameEn: "Sunmi T2s Dual Touch POS Terminal 15.6 Inch",
-    description: "جهاز كاشير أندرويد متطور يدعم الفوترة الإلكترونية مع طابعة إيصالات مدمجة 80 مم",
-    categoryId: "cat_pos",
-    unitId: "unit_piece",
-    brand: "Sunmi",
-    costPrice: 8500,
-    sellingPrice: 12500,
-    taxRate: 14,
-    minStockLevel: 5,
-    status: "active",
-    warehouseStock: { "wh_cairo_01": 18, "wh_alex_01": 7, "wh_riyadh_01": 10 },
-  },
-  {
-    id: "prod_02",
-    organizationId: "org_01",
-    sku: "PRN-EPSON-TM88",
-    barcode: "6221234567891",
-    nameAr: "طابعة إيصالات فواتير حرارية Epson TM-T88VI",
-    nameEn: "Epson TM-T88VI Thermal Receipt Printer",
-    description: "طابعة فواتير حرارية عالية السرعة تدعم الشبكة والـ USB متوافقة مع ZATCA / ETA",
-    categoryId: "cat_supplies",
-    unitId: "unit_piece",
-    brand: "Epson",
-    costPrice: 3200,
-    sellingPrice: 4800,
-    taxRate: 14,
-    minStockLevel: 10,
-    status: "active",
-    warehouseStock: { "wh_cairo_01": 35, "wh_alex_01": 15, "wh_riyadh_01": 20 },
-  },
-  {
-    id: "prod_03",
-    organizationId: "org_01",
-    sku: "SCN-HONEYWELL-1900",
-    barcode: "6221234567892",
-    nameAr: "قارئ باركود ثنائي الأبعاد Honeywell Xenon 1900G 2D",
-    nameEn: "Honeywell Xenon 1900G 2D Barcode Scanner",
-    description: "ماسح باركود عالي الدقة لقراءة الباركود ورمز الـ QR الضريبي في أجزاء من الثانية",
-    categoryId: "cat_pos",
-    unitId: "unit_piece",
-    brand: "Honeywell",
-    costPrice: 1800,
-    sellingPrice: 2750,
-    taxRate: 14,
-    minStockLevel: 8,
-    status: "active",
-    warehouseStock: { "wh_cairo_01": 42, "wh_alex_01": 12, "wh_riyadh_01": 25 },
-  },
-  {
-    id: "prod_04",
-    organizationId: "org_01",
-    sku: "SRV-DELL-R750",
-    barcode: "6221234567893",
-    nameAr: "سيرفر مركزي Dell PowerEdge R750 Xeon 64GB",
-    nameEn: "Dell PowerEdge R750 Rack Server Xeon 64GB",
-    description: "خادم مخصص لإدارة قواعد البيانات والأنظمة السحابية للمنشآت المتوسطة والكبيرة",
-    categoryId: "cat_hardware",
-    unitId: "unit_piece",
-    brand: "Dell",
-    costPrice: 95000,
-    sellingPrice: 135000,
-    taxRate: 14,
-    minStockLevel: 2,
-    status: "active",
-    warehouseStock: { "wh_cairo_01": 4, "wh_alex_01": 1, "wh_riyadh_01": 3 },
-  },
-  {
-    id: "prod_05",
-    organizationId: "org_01",
-    sku: "PAP-ROLL-80MM",
-    barcode: "6221234567894",
-    nameAr: "كرتونة رول ورق حراري كاشير 80مم × 70م (50 رول)",
-    nameEn: "Thermal Cashier Paper Rolls 80mmx70m Box of 50",
-    description: "ورق فواتير كاشير حراري عالي الجودة خالي من مادة BPA ناصع البياض",
-    categoryId: "cat_supplies",
-    unitId: "unit_box",
-    brand: "Sanad Paper",
-    costPrice: 420,
-    sellingPrice: 650,
-    taxRate: 14,
-    minStockLevel: 20,
-    status: "active",
-    warehouseStock: { "wh_cairo_01": 120, "wh_alex_01": 45, "wh_riyadh_01": 80 },
-  }
-];
+// 7. Products (Clean Production Baseline: 0 items)
+export const initialProducts: Product[] = [];
 
-export const initialCustomers: Customer[] = [
-  {
-    id: "cust_01",
-    organizationId: "org_01",
-    code: "CUST-1001",
-    nameAr: "شركة الأهرام للتجارة والتوزيع",
-    nameEn: "Al-Ahram Trading & Distribution LLC",
-    mobile: "+20 102 3456789",
-    email: "procurement@ahram-trading.com",
-    address: "المنطقة الحرة، مدينة نصر، القاهرة",
-    city: "القاهرة",
-    taxNumber: "200-456-789",
-    commercialRegister: "98765",
-    creditLimit: 150000,
-    paymentTermsDays: 45,
-    currentBalance: 42500,
-    status: "active",
-  },
-  {
-    id: "cust_02",
-    organizationId: "org_01",
-    code: "CUST-1002",
-    nameAr: "مجموعة صيدليات الشفاء الحديثة",
-    nameEn: "Al-Shifa Modern Pharmacies Group",
-    mobile: "+20 111 8889900",
-    email: "finance@shifagroup.com",
-    address: "شارع مصطفى النحاس، التجمع الخامس",
-    city: "القاهرة",
-    taxNumber: "300-654-321",
-    commercialRegister: "11223",
-    creditLimit: 200000,
-    paymentTermsDays: 30,
-    currentBalance: 88200,
-    status: "active",
-  },
-  {
-    id: "cust_03",
-    organizationId: "org_01",
-    code: "CUST-1003",
-    nameAr: "سوبر ماركت خير بلدنا للمواد الغذائية",
-    nameEn: "Kheir Baladna Hypermarkets",
-    mobile: "+20 122 7776655",
-    email: "accounts@kheirbaladna.com",
-    address: "طريق الحرية، الإسكندرية",
-    city: "الإسكندرية",
-    taxNumber: "400-987-123",
-    commercialRegister: "55443",
-    creditLimit: 75000,
-    paymentTermsDays: 15,
-    currentBalance: 14750,
-    status: "active",
-  }
-];
+// 8. Customers (Clean Production Baseline: 0 items)
+export const initialCustomers: Customer[] = [];
 
-export const initialSuppliers: Supplier[] = [
-  {
-    id: "supp_01",
-    organizationId: "org_01",
-    code: "SUPP-2001",
-    nameAr: "شركة ديل للتوزيع والتكنولوجيا - مصر",
-    nameEn: "Dell Distribution & Technologies Egypt",
-    mobile: "+20 2 24567890",
-    email: "orders@dell-dist-eg.com",
-    address: "القرية الذكية، الجيزة",
-    taxNumber: "100-222-333",
-    bankName: "البنك التجاري الدولي CIB",
-    bankIban: "EG3800100001000000123456789",
-    currentBalance: 65000,
-    status: "active",
-  },
-  {
-    id: "supp_02",
-    organizationId: "org_01",
-    code: "SUPP-2002",
-    nameAr: "المتحدة لمهمات الكاشير ومستلزمات الطباعة",
-    nameEn: "United POS Supplies & Thermal Rolls Co.",
-    mobile: "+20 2 27890123",
-    email: "sales@united-pos-eg.com",
-    address: "العاشر من رمضان، المنطقة الصناعية الثانية",
-    taxNumber: "100-444-555",
-    bankName: "بنك مصر",
-    bankIban: "EG5500020002000000987654321",
-    currentBalance: 24000,
-    status: "active",
-  }
-];
+// 9. Suppliers (Clean Production Baseline: 0 items)
+export const initialSuppliers: Supplier[] = [];
 
+// 10. Standard Chart of Accounts (COA) with 0.00 Balances
 export const initialAccounts: Account[] = [
-  { id: "acc_1000", organizationId: "org_01", code: "1000", nameAr: "الأصول (Assets)", nameEn: "Assets", type: "assets", level: 1, nature: "debit", balance: 520000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1100", organizationId: "org_01", code: "1100", nameAr: "الأصول المتداولة", nameEn: "Current Assets", type: "assets", parentId: "acc_1000", level: 2, nature: "debit", balance: 520000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1110", organizationId: "org_01", code: "1110", nameAr: "النقدية بالخزينة", nameEn: "Cash on Hand", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 85000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1115", organizationId: "org_01", code: "1115", nameAr: "النقدية بالبنوك", nameEn: "Cash at Banks", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 245000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1120", organizationId: "org_01", code: "1120", nameAr: "العملاء والمدينون (A/R)", nameEn: "Accounts Receivable", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 145450, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1125", organizationId: "org_01", code: "1125", nameAr: "أوراق القبض (الشيكات الواردة)", nameEn: "Notes Receivable (Checks)", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 45000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1130", organizationId: "org_01", code: "1130", nameAr: "مخزون البضائع للبيع", nameEn: "Merchandise Inventory", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 350000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_1140", organizationId: "org_01", code: "1140", nameAr: "ضريبة القيمة المضافة - مدخلات (VAT In)", nameEn: "VAT Input Tax", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 14200, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_2000", organizationId: "org_01", code: "2000", nameAr: "الخصوم والالتزامات (Liabilities)", nameEn: "Liabilities", type: "liabilities", level: 1, nature: "credit", balance: 185000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_2100", organizationId: "org_01", code: "2100", nameAr: "الخصوم المتداولة", nameEn: "Current Liabilities", type: "liabilities", parentId: "acc_2000", level: 2, nature: "credit", balance: 185000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_2110", organizationId: "org_01", code: "2110", nameAr: "الموردون والدائنون (A/P)", nameEn: "Accounts Payable", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 89000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_2120", organizationId: "org_01", code: "2120", nameAr: "أوراق الدفع (الشيكات الصادرة)", nameEn: "Notes Payable (Checks)", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 30000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_2130", organizationId: "org_01", code: "2130", nameAr: "ضريبة القيمة المضافة - مخرجات (VAT Out)", nameEn: "VAT Output Tax", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 28500, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_3000", organizationId: "org_01", code: "3000", nameAr: "حقوق الملكية (Equity)", nameEn: "Equity", type: "equity", level: 1, nature: "credit", balance: 300000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_3100", organizationId: "org_01", code: "3100", nameAr: "رأس المال المدفوع", nameEn: "Paid-in Capital", type: "equity", parentId: "acc_3000", level: 2, nature: "credit", balance: 300000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_4000", organizationId: "org_01", code: "4000", nameAr: "الإيرادات (Revenues)", nameEn: "Revenues", type: "revenue", level: 1, nature: "credit", balance: 225000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_4100", organizationId: "org_01", code: "4100", nameAr: "إيرادات مبيعات الأجهزة والبرمجيات", nameEn: "Hardware & Software Sales", type: "revenue", parentId: "acc_4000", level: 2, nature: "credit", balance: 225000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_5000", organizationId: "org_01", code: "5000", nameAr: "المصروفات (Expenses)", nameEn: "Expenses", type: "expense", level: 1, nature: "debit", balance: 145000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_5100", organizationId: "org_01", code: "5100", nameAr: "تكلفة البضاعة المباعة (COGS)", nameEn: "Cost of Goods Sold", type: "expense", parentId: "acc_5000", level: 2, nature: "debit", balance: 110000, currency: "EGP", isActive: true, isSystem: true },
-  { id: "acc_5200", organizationId: "org_01", code: "5200", nameAr: "مصروفات إدارية وعمومية", nameEn: "General & Administrative Expenses", type: "expense", parentId: "acc_5000", level: 2, nature: "debit", balance: 35000, currency: "EGP", isActive: true, isSystem: true },
+  // Assets (1000)
+  { id: "acc_1000", organizationId: "org_01", code: "1000", nameAr: "الأصول (Assets)", nameEn: "Assets", type: "assets", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1100", organizationId: "org_01", code: "1100", nameAr: "الأصول المتداولة", nameEn: "Current Assets", type: "assets", parentId: "acc_1000", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1110", organizationId: "org_01", code: "1110", nameAr: "النقدية بالخزينة", nameEn: "Cash on Hand", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1115", organizationId: "org_01", code: "1115", nameAr: "النقدية بالبنوك", nameEn: "Cash at Banks", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1120", organizationId: "org_01", code: "1120", nameAr: "العملاء والمدينون (A/R)", nameEn: "Accounts Receivable", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1125", organizationId: "org_01", code: "1125", nameAr: "أوراق القبض (الشيكات الواردة)", nameEn: "Notes Receivable (Checks)", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1130", organizationId: "org_01", code: "1130", nameAr: "مخزون البضائع للبيع", nameEn: "Merchandise Inventory", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_1140", organizationId: "org_01", code: "1140", nameAr: "ضريبة القيمة المضافة - مدخلات (VAT In)", nameEn: "VAT Input Tax", type: "assets", parentId: "acc_1100", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Liabilities (2000)
+  { id: "acc_2000", organizationId: "org_01", code: "2000", nameAr: "الخصوم والالتزامات (Liabilities)", nameEn: "Liabilities", type: "liabilities", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_2100", organizationId: "org_01", code: "2100", nameAr: "الخصوم المتداولة", nameEn: "Current Liabilities", type: "liabilities", parentId: "acc_2000", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_2110", organizationId: "org_01", code: "2110", nameAr: "الموردون والدائنون (A/P)", nameEn: "Accounts Payable", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_2120", organizationId: "org_01", code: "2120", nameAr: "أوراق الدفع (الشيكات الصادرة)", nameEn: "Notes Payable (Checks)", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_2130", organizationId: "org_01", code: "2130", nameAr: "ضريبة القيمة المضافة - مخرجات (VAT Out)", nameEn: "VAT Output Tax", type: "liabilities", parentId: "acc_2100", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Equity (3000)
+  { id: "acc_3000", organizationId: "org_01", code: "3000", nameAr: "حقوق الملكية (Equity)", nameEn: "Equity", type: "equity", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_3100", organizationId: "org_01", code: "3100", nameAr: "رأس المال المدفوع", nameEn: "Paid-in Capital", type: "equity", parentId: "acc_3000", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Revenues (4000)
+  { id: "acc_4000", organizationId: "org_01", code: "4000", nameAr: "الإيرادات (Revenues)", nameEn: "Revenues", type: "revenue", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_4100", organizationId: "org_01", code: "4100", nameAr: "إيرادات مبيعات البضائع والخدمات", nameEn: "Sales & Services Revenue", type: "revenue", parentId: "acc_4000", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Expenses (5000)
+  { id: "acc_5000", organizationId: "org_01", code: "5000", nameAr: "المصروفات (Expenses)", nameEn: "Expenses", type: "expense", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_5100", organizationId: "org_01", code: "5100", nameAr: "تكلفة البضاعة المباعة (COGS)", nameEn: "Cost of Goods Sold", type: "expense", parentId: "acc_5000", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "acc_5200", organizationId: "org_01", code: "5200", nameAr: "مصروفات إدارية وعمومية", nameEn: "General & Administrative Expenses", type: "expense", parentId: "acc_5000", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 ];
 
+// 11. Treasury Accounts with 0.00 Balances
 export const initialTreasuryAccounts: TreasuryAccount[] = [
-  { id: "treas_01", organizationId: "org_01", branchId: "br_cairo_hq", glAccountId: "acc_1110", code: "SAFE-CAI", nameAr: "الخزينة الرئيسية - القاهرة", nameEn: "Cairo Main Cash Safe", type: "cash_box", currency: "EGP", balance: 85000, isDefault: true },
-  { id: "treas_02", organizationId: "org_01", branchId: "br_cairo_hq", glAccountId: "acc_1115", code: "BANK-CIB", nameAr: "البنك التجاري الدولي (CIB - مصري)", nameEn: "CIB Bank EGP Account", type: "bank_account", currency: "EGP", balance: 245000, bankName: "Commercial International Bank", accountNumber: "1000-2468-1357", isDefault: false },
-  { id: "treas_03", organizationId: "org_01", branchId: "br_riyadh_01", glAccountId: "acc_1115", code: "BANK-RAJ", nameAr: "مصرف الراجحي (SAR)", nameEn: "Al Rajhi Bank SAR Account", type: "bank_account", currency: "SAR", balance: 65000, bankName: "Al Rajhi Bank", accountNumber: "SA9880000123456789012345", isDefault: false },
-];
-
-export const initialCostCenters: CostCenter[] = [
-  { id: "cc_01", organizationId: "org_01", code: "CC-POS", nameAr: "قطاع حلول التجزئة ونقاط البيع", nameEn: "Retail & POS Division", level: 1, isActive: true },
-  { id: "cc_02", organizationId: "org_01", code: "CC-ENT", nameAr: "قطاع مشاريع الشركات والشبكات", nameEn: "Enterprise Projects Division", level: 1, isActive: true },
-];
-
-export const initialChecks: CheckRecord[] = [
   {
-    id: "chk_01",
+    id: "treas_01",
     organizationId: "org_01",
     branchId: "br_cairo_hq",
-    checkNumber: "CHK-998821",
-    bankName: "البنك الأهلي المصري",
-    type: "incoming",
-    partyName: "شركة الأهرام للتجارة",
-    customerId: "cust_01",
-    amount: 25000,
-    issueDate: "2026-08-01",
-    dueDate: "2026-08-25",
-    status: "pending",
-    notes: "دفعة توريد أجهزة كاشير",
+    glAccountId: "acc_1110",
+    code: "SAFE-MAIN",
+    nameAr: "الخزينة الرئيسية للمنشأة",
+    nameEn: "Main Company Safe",
+    type: "cash_box",
+    currency: "EGP",
+    balance: 0,
+    isDefault: true
   },
   {
-    id: "chk_02",
+    id: "treas_02",
     organizationId: "org_01",
     branchId: "br_cairo_hq",
-    checkNumber: "CHK-774411",
-    bankName: "بنك QNB مصر",
-    type: "incoming",
-    partyName: "مجموعة صيدليات الشفاء",
-    customerId: "cust_02",
-    amount: 20000,
-    issueDate: "2026-08-05",
-    dueDate: "2026-08-28",
-    status: "pending",
-    notes: "سداد فاتورة طابعات فواتير",
-  },
-  {
-    id: "chk_03",
-    organizationId: "org_01",
-    branchId: "br_cairo_hq",
-    checkNumber: "CHK-OUT-3322",
-    bankName: "البنك التجاري الدولي CIB",
-    type: "outgoing",
-    partyName: "شركة ديل للتوزيع",
-    supplierId: "supp_01",
-    amount: 30000,
-    issueDate: "2026-08-10",
-    dueDate: "2026-08-30",
-    status: "pending",
-    notes: "شيك مؤجل سداد دفعة سيرفرات",
+    glAccountId: "acc_1115",
+    code: "BANK-MAIN",
+    nameAr: "الحساب البنكي الرئيسي",
+    nameEn: "Primary Bank Account",
+    type: "bank_account",
+    currency: "EGP",
+    balance: 0,
+    bankName: "البنك الرئيسي",
+    accountNumber: "0000-0000-0000",
+    isDefault: false
   }
 ];
 
-export const initialSalesInvoices: SalesInvoice[] = [
-  {
-    id: "sinv_01",
-    organizationId: "org_01",
-    branchId: "br_cairo_hq",
-    invoiceNumber: "INV-2026-001",
-    date: "2026-08-15",
-    dueDate: "2026-09-15",
-    customerId: "cust_01",
-    customerName: "شركة الأهرام للتجارة والتوزيع",
-    customerTaxNumber: "200-456-789",
-    salesRepId: "usr_admin_01",
-    salesRepName: "م. إسلام صلاح حسني",
-    warehouseId: "wh_cairo_01",
-    status: "unpaid",
-    items: [
-      {
-        id: "item_01",
-        productId: "prod_01",
-        productName: "جهاز كاشير Sunmi T2s شاشة مزدوجة",
-        warehouseId: "wh_cairo_01",
-        quantity: 2,
-        unitPrice: 12500,
-        costPrice: 8500,
-        discountPercent: 0,
-        discountAmount: 0,
-        taxRate: 14,
-        taxAmount: 3500,
-        total: 28500,
-      },
-      {
-        id: "item_02",
-        productId: "prod_02",
-        productName: "طابعة إيصالات فواتير حرارية Epson",
-        warehouseId: "wh_cairo_01",
-        quantity: 2,
-        unitPrice: 4800,
-        costPrice: 3200,
-        discountPercent: 0,
-        discountAmount: 0,
-        taxRate: 14,
-        taxAmount: 1344,
-        total: 10944,
-      }
-    ],
-    subtotal: 34600,
-    discountTotal: 0,
-    taxTotal: 4844,
-    grandTotal: 39444,
-    paidAmount: 0,
-    dueAmount: 39444,
-    notes: "فاتورة ضريبية إلكترونية معتمدة",
-    createdBy: "م. إسلام صلاح حسني",
-    createdAt: "2026-08-15T10:30:00Z",
-  }
-];
+// 12. Cost Centers (Clean: 0 items)
+export const initialCostCenters: CostCenter[] = [];
 
-export const initialPurchaseInvoices: PurchaseInvoice[] = [
-  {
-    id: "pinv_01",
-    organizationId: "org_01",
-    branchId: "br_cairo_hq",
-    invoiceNumber: "PINV-2026-001",
-    supplierInvoiceRef: "DELL-INV-8871",
-    date: "2026-08-05",
-    dueDate: "2026-09-05",
-    supplierId: "supp_01",
-    supplierName: "شركة ديل للتوزيع والتكنولوجيا",
-    supplierTaxNumber: "100-222-333",
-    warehouseId: "wh_cairo_01",
-    status: "unpaid",
-    items: [
-      {
-        id: "pitem_01",
-        productId: "prod_01",
-        productName: "جهاز كاشير Sunmi T2s",
-        warehouseId: "wh_cairo_01",
-        quantity: 10,
-        unitCost: 8500,
-        discountAmount: 0,
-        taxRate: 14,
-        taxAmount: 11900,
-        total: 96900,
-      }
-    ],
-    subtotal: 85000,
-    discountTotal: 0,
-    taxTotal: 11900,
-    grandTotal: 96900,
-    paidAmount: 0,
-    dueAmount: 96900,
-    notes: "استلام شحنة أجهزة كاشير جديدة",
-    createdBy: "أحمد عبد الرحمن",
-  }
-];
+// 13. Checks Portfolio (Clean: 0 items)
+export const initialChecks: CheckRecord[] = [];
 
-export const initialStockMovements: StockMovement[] = [
-  {
-    id: "sm_01",
-    organizationId: "org_01",
-    productId: "prod_01",
-    warehouseId: "wh_cairo_01",
-    movementType: "opening_balance",
-    referenceNumber: "OB-2026",
-    date: "2026-08-01",
-    quantity: 10,
-    unitCost: 8500,
-    totalCost: 85000,
-    balanceQuantity: 10,
-    notes: "رصيد افتتاحي لبداية الفترة",
-  },
-  {
-    id: "sm_02",
-    organizationId: "org_01",
-    productId: "prod_01",
-    warehouseId: "wh_cairo_01",
-    movementType: "purchase_receipt",
-    referenceNumber: "PINV-2026-001",
-    date: "2026-08-05",
-    quantity: 10,
-    unitCost: 8500,
-    totalCost: 85000,
-    balanceQuantity: 20,
-    notes: "إضافة فاتورة مشتريات ديل",
-  },
-  {
-    id: "sm_03",
-    organizationId: "org_01",
-    productId: "prod_01",
-    warehouseId: "wh_cairo_01",
-    movementType: "sales_issue",
-    referenceNumber: "INV-2026-001",
-    date: "2026-08-15",
-    quantity: -2,
-    unitCost: 8500,
-    totalCost: -17000,
-    balanceQuantity: 18,
-    notes: "صرف مبيعات للأهرام للتجارة",
-  }
-];
+// 14. Sales Invoices (Clean: 0 items)
+export const initialSalesInvoices: SalesInvoice[] = [];
 
-export const initialJournalEntries: JournalEntry[] = [
-  {
-    id: "je_01",
-    organizationId: "org_01",
-    branchId: "br_cairo_hq",
-    entryNumber: "JV-SALES-INV-2026-001",
-    date: "2026-08-15",
-    referenceType: "sales_invoice",
-    description: "إثبات مبيعات ومخزون فاتورة INV-2026-001 للعميل الأهرام للتجارة",
-    lines: [
-      { id: "jl_1", accountId: "acc_1120", accountCode: "1120", accountName: "العملاء والمدينون (A/R)", debit: 39444, credit: 0, description: "استحقاق عميل" },
-      { id: "jl_2", accountId: "acc_4100", accountCode: "4100", accountName: "إيرادات مبيعات الأجهزة والبرمجيات", debit: 0, credit: 34600, description: "إيراد مبيعات" },
-      { id: "jl_3", accountId: "acc_2130", accountCode: "2130", accountName: "ضريبة القيمة المضافة - مخرجات (VAT Out)", debit: 0, credit: 4844, description: "ضريبة مبيعات 14%" },
-      { id: "jl_4", accountId: "acc_5100", accountCode: "5100", accountName: "تكلفة البضاعة المباعة (COGS)", debit: 23400, credit: 0, description: "تكلفة البضاعة المنصرفة" },
-      { id: "jl_5", accountId: "acc_1130", accountCode: "1130", accountName: "مخزون البضائع للبيع", debit: 0, credit: 23400, description: "خصم من المخزن" },
-    ],
-    totalDebit: 62844,
-    totalCredit: 62844,
-    isBalanced: true,
-    status: "posted",
-    createdBy: "م. إسلام صلاح حسني",
-  }
-];
+// 15. Purchase Invoices (Clean: 0 items)
+export const initialPurchaseInvoices: PurchaseInvoice[] = [];
 
-export const initialNotifications: Notification[] = [
-  {
-    id: "notif_01",
-    organizationId: "org_01",
-    titleAr: "تنبيه شيك مستحق التحصيل",
-    titleEn: "Check Due for Collection",
-    messageAr: "شيك رقم CHK-998821 بمبلغ 25,000 ج.م مستحق التحصيل خلال 48 ساعة",
-    messageEn: "Check #CHK-998821 for 25,000 EGP is due within 48 hours",
-    type: "warning",
-    read: false,
-    createdAt: "2026-08-23T09:00:00Z",
-  },
-  {
-    id: "notif_02",
-    organizationId: "org_01",
-    titleAr: "وصول صنف لحد الأمان الأدنى",
-    titleEn: "Low Stock Alert",
-    messageAr: "سيرفر Dell R750 وصل رصيده إلى 4 قطع فقط بالمستودع المركزي",
-    messageEn: "Dell R750 Server stock reached 4 units in Cairo Hub",
-    type: "info",
-    read: false,
-    createdAt: "2026-08-22T14:30:00Z",
-  }
-];
+// 16. Stock Movements (Clean: 0 items)
+export const initialStockMovements: StockMovement[] = [];
 
-export const initialAuditLogs: AuditLog[] = [
-  {
-    id: "audit_01",
-    organizationId: "org_01",
-    userId: "usr_admin_01",
-    userName: "م. إسلام صلاح حسني",
-    action: "create",
-    entityType: "SalesInvoice",
-    entityId: "sinv_01",
-    details: "إصدار فاتورة مبيعات ضريبية رقم INV-2026-001 بمبلغ 39,444 ج.م وتوليد قيد اليومية آلياً",
-    createdAt: "2026-08-15 10:30:00",
-  },
-  {
-    id: "audit_02",
-    organizationId: "org_01",
-    userId: "usr_accountant_01",
-    userName: "أحمد عبد الرحمن",
-    action: "create",
-    entityType: "PurchaseInvoice",
-    entityId: "pinv_01",
-    details: "تسجيل فاتورة مشتريات رقم PINV-2026-001 وتحديث رصيد المستودع المركزي",
-    createdAt: "2026-08-05 11:15:00",
-  }
-];
+// 17. Journal Entries (Clean: 0 items)
+export const initialJournalEntries: JournalEntry[] = [];
+
+// 18. Notifications (Clean: 0 items)
+export const initialNotifications: Notification[] = [];
+
+// 19. Audit Logs (Clean: 0 items)
+export const initialAuditLogs: AuditLog[] = [];

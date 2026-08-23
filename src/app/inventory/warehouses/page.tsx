@@ -69,9 +69,9 @@ export default function WarehousesPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {warehouses.map(wh => {
-          const whProducts = products.filter(p => (p.warehouseStock[wh.id] || 0) > 0);
-          const totalUnits = whProducts.reduce((sum, p) => sum + (p.warehouseStock[wh.id] || 0), 0);
-          const totalValue = whProducts.reduce((sum, p) => sum + ((p.warehouseStock[wh.id] || 0) * p.costPrice), 0);
+          const whProducts = products.filter(p => (p.warehouseStock?.[wh.id] || 0) > 0);
+          const totalUnits = whProducts.reduce((sum, p) => sum + (p.warehouseStock?.[wh.id] || 0), 0);
+          const totalValue = whProducts.reduce((sum, p) => sum + ((p.warehouseStock?.[wh.id] || 0) * p.costPrice), 0);
 
           return (
             <div key={wh.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm hover:border-slate-700 transition-all flex flex-col justify-between">
