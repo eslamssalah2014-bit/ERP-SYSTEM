@@ -5,7 +5,7 @@ const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_BRANCH_ID = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000004";
 
-// UUID Validator & Sanitizer to prevent PostgreSQL 22P02 errors
+// UUID Validator & Sanitizer
 function isValidUUID(str: any): boolean {
   if (!str || typeof str !== "string") return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
@@ -58,7 +58,7 @@ export async function GET() {
       supabaseAdmin.from("check_records").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("journal_entries").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("journal_lines").select("*"),
-      supabaseAdmin.from("stockMovements" in supabaseAdmin ? "stock_movements" : "stock_movements").select("*").order("created_at", { ascending: false }),
+      supabaseAdmin.from("stock_movements").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100),
       supabaseAdmin.from("product_categories").select("*"),
       supabaseAdmin.from("product_units").select("*"),
@@ -382,7 +382,7 @@ export async function GET() {
   }
 }
 
-// POST: Real-time DB Mutations
+// POST: Real-time Atomic DB Mutations (Full CRUD)
 export async function POST(request: Request) {
   if (!isSupabaseConfigured || !supabaseAdmin) {
     return NextResponse.json({ success: false, message: "Supabase not configured" }, { status: 500 });
@@ -393,7 +393,9 @@ export async function POST(request: Request) {
     const { action, payload } = body;
 
     switch (action) {
-      // 1. Create Product
+      // ==========================================
+      // PRODUCTS (CREATE, UPDATE, DELETE)
+      // ==========================================
       case "create_product": {
         const { id, organizationId, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock } = payload;
         
@@ -418,9 +420,7 @@ export async function POST(request: Request) {
           status: status || "active",
         };
 
-        if (validId) {
-          insertRow.id = validId;
-        }
+        if (validId) insertRow.id = validId;
 
         const { data: prod, error: prodErr } = await supabaseAdmin
           .from("products")
@@ -428,10 +428,7 @@ export async function POST(request: Request) {
           .select()
           .single();
 
-        if (prodErr) {
-          console.error("Supabase error creating product:", prodErr);
-          throw prodErr;
-        }
+        if (prodErr) throw prodErr;
 
         // Upsert warehouse stock
         if (warehouseStock && Object.keys(warehouseStock).length > 0 && prod?.id) {
@@ -454,7 +451,67 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: prod });
       }
 
-      // 2. Create Customer
+      case "update_product": {
+        const { id, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
+
+        const updateRow: any = { updated_at: new Date().toISOString() };
+        if (sku !== undefined) updateRow.sku = sku;
+        if (barcode !== undefined) updateRow.barcode = barcode || null;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (description !== undefined) updateRow.description = description || null;
+        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, null);
+        if (unitId !== undefined) updateRow.unit_id = cleanUUID(unitId, null);
+        if (costPrice !== undefined) updateRow.cost_price = Number(costPrice);
+        if (sellingPrice !== undefined) updateRow.selling_price = Number(sellingPrice);
+        if (taxRate !== undefined) updateRow.tax_rate = Number(taxRate);
+        if (minStockLevel !== undefined) updateRow.min_stock_level = Number(minStockLevel);
+        if (status !== undefined) updateRow.status = status;
+
+        const { data: prod, error: prodErr } = await supabaseAdmin
+          .from("products")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (prodErr) throw prodErr;
+
+        if (warehouseStock && typeof warehouseStock === "object") {
+          for (const [whId, qty] of Object.entries(warehouseStock)) {
+            const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
+            if (validWhId) {
+              await supabaseAdmin.from("product_warehouse_stock").upsert({
+                product_id: validId,
+                warehouse_id: validWhId,
+                quantity: Number(qty) || 0,
+              });
+            }
+          }
+        }
+
+        return NextResponse.json({ success: true, data: prod });
+      }
+
+      case "delete_product": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
+
+        // Clean dependent rows first
+        await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
+
+        const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // CUSTOMERS (CREATE, UPDATE, DELETE)
+      // ==========================================
       case "create_customer": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
 
@@ -478,9 +535,7 @@ export async function POST(request: Request) {
           status: status || "active",
         };
 
-        if (validId) {
-          insertRow.id = validId;
-        }
+        if (validId) insertRow.id = validId;
 
         const { data: cust, error: custErr } = await supabaseAdmin
           .from("customers")
@@ -492,7 +547,50 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: cust });
       }
 
-      // 3. Create Supplier
+      case "update_customer": {
+        const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid customer ID is required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (mobile !== undefined) updateRow.mobile = mobile || null;
+        if (email !== undefined) updateRow.email = email || null;
+        if (address !== undefined) updateRow.address = address || null;
+        if (city !== undefined) updateRow.city = city || null;
+        if (taxNumber !== undefined) updateRow.tax_number = taxNumber || null;
+        if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister || null;
+        if (creditLimit !== undefined) updateRow.credit_limit = Number(creditLimit);
+        if (paymentTermsDays !== undefined) updateRow.payment_terms_days = Number(paymentTermsDays);
+        if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
+        if (status !== undefined) updateRow.status = status;
+
+        const { data: cust, error: custErr } = await supabaseAdmin
+          .from("customers")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (custErr) throw custErr;
+        return NextResponse.json({ success: true, data: cust });
+      }
+
+      case "delete_customer": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid customer ID is required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("customers").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // SUPPLIERS (CREATE, UPDATE, DELETE)
+      // ==========================================
       case "create_supplier": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
 
@@ -514,9 +612,7 @@ export async function POST(request: Request) {
           status: status || "active",
         };
 
-        if (validId) {
-          insertRow.id = validId;
-        }
+        if (validId) insertRow.id = validId;
 
         const { data: supp, error: suppErr } = await supabaseAdmin
           .from("suppliers")
@@ -528,7 +624,179 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: supp });
       }
 
-      // 4. Create Sales Invoice (with line items & stock movements)
+      case "update_supplier": {
+        const { id, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid supplier ID is required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (mobile !== undefined) updateRow.mobile = mobile || null;
+        if (email !== undefined) updateRow.email = email || null;
+        if (address !== undefined) updateRow.address = address || null;
+        if (taxNumber !== undefined) updateRow.tax_number = taxNumber || null;
+        if (bankName !== undefined) updateRow.bank_name = bankName || null;
+        if (bankIban !== undefined) updateRow.bank_iban = bankIban || null;
+        if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
+        if (status !== undefined) updateRow.status = status;
+
+        const { data: supp, error: suppErr } = await supabaseAdmin
+          .from("suppliers")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (suppErr) throw suppErr;
+        return NextResponse.json({ success: true, data: supp });
+      }
+
+      case "delete_supplier": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid supplier ID is required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("suppliers").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // WAREHOUSES (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_warehouse": {
+        const { id, organizationId, branchId, code, nameAr, nameEn, location, managerName, managerPhone, isDefault } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          location: location || null,
+          manager_name: managerName || null,
+          manager_phone: managerPhone || null,
+          is_default: Boolean(isDefault),
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: wh, error: whErr } = await supabaseAdmin
+          .from("warehouses")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (whErr) throw whErr;
+        return NextResponse.json({ success: true, data: wh });
+      }
+
+      case "update_warehouse": {
+        const { id, code, nameAr, nameEn, location, managerName, managerPhone, isDefault } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid warehouse ID is required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (location !== undefined) updateRow.location = location || null;
+        if (managerName !== undefined) updateRow.manager_name = managerName || null;
+        if (managerPhone !== undefined) updateRow.manager_phone = managerPhone || null;
+        if (isDefault !== undefined) updateRow.is_default = Boolean(isDefault);
+
+        const { data: wh, error: whErr } = await supabaseAdmin
+          .from("warehouses")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (whErr) throw whErr;
+        return NextResponse.json({ success: true, data: wh });
+      }
+
+      case "delete_warehouse": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid warehouse ID is required" }, { status: 400 });
+
+        await supabaseAdmin.from("product_warehouse_stock").delete().eq("warehouse_id", validId);
+        const { error: delErr } = await supabaseAdmin.from("warehouses").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // COST CENTERS (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_cost_center": {
+        const { id, organizationId, code, nameAr, nameEn, parentId, level, isActive } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          parent_id: cleanUUID(parentId, null),
+          level: Number(level) || 1,
+          is_active: isActive !== false,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: cc, error: ccErr } = await supabaseAdmin
+          .from("cost_centers")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (ccErr) throw ccErr;
+        return NextResponse.json({ success: true, data: cc });
+      }
+
+      case "update_cost_center": {
+        const { id, code, nameAr, nameEn, parentId, level, isActive } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid cost center ID is required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
+        if (level !== undefined) updateRow.level = Number(level);
+        if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
+
+        const { data: cc, error: ccErr } = await supabaseAdmin
+          .from("cost_centers")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (ccErr) throw ccErr;
+        return NextResponse.json({ success: true, data: cc });
+      }
+
+      case "delete_cost_center": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid cost center ID is required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("cost_centers").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // SALES INVOICES (CREATE, DELETE)
+      // ==========================================
       case "create_sales_invoice": {
         const {
           id, organizationId, branchId, invoiceNumber, date, dueDate, customerId,
@@ -577,7 +845,7 @@ export async function POST(request: Request) {
 
         if (invErr) throw invErr;
 
-        // Line Items
+        // Insert Line Items
         if (items && items.length > 0 && inv?.id) {
           const itemRows = items.map((it: any) => ({
             sales_invoice_id: inv.id,
@@ -597,7 +865,7 @@ export async function POST(request: Request) {
           const { error: itemsErr } = await supabaseAdmin.from("sales_invoice_items").insert(itemRows);
           if (itemsErr) console.error("Error inserting invoice items:", itemsErr);
 
-          // Stock Movements
+          // Insert Stock Movements
           for (const it of items) {
             const validProdId = cleanUUID(it.productId, null);
             if (validProdId) {
@@ -622,7 +890,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: inv });
       }
 
-      // 5. Create Purchase Invoice
+      case "delete_sales_invoice": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid sales invoice ID is required" }, { status: 400 });
+
+        await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
+        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+
+        const { error: delErr } = await supabaseAdmin.from("sales_invoices").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // PURCHASE INVOICES (CREATE, DELETE)
+      // ==========================================
       case "create_purchase_invoice": {
         const {
           id, organizationId, branchId, invoiceNumber, supplierInvoiceRef, date,
@@ -709,64 +993,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: pinv });
       }
 
-      // 6. Create Warehouse
-      case "create_warehouse": {
-        const { id, organizationId, branchId, code, nameAr, nameEn, location, managerName, managerPhone, isDefault } = payload;
-        const validId = cleanUUID(id, null);
-        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+      case "delete_purchase_invoice": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid purchase invoice ID is required" }, { status: 400 });
 
-        const insertRow: any = {
-          organization_id: validOrgId,
-          branch_id: validBranchId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
-          location: location || null,
-          manager_name: managerName || null,
-          manager_phone: managerPhone || null,
-          is_default: Boolean(isDefault),
-        };
-        if (validId) insertRow.id = validId;
+        await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
+        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
 
-        const { data: wh, error: whErr } = await supabaseAdmin
-          .from("warehouses")
-          .insert([insertRow])
-          .select()
-          .single();
+        const { error: delErr } = await supabaseAdmin.from("purchase_invoices").delete().eq("id", validId);
+        if (delErr) throw delErr;
 
-        if (whErr) throw whErr;
-        return NextResponse.json({ success: true, data: wh });
+        return NextResponse.json({ success: true, id: validId });
       }
 
-      // 7. Create Cost Center
-      case "create_cost_center": {
-        const { id, organizationId, code, nameAr, nameEn, parentId, level, isActive } = payload;
-        const validId = cleanUUID(id, null);
-        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-
-        const insertRow: any = {
-          organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
-          parent_id: cleanUUID(parentId, null),
-          level: Number(level) || 1,
-          is_active: isActive !== false,
-        };
-        if (validId) insertRow.id = validId;
-
-        const { data: cc, error: ccErr } = await supabaseAdmin
-          .from("cost_centers")
-          .insert([insertRow])
-          .select()
-          .single();
-
-        if (ccErr) throw ccErr;
-        return NextResponse.json({ success: true, data: cc });
-      }
-
-      // 8. Create Check
+      // ==========================================
+      // CHECKS (CREATE, UPDATE STATUS, DELETE)
+      // ==========================================
       case "create_check": {
         const { id, organizationId, branchId, checkNumber, bankName, type, partyName, customerId, supplierId, amount, issueDate, dueDate, status, notes } = payload;
         const validId = cleanUUID(id, null);
@@ -800,7 +1043,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: chk });
       }
 
-      // 9. Update Check Status
       case "update_check_status": {
         const { checkId, newStatus, targetTreasuryId } = payload;
         const validCheckId = cleanUUID(checkId, null);
@@ -816,7 +1058,19 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: chk });
       }
 
-      // 10. Create Journal Entry
+      case "delete_check": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid check ID is required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("check_records").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // JOURNAL ENTRIES (CREATE, DELETE)
+      // ==========================================
       case "create_journal_entry": {
         const { id, organizationId, branchId, entryNumber, date, referenceType, referenceId, description, lines, totalDebit, totalCredit, isBalanced, status, createdBy } = payload;
         const validId = cleanUUID(id, null);
@@ -863,6 +1117,17 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, data: je });
+      }
+
+      case "delete_journal_entry": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid journal entry ID is required" }, { status: 400 });
+
+        await supabaseAdmin.from("journal_lines").delete().eq("journal_entry_id", validId);
+        const { error: delErr } = await supabaseAdmin.from("journal_entries").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
       }
 
       default:

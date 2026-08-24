@@ -24,15 +24,29 @@ import {
 import {
   fetchFullERPData,
   persistProductDB,
+  updateProductDB,
+  deleteProductDB,
   persistCustomerDB,
+  updateCustomerDB,
+  deleteCustomerDB,
   persistSupplierDB,
+  updateSupplierDB,
+  deleteSupplierDB,
   persistSalesInvoiceDB,
+  deleteSalesInvoiceDB,
   persistPurchaseInvoiceDB,
+  deletePurchaseInvoiceDB,
   persistWarehouseDB,
+  updateWarehouseDB,
+  deleteWarehouseDB,
   persistCostCenterDB,
+  updateCostCenterDB,
+  deleteCostCenterDB,
   persistCheckDB,
   persistCheckStatusDB,
-  persistJournalEntryDB
+  deleteCheckDB,
+  persistJournalEntryDB,
+  deleteJournalEntryDB
 } from "@/lib/erp-service";
 
 interface ERPContextType {
@@ -68,6 +82,8 @@ interface ERPContextType {
   updateProduct: (id: string, p: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   addWarehouse: (w: Omit<Warehouse, "id">) => Warehouse;
+  updateWarehouse: (id: string, w: Partial<Warehouse>) => void;
+  deleteWarehouse: (id: string) => void;
   addStockMovement: (m: Omit<StockMovement, "id">) => void;
 
   // CRM & Partners
@@ -75,14 +91,18 @@ interface ERPContextType {
   suppliers: Supplier[];
   addCustomer: (c: Omit<Customer, "id">) => Customer;
   updateCustomer: (id: string, c: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
   addSupplier: (s: Omit<Supplier, "id">) => Supplier;
   updateSupplier: (id: string, s: Partial<Supplier>) => void;
+  deleteSupplier: (id: string) => void;
 
   // Sales & Purchases
   salesInvoices: SalesInvoice[];
   purchaseInvoices: PurchaseInvoice[];
   createSalesInvoice: (inv: Omit<SalesInvoice, "id">) => SalesInvoice;
+  deleteSalesInvoice: (id: string) => void;
   createPurchaseInvoice: (inv: Omit<PurchaseInvoice, "id">) => PurchaseInvoice;
+  deletePurchaseInvoice: (id: string) => void;
 
   // Treasury & Checks
   treasuryAccounts: TreasuryAccount[];
@@ -92,6 +112,7 @@ interface ERPContextType {
   createCashReceipt: (rcp: Omit<CashReceipt, "id">) => CashReceipt;
   createCashPayment: (pay: Omit<CashPayment, "id">) => CashPayment;
   updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => void;
+  deleteCheck: (id: string) => void;
 
   // Accounting & GL
   accounts: Account[];
@@ -99,7 +120,10 @@ interface ERPContextType {
   journalEntries: JournalEntry[];
   addAccount: (acc: Omit<Account, "id">) => Account;
   addCostCenter: (cc: Omit<CostCenter, "id">) => CostCenter;
+  updateCostCenter: (id: string, cc: Partial<CostCenter>) => void;
+  deleteCostCenter: (id: string) => void;
   addJournalEntry: (entry: Omit<JournalEntry, "id">) => JournalEntry;
+  deleteJournalEntry: (id: string) => void;
 
   // Audit & Notifications
   auditLogs: AuditLog[];
@@ -214,12 +238,12 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
-  // Inventory actions
+  // ==========================================
+  // INVENTORY CRUD
+  // ==========================================
   const addProduct = (p: Omit<Product, "id">): Product => {
     const newProduct: Product = { ...p, id: generateId("prod") };
     setProducts(prev => [newProduct, ...prev]);
-    
-    // Asynchronously persist to Supabase Database
     persistProductDB(newProduct).catch(err => console.error("Error saving product to DB:", err));
 
     addAuditLog({
@@ -236,6 +260,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const updateProduct = (id: string, p: Partial<Product>) => {
     setProducts(prev => prev.map(item => item.id === id ? { ...item, ...p } : item));
+    updateProductDB(id, p).catch(err => console.error("Error updating product in DB:", err));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -249,6 +275,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProduct = (id: string) => {
     setProducts(prev => prev.filter(item => item.id !== id));
+    deleteProductDB(id).catch(err => console.error("Error deleting product from DB:", err));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -267,17 +295,27 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newWh;
   };
 
+  const updateWarehouse = (id: string, w: Partial<Warehouse>) => {
+    setWarehouses(prev => prev.map(item => item.id === id ? { ...item, ...w } : item));
+    updateWarehouseDB(id, w).catch(err => console.error("Error updating warehouse in DB:", err));
+  };
+
+  const deleteWarehouse = (id: string) => {
+    setWarehouses(prev => prev.filter(item => item.id !== id));
+    deleteWarehouseDB(id).catch(err => console.error("Error deleting warehouse from DB:", err));
+  };
+
   const addStockMovement = (m: Omit<StockMovement, "id">) => {
     const newMovement: StockMovement = { ...m, id: generateId("sm") };
     setStockMovements(prev => [...prev, newMovement]);
   };
 
-  // CRM actions
+  // ==========================================
+  // CRM / PARTNERS CRUD
+  // ==========================================
   const addCustomer = (c: Omit<Customer, "id">): Customer => {
     const newCust: Customer = { ...c, id: generateId("cust") };
     setCustomers(prev => [newCust, ...prev]);
-
-    // Persist to Supabase Database
     persistCustomerDB(newCust).catch(err => console.error("Error saving customer to DB:", err));
 
     addAuditLog({
@@ -294,23 +332,34 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const updateCustomer = (id: string, c: Partial<Customer>) => {
     setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...c } : item));
+    updateCustomerDB(id, c).catch(err => console.error("Error updating customer in DB:", err));
+  };
+
+  const deleteCustomer = (id: string) => {
+    setCustomers(prev => prev.filter(item => item.id !== id));
+    deleteCustomerDB(id).catch(err => console.error("Error deleting customer from DB:", err));
   };
 
   const addSupplier = (s: Omit<Supplier, "id">): Supplier => {
     const newSupp: Supplier = { ...s, id: generateId("supp") };
     setSuppliers(prev => [newSupp, ...prev]);
-
-    // Persist to Supabase Database
     persistSupplierDB(newSupp).catch(err => console.error("Error saving supplier to DB:", err));
-
     return newSupp;
   };
 
   const updateSupplier = (id: string, s: Partial<Supplier>) => {
     setSuppliers(prev => prev.map(item => item.id === id ? { ...item, ...s } : item));
+    updateSupplierDB(id, s).catch(err => console.error("Error updating supplier in DB:", err));
   };
 
-  // Integrated Sales Invoice Creation
+  const deleteSupplier = (id: string) => {
+    setSuppliers(prev => prev.filter(item => item.id !== id));
+    deleteSupplierDB(id).catch(err => console.error("Error deleting supplier from DB:", err));
+  };
+
+  // ==========================================
+  // SALES & PURCHASES CRUD
+  // ==========================================
   const createSalesInvoice = (inv: Omit<SalesInvoice, "id">): SalesInvoice => {
     const newInvoice: SalesInvoice = {
       ...inv,
@@ -320,7 +369,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
     let totalCogs = 0;
 
-    // 1. Deduct Stock & Record Stock Movements
+    // Deduct Stock
     inv.items.forEach(item => {
       totalCogs += item.costPrice * item.quantity;
       setProducts(prev => prev.map(p => {
@@ -336,38 +385,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         }
         return p;
       }));
-
-      addStockMovement({
-        organizationId: organization.id,
-        productId: item.productId,
-        warehouseId: item.warehouseId,
-        movementType: "sales_issue",
-        referenceId: newInvoice.id,
-        referenceNumber: newInvoice.invoiceNumber,
-        date: newInvoice.date,
-        quantity: -item.quantity,
-        unitCost: item.costPrice,
-        totalCost: -(item.costPrice * item.quantity),
-        balanceQuantity: 0,
-        notes: `صرف مبيعات فاتورة ${newInvoice.invoiceNumber}`,
-      });
     });
 
-    // 2. Adjust Customer Balance
+    // Customer Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
       setCustomers(prev => prev.map(c =>
         c.id === inv.customerId ? { ...c, currentBalance: c.currentBalance + inv.dueAmount } : c
       ));
     }
 
-    // 3. Generate and Post Balanced GL Journal Entry
+    // Balanced GL Entry
     const journalDraft = generateSalesInvoiceJournal(newInvoice, accounts, totalCogs);
     const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
     setJournalEntries(prev => [newJournal, ...prev]);
 
     setSalesInvoices(prev => [newInvoice, ...prev]);
 
-    // Persist Invoice and Journal to Supabase
     persistSalesInvoiceDB(newInvoice).catch(err => console.error("Error saving invoice to DB:", err));
     persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
 
@@ -378,20 +411,24 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "create",
       entityType: "SalesInvoice",
       entityId: newInvoice.id,
-      details: `إصدار فاتورة مبيعات ${newInvoice.invoiceNumber} بمبلغ ${newInvoice.grandTotal} وتحديث المخزون والأستاذ العام`,
+      details: `إصدار فاتورة مبيعات ${newInvoice.invoiceNumber} بمبلغ ${newInvoice.grandTotal}`,
     });
 
     return newInvoice;
   };
 
-  // Integrated Purchase Invoice Creation
+  const deleteSalesInvoice = (id: string) => {
+    setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
+    deleteSalesInvoiceDB(id).catch(err => console.error("Error deleting sales invoice from DB:", err));
+  };
+
   const createPurchaseInvoice = (inv: Omit<PurchaseInvoice, "id">): PurchaseInvoice => {
     const newInvoice: PurchaseInvoice = {
       ...inv,
       id: generateId("pinv"),
     };
 
-    // 1. Replenish Stock & Record Movements
+    // Add Stock
     inv.items.forEach(item => {
       setProducts(prev => prev.map(p => {
         if (p.id === item.productId) {
@@ -406,38 +443,21 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         }
         return p;
       }));
-
-      addStockMovement({
-        organizationId: organization.id,
-        productId: item.productId,
-        warehouseId: item.warehouseId,
-        movementType: "purchase_receipt",
-        referenceId: newInvoice.id,
-        referenceNumber: newInvoice.invoiceNumber,
-        date: newInvoice.date,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
-        totalCost: item.unitCost * item.quantity,
-        balanceQuantity: 0,
-        notes: `توريد مشتريات فاتورة ${newInvoice.invoiceNumber}`,
-      });
     });
 
-    // 2. Adjust Supplier Balance
+    // Supplier Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
       setSuppliers(prev => prev.map(s =>
         s.id === inv.supplierId ? { ...s, currentBalance: s.currentBalance + inv.dueAmount } : s
       ));
     }
 
-    // 3. Generate and Post Balanced GL Journal Entry
     const journalDraft = generatePurchaseInvoiceJournal(newInvoice, accounts);
     const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
     setJournalEntries(prev => [newJournal, ...prev]);
 
     setPurchaseInvoices(prev => [newInvoice, ...prev]);
 
-    // Persist to Supabase Database
     persistPurchaseInvoiceDB(newInvoice).catch(err => console.error("Error saving purchase to DB:", err));
     persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
 
@@ -454,7 +474,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newInvoice;
   };
 
-  // Treasury & Cash Actions
+  const deletePurchaseInvoice = (id: string) => {
+    setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
+    deletePurchaseInvoiceDB(id).catch(err => console.error("Error deleting purchase invoice from DB:", err));
+  };
+
+  // ==========================================
+  // TREASURY & CHECKS CRUD
+  // ==========================================
   const createCashReceipt = (rcp: Omit<CashReceipt, "id">): CashReceipt => {
     const newReceipt: CashReceipt = { ...rcp, id: generateId("rcp") };
     setCashReceipts(prev => [newReceipt, ...prev]);
@@ -546,7 +573,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Accounting actions
+  const deleteCheck = (id: string) => {
+    setChecks(prev => prev.filter(chk => chk.id !== id));
+    deleteCheckDB(id).catch(err => console.error("Error deleting check from DB:", err));
+  };
+
+  // ==========================================
+  // ACCOUNTING & COST CENTERS CRUD
+  // ==========================================
   const addAccount = (acc: Omit<Account, "id">): Account => {
     const newAcc: Account = { ...acc, id: generateId("acc") };
     setAccounts(prev => [...prev, newAcc]);
@@ -560,11 +594,26 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newCc;
   };
 
+  const updateCostCenter = (id: string, cc: Partial<CostCenter>) => {
+    setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...cc } : item));
+    updateCostCenterDB(id, cc).catch(err => console.error("Error updating cost center in DB:", err));
+  };
+
+  const deleteCostCenter = (id: string) => {
+    setCostCenters(prev => prev.filter(item => item.id !== id));
+    deleteCostCenterDB(id).catch(err => console.error("Error deleting cost center from DB:", err));
+  };
+
   const addJournalEntry = (entry: Omit<JournalEntry, "id">): JournalEntry => {
     const newEntry: JournalEntry = { ...entry, id: generateId("jv") };
     setJournalEntries(prev => [newEntry, ...prev]);
     persistJournalEntryDB(newEntry).catch(err => console.error("Error saving journal entry to DB:", err));
     return newEntry;
+  };
+
+  const deleteJournalEntry = (id: string) => {
+    setJournalEntries(prev => prev.filter(je => je.id !== id));
+    deleteJournalEntryDB(id).catch(err => console.error("Error deleting journal entry from DB:", err));
   };
 
   const resetToDemoData = () => {
@@ -593,12 +642,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         currentUser, setCurrentUser, organization, setOrganization,
         branches, activeBranchId, setActiveBranchId, users,
         products, categories, units, warehouses, stockMovements,
-        addProduct, updateProduct, deleteProduct, addWarehouse, addStockMovement,
-        customers, suppliers, addCustomer, updateCustomer, addSupplier, updateSupplier,
-        salesInvoices, purchaseInvoices, createSalesInvoice, createPurchaseInvoice,
+        addProduct, updateProduct, deleteProduct,
+        addWarehouse, updateWarehouse, deleteWarehouse, addStockMovement,
+        customers, suppliers, addCustomer, updateCustomer, deleteCustomer,
+        addSupplier, updateSupplier, deleteSupplier,
+        salesInvoices, purchaseInvoices, createSalesInvoice, deleteSalesInvoice,
+        createPurchaseInvoice, deletePurchaseInvoice,
         treasuryAccounts, cashReceipts, cashPayments, checks,
-        createCashReceipt, createCashPayment, updateCheckStatus,
-        accounts, costCenters, journalEntries, addAccount, addCostCenter, addJournalEntry,
+        createCashReceipt, createCashPayment, updateCheckStatus, deleteCheck,
+        accounts, costCenters, journalEntries, addAccount,
+        addCostCenter, updateCostCenter, deleteCostCenter,
+        addJournalEntry, deleteJournalEntry,
         auditLogs, notifications, addAuditLog, markNotificationRead, resetToDemoData
       }}
     >
