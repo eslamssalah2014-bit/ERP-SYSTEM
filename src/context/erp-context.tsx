@@ -1,7 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { Organization, Branch, User, ProductCategory, ProductUnit, Product, Customer, Supplier, Account, TreasuryAccount, CostCenter, CheckRecord, SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification, AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment } from "@/types/erp";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import {
+  Organization, Branch, User, ProductCategory, ProductUnit, Product,
+  Customer, Supplier, Account, TreasuryAccount, CostCenter, CheckRecord,
+  SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification,
+  AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment
+} from "@/types/erp";
 import {
   initialOrganization, initialBranches, initialUsers, initialCategories,
   initialUnits, initialWarehouses, initialProducts, initialCustomers,
@@ -16,6 +21,19 @@ import {
   generateReceiptJournal,
   generatePaymentJournal
 } from "@/lib/accounting-engine";
+import {
+  fetchFullERPData,
+  persistProductDB,
+  persistCustomerDB,
+  persistSupplierDB,
+  persistSalesInvoiceDB,
+  persistPurchaseInvoiceDB,
+  persistWarehouseDB,
+  persistCostCenterDB,
+  persistCheckDB,
+  persistCheckStatusDB,
+  persistJournalEntryDB
+} from "@/lib/erp-service";
 
 interface ERPContextType {
   // Localization & Theme
@@ -24,6 +42,11 @@ interface ERPContextType {
   direction: Direction;
   theme: Theme;
   setTheme: (t: Theme) => void;
+
+  // DB Sync Status
+  isDbConnected: boolean;
+  isLoadingData: boolean;
+  refreshData: () => Promise<void>;
 
   // Active Context
   currentUser: User;
@@ -44,7 +67,7 @@ interface ERPContextType {
   addProduct: (p: Omit<Product, "id">) => Product;
   updateProduct: (id: string, p: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
-  addWarehouse: (w: Omit<Warehouse[][0], "id">) => Warehouse[][0];
+  addWarehouse: (w: Omit<Warehouse, "id">) => Warehouse;
   addStockMovement: (m: Omit<StockMovement, "id">) => void;
 
   // CRM & Partners
@@ -94,6 +117,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("dark");
   const direction: Direction = locale === "ar" ? "rtl" : "ltr";
 
+  // DB Sync State
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+
   // Core Multi-Tenant State
   const [organization, setOrganization] = useState<Organization>(initialOrganization);
   const [branches, setBranches] = useState<Branch[]>(initialBranches);
@@ -142,6 +169,38 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
   }, [direction, locale, theme]);
 
+  // Hydrate Data from Supabase Database on Mount
+  const loadDatabaseData = useCallback(async () => {
+    setIsLoadingData(true);
+    try {
+      const liveData = await fetchFullERPData();
+      if (liveData) {
+        setIsDbConnected(true);
+        if (liveData.products) setProducts(liveData.products);
+        if (liveData.customers) setCustomers(liveData.customers);
+        if (liveData.suppliers) setSuppliers(liveData.suppliers);
+        if (liveData.salesInvoices) setSalesInvoices(liveData.salesInvoices);
+        if (liveData.purchaseInvoices) setPurchaseInvoices(liveData.purchaseInvoices);
+        if (liveData.warehouses && liveData.warehouses.length > 0) setWarehouses(liveData.warehouses);
+        if (liveData.costCenters) setCostCenters(liveData.costCenters);
+        if (liveData.accounts && liveData.accounts.length > 0) setAccounts(liveData.accounts);
+        if (liveData.treasuryAccounts && liveData.treasuryAccounts.length > 0) setTreasuryAccounts(liveData.treasuryAccounts);
+        if (liveData.checks) setChecks(liveData.checks);
+        if (liveData.journalEntries) setJournalEntries(liveData.journalEntries);
+        if (liveData.stockMovements) setStockMovements(liveData.stockMovements);
+        if (liveData.auditLogs) setAuditLogs(liveData.auditLogs);
+      }
+    } catch (e) {
+      console.error("Failed to load initial data from DB:", e);
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDatabaseData();
+  }, [loadDatabaseData]);
+
   const addAuditLog = (log: Omit<AuditLog, "id" | "createdAt">) => {
     const newLog: AuditLog = {
       ...log,
@@ -159,6 +218,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const addProduct = (p: Omit<Product, "id">): Product => {
     const newProduct: Product = { ...p, id: generateId("prod") };
     setProducts(prev => [newProduct, ...prev]);
+    
+    // Asynchronously persist to Supabase Database
+    persistProductDB(newProduct).catch(err => console.error("Error saving product to DB:", err));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -197,9 +260,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addWarehouse = (w: Omit<Warehouse[][0], "id">): Warehouse[][0] => {
-    const newWh = { ...w, id: generateId("wh") };
+  const addWarehouse = (w: Omit<Warehouse, "id">): Warehouse => {
+    const newWh: Warehouse = { ...w, id: generateId("wh") };
     setWarehouses(prev => [...prev, newWh]);
+    persistWarehouseDB(newWh).catch(err => console.error("Error saving warehouse to DB:", err));
     return newWh;
   };
 
@@ -212,6 +276,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const addCustomer = (c: Omit<Customer, "id">): Customer => {
     const newCust: Customer = { ...c, id: generateId("cust") };
     setCustomers(prev => [newCust, ...prev]);
+
+    // Persist to Supabase Database
+    persistCustomerDB(newCust).catch(err => console.error("Error saving customer to DB:", err));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -231,6 +299,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const addSupplier = (s: Omit<Supplier, "id">): Supplier => {
     const newSupp: Supplier = { ...s, id: generateId("supp") };
     setSuppliers(prev => [newSupp, ...prev]);
+
+    // Persist to Supabase Database
+    persistSupplierDB(newSupp).catch(err => console.error("Error saving supplier to DB:", err));
+
     return newSupp;
   };
 
@@ -295,6 +367,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
     setSalesInvoices(prev => [newInvoice, ...prev]);
 
+    // Persist Invoice and Journal to Supabase
+    persistSalesInvoiceDB(newInvoice).catch(err => console.error("Error saving invoice to DB:", err));
+    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -348,124 +424,129 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     });
 
     // 2. Adjust Supplier Balance
-    setSuppliers(prev => prev.map(s =>
-      s.id === inv.supplierId ? { ...s, currentBalance: s.currentBalance + inv.grandTotal } : s
-    ));
+    if (inv.status === "unpaid" || inv.status === "partially_paid") {
+      setSuppliers(prev => prev.map(s =>
+        s.id === inv.supplierId ? { ...s, currentBalance: s.currentBalance + inv.dueAmount } : s
+      ));
+    }
 
-    // 3. Generate Balanced GL Journal Entry
+    // 3. Generate and Post Balanced GL Journal Entry
     const journalDraft = generatePurchaseInvoiceJournal(newInvoice, accounts);
     const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
     setJournalEntries(prev => [newJournal, ...prev]);
 
     setPurchaseInvoices(prev => [newInvoice, ...prev]);
+
+    // Persist to Supabase Database
+    persistPurchaseInvoiceDB(newInvoice).catch(err => console.error("Error saving purchase to DB:", err));
+    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "PurchaseInvoice",
+      entityId: newInvoice.id,
+      details: `تسجيل فاتورة مشتريات وتوريد مخزن ${newInvoice.invoiceNumber} بمبلغ ${newInvoice.grandTotal}`,
+    });
+
     return newInvoice;
   };
 
-  // Treasury Actions
+  // Treasury & Cash Actions
   const createCashReceipt = (rcp: Omit<CashReceipt, "id">): CashReceipt => {
-    const newReceipt: CashReceipt = {
-      ...rcp,
-      id: generateId("rcp"),
-      createdAt: new Date().toISOString(),
-    };
+    const newReceipt: CashReceipt = { ...rcp, id: generateId("rcp") };
+    setCashReceipts(prev => [newReceipt, ...prev]);
 
-    // 1. Update Treasury Balance
     setTreasuryAccounts(prev => prev.map(t =>
       t.id === rcp.treasuryAccountId ? { ...t, balance: t.balance + rcp.amount } : t
     ));
 
-    // 2. Adjust Customer Balance if linked
     if (rcp.customerId) {
       setCustomers(prev => prev.map(c =>
         c.id === rcp.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - rcp.amount) } : c
       ));
     }
 
-    // 3. Post Journal Entry
-    const treasury = treasuryAccounts.find(t => t.id === rcp.treasuryAccountId);
-    const glAccountId = treasury?.glAccountId || "acc_1110";
-    const journalDraft = generateReceiptJournal(newReceipt, glAccountId, accounts);
+    const targetTreasury = treasuryAccounts.find(t => t.id === rcp.treasuryAccountId);
+    const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
+    const journalDraft = generateReceiptJournal(newReceipt, treasuryGlId, accounts);
     const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
     setJournalEntries(prev => [newJournal, ...prev]);
+    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving receipt journal to DB:", err));
 
-    setCashReceipts(prev => [newReceipt, ...prev]);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "CashReceipt",
+      entityId: newReceipt.id,
+      details: `سند قبض نقدية ${newReceipt.receiptNumber} بمبلغ ${newReceipt.amount} ${newReceipt.currency}`,
+    });
+
     return newReceipt;
   };
 
   const createCashPayment = (pay: Omit<CashPayment, "id">): CashPayment => {
-    const newPayment: CashPayment = {
-      ...pay,
-      id: generateId("pay"),
-      createdAt: new Date().toISOString(),
-    };
+    const newPayment: CashPayment = { ...pay, id: generateId("pay") };
+    setCashPayments(prev => [newPayment, ...prev]);
 
-    // 1. Deduct Treasury Balance
     setTreasuryAccounts(prev => prev.map(t =>
       t.id === pay.treasuryAccountId ? { ...t, balance: t.balance - pay.amount } : t
     ));
 
-    // 2. Adjust Supplier Balance if linked
     if (pay.supplierId) {
       setSuppliers(prev => prev.map(s =>
         s.id === pay.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - pay.amount) } : s
       ));
     }
 
-    // 3. Post Journal Entry
-    const treasury = treasuryAccounts.find(t => t.id === pay.treasuryAccountId);
-    const glAccountId = treasury?.glAccountId || "acc_1110";
-    const journalDraft = generatePaymentJournal(newPayment, glAccountId, accounts);
+    const targetTreasury = treasuryAccounts.find(t => t.id === pay.treasuryAccountId);
+    const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
+    const journalDraft = generatePaymentJournal(newPayment, treasuryGlId, accounts);
     const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
     setJournalEntries(prev => [newJournal, ...prev]);
+    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving payment journal to DB:", err));
 
-    setCashPayments(prev => [newPayment, ...prev]);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "CashPayment",
+      entityId: newPayment.id,
+      details: `سند صرف نقدية ${newPayment.paymentNumber} بمبلغ ${newPayment.amount} ${newPayment.currency}`,
+    });
+
     return newPayment;
   };
 
-  // Checks Workflow Action
   const updateCheckStatus = (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
-    const chk = checks.find(c => c.id === checkId);
-    if (!chk) return;
+    setChecks(prev => prev.map(chk => {
+      if (chk.id === checkId) {
+        return {
+          ...chk,
+          status: newStatus,
+          targetTreasuryId: targetTreasuryId || chk.targetTreasuryId,
+          collectionDate: newStatus === "collected" ? new Date().toISOString().split("T")[0] : chk.collectionDate,
+        };
+      }
+      return chk;
+    }));
 
-    if (newStatus === "collected" && targetTreasuryId) {
-      // Deposit money into selected treasury account
+    persistCheckStatusDB(checkId, newStatus, targetTreasuryId).catch(err => console.error("Error updating check in DB:", err));
+
+    const check = checks.find(c => c.id === checkId);
+    if (check && newStatus === "collected" && targetTreasuryId) {
       setTreasuryAccounts(prev => prev.map(t =>
-        t.id === targetTreasuryId ? { ...t, balance: t.balance + chk.amount } : t
+        t.id === targetTreasuryId ? { ...t, balance: t.balance + check.amount } : t
       ));
-
-      // Auto GL Entry for check collection
-      const treasury = treasuryAccounts.find(t => t.id === targetTreasuryId);
-      const treasuryAcc = accounts.find(a => a.id === treasury?.glAccountId) || accounts[0];
-      const notesReceivableAcc = accounts.find(a => a.code === "1125") || accounts[0];
-
-      const newJournal: JournalEntry = {
-        id: generateId("jv"),
-        organizationId: organization.id,
-        branchId: activeBranchId,
-        entryNumber: "JV-CHK-COLLECT-" + chk.checkNumber,
-        date: new Date().toISOString().split("T")[0],
-        referenceType: "check_collection",
-        referenceId: chk.id,
-        description: `تحصيل وإيداع شيك رقم ${chk.checkNumber} بحساب ${treasury?.nameAr}`,
-        lines: [
-          { id: "jl_c1", accountId: treasuryAcc.id, accountCode: treasuryAcc.code, accountName: treasuryAcc.nameAr, debit: chk.amount, credit: 0 },
-          { id: "jl_c2", accountId: notesReceivableAcc.id, accountCode: notesReceivableAcc.code, accountName: notesReceivableAcc.nameAr, debit: 0, credit: chk.amount },
-        ],
-        totalDebit: chk.amount,
-        totalCredit: chk.amount,
-        isBalanced: true,
-        status: "posted",
-        createdBy: currentUser.name,
-      };
-      setJournalEntries(prev => [newJournal, ...prev]);
     }
-
-    setChecks(prev => prev.map(c =>
-      c.id === checkId ? { ...c, status: newStatus, collectionDate: new Date().toISOString().split("T")[0] } : c
-    ));
   };
 
-  // Accounting & GL actions
+  // Accounting actions
   const addAccount = (acc: Omit<Account, "id">): Account => {
     const newAcc: Account = { ...acc, id: generateId("acc") };
     setAccounts(prev => [...prev, newAcc]);
@@ -475,12 +556,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const addCostCenter = (cc: Omit<CostCenter, "id">): CostCenter => {
     const newCc: CostCenter = { ...cc, id: generateId("cc") };
     setCostCenters(prev => [...prev, newCc]);
+    persistCostCenterDB(newCc).catch(err => console.error("Error saving cost center to DB:", err));
     return newCc;
   };
 
   const addJournalEntry = (entry: Omit<JournalEntry, "id">): JournalEntry => {
     const newEntry: JournalEntry = { ...entry, id: generateId("jv") };
     setJournalEntries(prev => [newEntry, ...prev]);
+    persistJournalEntryDB(newEntry).catch(err => console.error("Error saving journal entry to DB:", err));
     return newEntry;
   };
 
@@ -506,6 +589,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     <ERPContext.Provider
       value={{
         locale, setLocale, direction, theme, setTheme,
+        isDbConnected, isLoadingData, refreshData: loadDatabaseData,
         currentUser, setCurrentUser, organization, setOrganization,
         branches, activeBranchId, setActiveBranchId, users,
         products, categories, units, warehouses, stockMovements,

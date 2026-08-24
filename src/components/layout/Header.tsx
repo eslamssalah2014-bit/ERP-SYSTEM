@@ -11,7 +11,8 @@ export default function Header({ onOpenSearch }: { onOpenSearch?: () => void }) 
   const {
     organization, branches, activeBranchId, setActiveBranchId,
     currentUser, users, setCurrentUser, locale, setLocale,
-    theme, setTheme, notifications, markNotificationRead, resetToDemoData
+    theme, setTheme, notifications, markNotificationRead, resetToDemoData,
+    isDbConnected, isLoadingData
   } = useERP();
 
   const [showBranchMenu, setShowBranchMenu] = useState(false);
@@ -80,18 +81,13 @@ export default function Header({ onOpenSearch }: { onOpenSearch?: () => void }) 
 
       {/* Right Controls */}
       <div className="flex items-center gap-2">
-        {/* Reset Database Button */}
-        <button
-          onClick={() => {
-            if (confirm(isAr ? "هل تريد إعادة تهيئة وتصفير بيانات النظام للحالة النظيفة؟" : "Reset database to clean production state?")) {
-              resetToDemoData();
-            }
-          }}
-          title={isAr ? "إعادة تهيئة قاعدة البيانات" : "Reset Database"}
-          className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
+        {/* Database Connection Status Badge */}
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-[11px]">
+          <span className={"w-2 h-2 rounded-full " + (isDbConnected ? "bg-emerald-400" : isLoadingData ? "bg-amber-400 animate-pulse" : "bg-slate-500")} />
+          <span className={isDbConnected ? "text-emerald-400 font-bold" : "text-slate-400"}>
+            {isLoadingData ? (isAr ? "مزامنة..." : "Syncing...") : isDbConnected ? (isAr ? "قاعدة البيانات متصلة" : "Cloud DB Live") : (isAr ? "غير متصل" : "Offline")}
+          </span>
+        </div>
 
         {/* Language Switch */}
         <button
