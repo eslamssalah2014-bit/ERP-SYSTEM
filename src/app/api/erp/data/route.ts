@@ -5,6 +5,16 @@ const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_BRANCH_ID = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000004";
 
+// UUID Validator & Sanitizer to prevent PostgreSQL 22P02 errors
+function isValidUUID(str: any): boolean {
+  if (!str || typeof str !== "string") return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
+function cleanUUID(str: any, fallback: string | null = null): string | null {
+  return isValidUUID(str) ? str : fallback;
+}
+
 // GET: Hydrate all ERP data from Supabase PostgreSQL
 export async function GET() {
   if (!isSupabaseConfigured || !supabaseAdmin) {
@@ -48,7 +58,7 @@ export async function GET() {
       supabaseAdmin.from("check_records").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("journal_entries").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("journal_lines").select("*"),
-      supabaseAdmin.from("stock_movements").select("*").order("created_at", { ascending: false }),
+      supabaseAdmin.from("stockMovements" in supabaseAdmin ? "stock_movements" : "stock_movements").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100),
       supabaseAdmin.from("product_categories").select("*"),
       supabaseAdmin.from("product_units").select("*"),
@@ -387,33 +397,58 @@ export async function POST(request: Request) {
       case "create_product": {
         const { id, organizationId, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock } = payload;
         
-        const { data: prod, error: prodErr } = await supabaseAdmin.from("products").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validCategoryId = cleanUUID(categoryId, null);
+        const validUnitId = cleanUUID(unitId, null);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
           sku,
           barcode: barcode || null,
           name_ar: nameAr,
           name_en: nameEn || nameAr,
           description: description || null,
-          category_id: categoryId || null,
-          unit_id: unitId || null,
+          category_id: validCategoryId,
+          unit_id: validUnitId,
           cost_price: Number(costPrice) || 0,
           selling_price: Number(sellingPrice) || 0,
           tax_rate: Number(taxRate) || 14,
           min_stock_level: Number(minStockLevel) || 5,
           status: status || "active",
-        }]).select().single();
+        };
 
-        if (prodErr) throw prodErr;
+        if (validId) {
+          insertRow.id = validId;
+        }
+
+        const { data: prod, error: prodErr } = await supabaseAdmin
+          .from("products")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (prodErr) {
+          console.error("Supabase error creating product:", prodErr);
+          throw prodErr;
+        }
 
         // Upsert warehouse stock
-        if (warehouseStock && Object.keys(warehouseStock).length > 0) {
-          const stockRows = Object.entries(warehouseStock).map(([whId, qty]) => ({
-            product_id: prod.id,
-            warehouse_id: whId,
-            quantity: Number(qty) || 0,
-          }));
-          await supabaseAdmin.from("product_warehouse_stock").upsert(stockRows);
+        if (warehouseStock && Object.keys(warehouseStock).length > 0 && prod?.id) {
+          const stockRows: any[] = [];
+          for (const [whId, qty] of Object.entries(warehouseStock)) {
+            const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
+            if (validWhId && Number(qty) > 0) {
+              stockRows.push({
+                product_id: prod.id,
+                warehouse_id: validWhId,
+                quantity: Number(qty) || 0,
+              });
+            }
+          }
+          if (stockRows.length > 0) {
+            await supabaseAdmin.from("product_warehouse_stock").upsert(stockRows);
+          }
         }
 
         return NextResponse.json({ success: true, data: prod });
@@ -423,9 +458,11 @@ export async function POST(request: Request) {
       case "create_customer": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
 
-        const { data: cust, error: custErr } = await supabaseAdmin.from("customers").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
           code,
           name_ar: nameAr,
           name_en: nameEn || nameAr,
@@ -439,7 +476,17 @@ export async function POST(request: Request) {
           payment_terms_days: Number(paymentTermsDays) || 30,
           current_balance: Number(currentBalance) || 0,
           status: status || "active",
-        }]).select().single();
+        };
+
+        if (validId) {
+          insertRow.id = validId;
+        }
+
+        const { data: cust, error: custErr } = await supabaseAdmin
+          .from("customers")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (custErr) throw custErr;
         return NextResponse.json({ success: true, data: cust });
@@ -449,9 +496,11 @@ export async function POST(request: Request) {
       case "create_supplier": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
 
-        const { data: supp, error: suppErr } = await supabaseAdmin.from("suppliers").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
           code,
           name_ar: nameAr,
           name_en: nameEn || nameAr,
@@ -463,7 +512,17 @@ export async function POST(request: Request) {
           bank_iban: bankIban || null,
           current_balance: Number(currentBalance) || 0,
           status: status || "active",
-        }]).select().single();
+        };
+
+        if (validId) {
+          insertRow.id = validId;
+        }
+
+        const { data: supp, error: suppErr } = await supabaseAdmin
+          .from("suppliers")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (suppErr) throw suppErr;
         return NextResponse.json({ success: true, data: supp });
@@ -478,20 +537,25 @@ export async function POST(request: Request) {
           dueAmount, notes, createdBy
         } = payload;
 
-        // A. Insert Invoice Header
-        const { data: inv, error: invErr } = await supabaseAdmin.from("sales_invoices").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
-          branch_id: branchId || DEFAULT_BRANCH_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+        const validCustId = cleanUUID(customerId, null);
+        const validRepId = cleanUUID(salesRepId, null);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
           invoice_number: invoiceNumber,
           date,
           due_date: dueDate || date,
-          customer_id: customerId,
+          customer_id: validCustId,
           customer_name: customerName,
           customer_tax_number: customerTaxNumber || null,
-          sales_rep_id: salesRepId || null,
+          sales_rep_id: validRepId,
           sales_rep_name: salesRepName || null,
-          warehouse_id: warehouseId || DEFAULT_WAREHOUSE_ID,
+          warehouse_id: validWhId,
           status: status || "unpaid",
           subtotal: Number(subtotal) || 0,
           discount_total: Number(discountTotal) || 0,
@@ -501,17 +565,25 @@ export async function POST(request: Request) {
           due_amount: Number(dueAmount) || 0,
           notes: notes || null,
           created_by: createdBy || null,
-        }]).select().single();
+        };
+
+        if (validId) insertRow.id = validId;
+
+        const { data: inv, error: invErr } = await supabaseAdmin
+          .from("sales_invoices")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (invErr) throw invErr;
 
-        // B. Insert Line Items
-        if (items && items.length > 0) {
+        // Line Items
+        if (items && items.length > 0 && inv?.id) {
           const itemRows = items.map((it: any) => ({
             sales_invoice_id: inv.id,
-            product_id: it.productId,
+            product_id: cleanUUID(it.productId, null),
             product_name: it.productName,
-            warehouse_id: it.warehouseId || warehouseId || DEFAULT_WAREHOUSE_ID,
+            warehouse_id: cleanUUID(it.warehouseId, validWhId),
             quantity: Number(it.quantity) || 1,
             unit_price: Number(it.unitPrice) || 0,
             cost_price: Number(it.costPrice) || 0,
@@ -525,31 +597,25 @@ export async function POST(request: Request) {
           const { error: itemsErr } = await supabaseAdmin.from("sales_invoice_items").insert(itemRows);
           if (itemsErr) console.error("Error inserting invoice items:", itemsErr);
 
-          // C. Insert Stock Movements (Deduct Stock)
+          // Stock Movements
           for (const it of items) {
-            await supabaseAdmin.from("stock_movements").insert([{
-              organization_id: organizationId || DEFAULT_ORG_ID,
-              product_id: it.productId,
-              warehouse_id: it.warehouseId || warehouseId || DEFAULT_WAREHOUSE_ID,
-              movement_type: "sales_issue",
-              reference_id: inv.id,
-              reference_number: invoiceNumber,
-              date: date,
-              quantity: -Math.abs(Number(it.quantity) || 1),
-              unit_cost: Number(it.costPrice) || 0,
-              total_cost: -Math.abs((Number(it.costPrice) || 0) * (Number(it.quantity) || 1)),
-              balance_quantity: 0,
-              notes: `صرف مبيعات فاتورة ${invoiceNumber}`,
-            }]);
-          }
-        }
-
-        // D. Update Customer Balance if unpaid
-        if (customerId && Number(dueAmount) > 0) {
-          const { data: currentCust } = await supabaseAdmin.from("customers").select("current_balance").eq("id", customerId).single();
-          if (currentCust) {
-            const newBal = (Number(currentCust.current_balance) || 0) + Number(dueAmount);
-            await supabaseAdmin.from("customers").update({ current_balance: newBal }).eq("id", customerId);
+            const validProdId = cleanUUID(it.productId, null);
+            if (validProdId) {
+              await supabaseAdmin.from("stock_movements").insert([{
+                organization_id: validOrgId,
+                product_id: validProdId,
+                warehouse_id: cleanUUID(it.warehouseId, validWhId),
+                movement_type: "sales_issue",
+                reference_id: inv.id,
+                reference_number: invoiceNumber,
+                date: date,
+                quantity: -Math.abs(Number(it.quantity) || 1),
+                unit_cost: Number(it.costPrice) || 0,
+                total_cost: -Math.abs((Number(it.costPrice) || 0) * (Number(it.quantity) || 1)),
+                balance_quantity: 0,
+                notes: `صرف مبيعات فاتورة ${invoiceNumber}`,
+              }]);
+            }
           }
         }
 
@@ -565,18 +631,23 @@ export async function POST(request: Request) {
           dueAmount, notes, createdBy
         } = payload;
 
-        const { data: pinv, error: pinvErr } = await supabaseAdmin.from("purchase_invoices").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
-          branch_id: branchId || DEFAULT_BRANCH_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+        const validSuppId = cleanUUID(supplierId, null);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
           invoice_number: invoiceNumber,
           supplier_invoice_ref: supplierInvoiceRef || null,
           date,
           due_date: dueDate || date,
-          supplier_id: supplierId,
+          supplier_id: validSuppId,
           supplier_name: supplierName,
           supplier_tax_number: supplierTaxNumber || null,
-          warehouse_id: warehouseId || DEFAULT_WAREHOUSE_ID,
+          warehouse_id: validWhId,
           status: status || "unpaid",
           subtotal: Number(subtotal) || 0,
           discount_total: Number(discountTotal) || 0,
@@ -586,16 +657,24 @@ export async function POST(request: Request) {
           due_amount: Number(dueAmount) || 0,
           notes: notes || null,
           created_by: createdBy || null,
-        }]).select().single();
+        };
+
+        if (validId) insertRow.id = validId;
+
+        const { data: pinv, error: pinvErr } = await supabaseAdmin
+          .from("purchase_invoices")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (pinvErr) throw pinvErr;
 
-        if (items && items.length > 0) {
+        if (items && items.length > 0 && pinv?.id) {
           const itemRows = items.map((it: any) => ({
             purchase_invoice_id: pinv.id,
-            product_id: it.productId,
+            product_id: cleanUUID(it.productId, null),
             product_name: it.productName,
-            warehouse_id: it.warehouseId || warehouseId || DEFAULT_WAREHOUSE_ID,
+            warehouse_id: cleanUUID(it.warehouseId, validWhId),
             quantity: Number(it.quantity) || 1,
             unit_cost: Number(it.unitCost) || 0,
             discount_amount: Number(it.discountAmount) || 0,
@@ -606,30 +685,24 @@ export async function POST(request: Request) {
 
           await supabaseAdmin.from("purchase_invoice_items").insert(itemRows);
 
-          // Stock Movements (Add Stock)
           for (const it of items) {
-            await supabaseAdmin.from("stock_movements").insert([{
-              organization_id: organizationId || DEFAULT_ORG_ID,
-              product_id: it.productId,
-              warehouse_id: it.warehouseId || warehouseId || DEFAULT_WAREHOUSE_ID,
-              movement_type: "purchase_receipt",
-              reference_id: pinv.id,
-              reference_number: invoiceNumber,
-              date: date,
-              quantity: Math.abs(Number(it.quantity) || 1),
-              unit_cost: Number(it.unitCost) || 0,
-              total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
-              balance_quantity: 0,
-              notes: `توريد مشتريات فاتورة ${invoiceNumber}`,
-            }]);
-          }
-        }
-
-        if (supplierId && Number(dueAmount) > 0) {
-          const { data: currentSupp } = await supabaseAdmin.from("suppliers").select("current_balance").eq("id", supplierId).single();
-          if (currentSupp) {
-            const newBal = (Number(currentSupp.current_balance) || 0) + Number(dueAmount);
-            await supabaseAdmin.from("suppliers").update({ current_balance: newBal }).eq("id", supplierId);
+            const validProdId = cleanUUID(it.productId, null);
+            if (validProdId) {
+              await supabaseAdmin.from("stock_movements").insert([{
+                organization_id: validOrgId,
+                product_id: validProdId,
+                warehouse_id: cleanUUID(it.warehouseId, validWhId),
+                movement_type: "purchase_receipt",
+                reference_id: pinv.id,
+                reference_number: invoiceNumber,
+                date: date,
+                quantity: Math.abs(Number(it.quantity) || 1),
+                unit_cost: Number(it.unitCost) || 0,
+                total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
+                balance_quantity: 0,
+                notes: `توريد مشتريات فاتورة ${invoiceNumber}`,
+              }]);
+            }
           }
         }
 
@@ -639,10 +712,13 @@ export async function POST(request: Request) {
       // 6. Create Warehouse
       case "create_warehouse": {
         const { id, organizationId, branchId, code, nameAr, nameEn, location, managerName, managerPhone, isDefault } = payload;
-        const { data: wh, error: whErr } = await supabaseAdmin.from("warehouses").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
-          branch_id: branchId || DEFAULT_BRANCH_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
           code,
           name_ar: nameAr,
           name_en: nameEn || nameAr,
@@ -650,7 +726,14 @@ export async function POST(request: Request) {
           manager_name: managerName || null,
           manager_phone: managerPhone || null,
           is_default: Boolean(isDefault),
-        }]).select().single();
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: wh, error: whErr } = await supabaseAdmin
+          .from("warehouses")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (whErr) throw whErr;
         return NextResponse.json({ success: true, data: wh });
@@ -659,16 +742,25 @@ export async function POST(request: Request) {
       // 7. Create Cost Center
       case "create_cost_center": {
         const { id, organizationId, code, nameAr, nameEn, parentId, level, isActive } = payload;
-        const { data: cc, error: ccErr } = await supabaseAdmin.from("cost_centers").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
           code,
           name_ar: nameAr,
           name_en: nameEn || nameAr,
-          parent_id: parentId || null,
+          parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           is_active: isActive !== false,
-        }]).select().single();
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: cc, error: ccErr } = await supabaseAdmin
+          .from("cost_centers")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (ccErr) throw ccErr;
         return NextResponse.json({ success: true, data: cc });
@@ -677,22 +769,32 @@ export async function POST(request: Request) {
       // 8. Create Check
       case "create_check": {
         const { id, organizationId, branchId, checkNumber, bankName, type, partyName, customerId, supplierId, amount, issueDate, dueDate, status, notes } = payload;
-        const { data: chk, error: chkErr } = await supabaseAdmin.from("check_records").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
-          branch_id: branchId || DEFAULT_BRANCH_ID,
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
           check_number: checkNumber,
           bank_name: bankName,
           type,
           party_name: partyName,
-          customer_id: customerId || null,
-          supplier_id: supplierId || null,
+          customer_id: cleanUUID(customerId, null),
+          supplier_id: cleanUUID(supplierId, null),
           amount: Number(amount) || 0,
           issue_date: issueDate,
           due_date: dueDate,
           status: status || "pending",
           notes: notes || null,
-        }]).select().single();
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: chk, error: chkErr } = await supabaseAdmin
+          .from("check_records")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (chkErr) throw chkErr;
         return NextResponse.json({ success: true, data: chk });
@@ -701,11 +803,14 @@ export async function POST(request: Request) {
       // 9. Update Check Status
       case "update_check_status": {
         const { checkId, newStatus, targetTreasuryId } = payload;
+        const validCheckId = cleanUUID(checkId, null);
+        if (!validCheckId) return NextResponse.json({ success: false, message: "Invalid check ID" }, { status: 400 });
+
         const { data: chk, error: chkErr } = await supabaseAdmin.from("check_records").update({
           status: newStatus,
-          target_treasury_id: targetTreasuryId || null,
+          target_treasury_id: cleanUUID(targetTreasuryId, null),
           collection_date: newStatus === "collected" ? new Date().toISOString().split("T")[0] : null,
-        }).eq("id", checkId).select().single();
+        }).eq("id", validCheckId).select().single();
 
         if (chkErr) throw chkErr;
         return NextResponse.json({ success: true, data: chk });
@@ -714,34 +819,43 @@ export async function POST(request: Request) {
       // 10. Create Journal Entry
       case "create_journal_entry": {
         const { id, organizationId, branchId, entryNumber, date, referenceType, referenceId, description, lines, totalDebit, totalCredit, isBalanced, status, createdBy } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
 
-        const { data: je, error: jeErr } = await supabaseAdmin.from("journal_entries").insert([{
-          id: id || undefined,
-          organization_id: organizationId || DEFAULT_ORG_ID,
-          branch_id: branchId || DEFAULT_BRANCH_ID,
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
           entry_number: entryNumber,
           date,
           reference_type: referenceType,
-          reference_id: referenceId || null,
+          reference_id: cleanUUID(referenceId, null),
           description,
           total_debit: Number(totalDebit) || 0,
           total_credit: Number(totalCredit) || 0,
           is_balanced: Boolean(isBalanced),
           status: status || "posted",
           created_by: createdBy || null,
-        }]).select().single();
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: je, error: jeErr } = await supabaseAdmin
+          .from("journal_entries")
+          .insert([insertRow])
+          .select()
+          .single();
 
         if (jeErr) throw jeErr;
 
-        if (lines && lines.length > 0) {
+        if (lines && lines.length > 0 && je?.id) {
           const lineRows = lines.map((l: any) => ({
             journal_entry_id: je.id,
-            account_id: l.accountId,
+            account_id: cleanUUID(l.accountId, null),
             account_code: l.accountCode,
             account_name: l.accountName,
             debit: Number(l.debit) || 0,
             credit: Number(l.credit) || 0,
-            cost_center_id: l.costCenterId || null,
+            cost_center_id: cleanUUID(l.costCenterId, null),
             description: l.description || null,
           }));
 

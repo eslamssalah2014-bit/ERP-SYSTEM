@@ -36,17 +36,20 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!nameAr || !sku) return;
 
+    const activeCatId = categoryId || categories[0]?.id || "00000000-0000-0000-0000-000000000021";
+    const activeUnitId = unitId || units[0]?.id || "00000000-0000-0000-0000-000000000011";
+
     addProduct({
-      organizationId: organization.id,
+      organizationId: organization.id || "00000000-0000-0000-0000-000000000001",
       sku,
       barcode: barcode || ("622" + Date.now().toString().slice(-10)),
       nameAr,
       nameEn: nameEn || nameAr,
-      categoryId,
-      unitId,
+      categoryId: activeCatId,
+      unitId: activeUnitId,
       costPrice,
       sellingPrice,
-      taxRate: organization.defaultVatRate,
+      taxRate: organization.defaultVatRate || 14,
       minStockLevel,
       status: "active",
       warehouseStock: initialWarehouseStock,
