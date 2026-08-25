@@ -5,7 +5,8 @@ import {
   Organization, Branch, User, ProductCategory, ProductUnit, Product,
   Customer, Supplier, Account, TreasuryAccount, CostCenter, CheckRecord,
   SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification,
-  AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment
+  AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment,
+  ProductChangeLog, PeriodClosing, UserRole
 } from "@/types/erp";
 import {
   initialOrganization, initialBranches, initialUsers, initialCategories,
@@ -19,7 +20,10 @@ import {
   generateSalesInvoiceJournal,
   generatePurchaseInvoiceJournal,
   generateReceiptJournal,
-  generatePaymentJournal
+  generatePaymentJournal,
+  generateOpeningStockJournal,
+  generateStockAdjustmentJournal,
+  generatePeriodClosingJournal
 } from "@/lib/accounting-engine";
 import {
   fetchFullERPData,
@@ -46,7 +50,11 @@ import {
   persistCheckStatusDB,
   deleteCheckDB,
   persistJournalEntryDB,
-  deleteJournalEntryDB
+  deleteJournalEntryDB,
+  updateStockMovementDB,
+  deleteStockMovementDB,
+  persistProductChangeLogDB,
+  persistPeriodClosingDB
 } from "@/lib/erp-service";
 
 interface ERPContextType {
@@ -78,6 +86,8 @@ interface ERPContextType {
   units: ProductUnit[];
   warehouses: Warehouse[];
   stockMovements: StockMovement[];
+  productChangeLogs: ProductChangeLog[];
+  periodClosings: PeriodClosing[];
   addProduct: (p: Omit<Product, "id">) => Product;
   updateProduct: (id: string, p: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
@@ -85,6 +95,11 @@ interface ERPContextType {
   updateWarehouse: (id: string, w: Partial<Warehouse>) => void;
   deleteWarehouse: (id: string) => void;
   addStockMovement: (m: Omit<StockMovement, "id">) => void;
+  updateStockMovement: (id: string, sm: Partial<StockMovement>) => void;
+  deleteStockMovement: (id: string) => void;
+  addProductChangeLog: (log: Omit<ProductChangeLog, "id" | "createdAt">) => void;
+  createPeriodClosing: (closing: Omit<PeriodClosing, "id" | "createdAt">) => PeriodClosing;
+  hasPermission: (requiredRoles: UserRole | UserRole[]) => boolean;
 
   // CRM & Partners
   customers: Customer[];
@@ -158,6 +173,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [units, setUnits] = useState<ProductUnit[]>(initialUnits);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>(initialStockMovements);
+  const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
+  const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
 
   // CRM State
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -213,6 +230,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         if (liveData.journalEntries) setJournalEntries(liveData.journalEntries);
         if (liveData.stockMovements) setStockMovements(liveData.stockMovements);
         if (liveData.auditLogs) setAuditLogs(liveData.auditLogs);
+        if (liveData.productChangeLogs) setProductChangeLogs(liveData.productChangeLogs);
+        if (liveData.periodClosings) setPeriodClosings(liveData.periodClosings);
       }
     } catch (e) {
       console.error("Failed to load initial data from DB:", e);
@@ -234,18 +253,105 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setAuditLogs(prev => [newLog, ...prev]);
   };
 
+  const addProductChangeLog = (log: Omit<ProductChangeLog, "id" | "createdAt">) => {
+    const newLog: ProductChangeLog = {
+      ...log,
+      id: generateId("pch"),
+      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+    };
+    setProductChangeLogs(prev => [newLog, ...prev]);
+    persistProductChangeLogDB(newLog).catch(err => console.error("Error saving change log to DB:", err));
+  };
+
   const markNotificationRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
+  const hasPermission = (requiredRoles: UserRole | UserRole[]): boolean => {
+    if (currentUser.role === "super_admin" || currentUser.role === "tenant_admin") return true;
+    const roles = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
+    return roles.includes(currentUser.role);
+  };
+
   // ==========================================
-  // INVENTORY CRUD
+  // INVENTORY CRUD WITH OPENING STOCK & AUDIT
   // ==========================================
   const addProduct = (p: Omit<Product, "id">): Product => {
     const newProduct: Product = { ...p, id: generateId("prod") };
-    setProducts(prev => [newProduct, ...prev]);
-    persistProductDB(newProduct).catch(err => console.error("Error saving product to DB:", err));
+    
+    // 1. Check opening stock allocations
+    const openingMovements: StockMovement[] = [];
+    let totalOpeningQty = 0;
 
+    if (p.warehouseStock) {
+      for (const [whId, qty] of Object.entries(p.warehouseStock)) {
+        const numQty = Number(qty) || 0;
+        if (numQty > 0) {
+          totalOpeningQty += numQty;
+          const newSm: StockMovement = {
+            id: generateId("sm"),
+            organizationId: organization.id,
+            productId: newProduct.id,
+            warehouseId: whId,
+            movementType: "opening_balance",
+            referenceNumber: `OB-${newProduct.sku}`,
+            date: new Date().toISOString().split("T")[0],
+            quantity: numQty,
+            unitCost: newProduct.costPrice,
+            totalCost: numQty * newProduct.costPrice,
+            balanceQuantity: numQty,
+            partnerName: "رصيد افتتاحي",
+            partnerType: "opening",
+            notes: "رصيد مخزون أول المدة",
+          };
+          openingMovements.push(newSm);
+        }
+      }
+    }
+
+    // 2. Add product & movements to state
+    setProducts(prev => [newProduct, ...prev]);
+    if (openingMovements.length > 0) {
+      setStockMovements(prev => [...openingMovements, ...prev]);
+    }
+
+    // 3. Generate opening stock journal entry if opening quantity > 0
+    if (totalOpeningQty > 0) {
+      const obJournalDraft = generateOpeningStockJournal(
+        organization.id,
+        activeBranchId,
+        newProduct,
+        totalOpeningQty,
+        newProduct.costPrice,
+        accounts,
+        currentUser.name
+      );
+      if (obJournalDraft) {
+        const newJournal: JournalEntry = { ...obJournalDraft, id: generateId("jv") };
+        setJournalEntries(prev => [newJournal, ...prev]);
+        persistJournalEntryDB(newJournal).catch(err => console.error("Error saving opening journal to DB:", err));
+      }
+    }
+
+    // 4. Log in product change history
+    const changeLog: ProductChangeLog = {
+      id: generateId("pch"),
+      organizationId: organization.id,
+      productId: newProduct.id,
+      productName: newProduct.nameAr,
+      productSku: newProduct.sku,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      changeType: "created",
+      fieldName: "product",
+      oldValue: "---",
+      newValue: `تم إنشاء المنتج برصيد افتتاحي ${totalOpeningQty} قطعة بقيمة ${totalOpeningQty * newProduct.costPrice}`,
+      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+    };
+    setProductChangeLogs(prev => [changeLog, ...prev]);
+    persistProductChangeLogDB(changeLog).catch(err => console.error("Error saving change log to DB:", err));
+
+    // 5. Audit Log
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -253,14 +359,175 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "create",
       entityType: "Product",
       entityId: newProduct.id,
-      details: `إضافة منتج جديد: ${newProduct.nameAr} (${newProduct.sku})`,
+      details: `إضافة منتج جديد: ${newProduct.nameAr} (${newProduct.sku}) برصيد افتتاحي ${totalOpeningQty}`,
     });
+
+    // 6. Persist to DB
+    persistProductDB(newProduct).catch(err => console.error("Error saving product to DB:", err));
     return newProduct;
   };
 
   const updateProduct = (id: string, p: Partial<Product>) => {
+    const currentProd = products.find(prod => prod.id === id);
+    if (!currentProd) return;
+
+    const logsToCreate: ProductChangeLog[] = [];
+    const nowStr = new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    if (p.nameAr !== undefined && p.nameAr !== currentProd.nameAr) {
+      logsToCreate.push({
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: p.nameAr,
+        productSku: currentProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "name",
+        fieldName: "اسم المنتج بالعربية",
+        oldValue: currentProd.nameAr,
+        newValue: p.nameAr,
+        createdAt: nowStr,
+      });
+    }
+
+    if (p.costPrice !== undefined && p.costPrice !== currentProd.costPrice) {
+      logsToCreate.push({
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: currentProd.nameAr,
+        productSku: currentProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "price",
+        fieldName: "سعر التكلفة",
+        oldValue: String(currentProd.costPrice),
+        newValue: String(p.costPrice),
+        createdAt: nowStr,
+      });
+    }
+
+    if (p.sellingPrice !== undefined && p.sellingPrice !== currentProd.sellingPrice) {
+      logsToCreate.push({
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: currentProd.nameAr,
+        productSku: currentProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "price",
+        fieldName: "سعر البيع",
+        oldValue: String(currentProd.sellingPrice),
+        newValue: String(p.sellingPrice),
+        createdAt: nowStr,
+      });
+    }
+
+    if (p.categoryId !== undefined && p.categoryId !== currentProd.categoryId) {
+      const oldCat = categories.find(c => c.id === currentProd.categoryId)?.nameAr || currentProd.categoryId;
+      const newCat = categories.find(c => c.id === p.categoryId)?.nameAr || p.categoryId;
+      logsToCreate.push({
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: currentProd.nameAr,
+        productSku: currentProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "category",
+        fieldName: "التصنيف",
+        oldValue: oldCat,
+        newValue: newCat,
+        createdAt: nowStr,
+      });
+    }
+
+    if (p.imageUrl !== undefined && p.imageUrl !== currentProd.imageUrl) {
+      logsToCreate.push({
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: currentProd.nameAr,
+        productSku: currentProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "image",
+        fieldName: "صورة المنتج",
+        oldValue: currentProd.imageUrl ? "صورة سابقة" : "بدون صورة",
+        newValue: p.imageUrl ? "تم تحديث الصورة" : "تم حذف الصورة",
+        createdAt: nowStr,
+      });
+    }
+
+    // Stock adjustments if warehouseStock changed
+    if (p.warehouseStock) {
+      for (const [whId, newQty] of Object.entries(p.warehouseStock)) {
+        const oldQty = currentProd.warehouseStock[whId] || 0;
+        const diff = Number(newQty) - oldQty;
+        if (diff !== 0) {
+          const whName = warehouses.find(w => w.id === whId)?.nameAr || whId;
+          logsToCreate.push({
+            id: generateId("pch"),
+            organizationId: organization.id,
+            productId: id,
+            productName: currentProd.nameAr,
+            productSku: currentProd.sku,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            changeType: "stock_adjustment",
+            fieldName: `رصيد المستودع (${whName})`,
+            oldValue: `${oldQty}`,
+            newValue: `${newQty}`,
+            createdAt: nowStr,
+          });
+
+          // Add adjustment stock movement
+          const newSm: StockMovement = {
+            id: generateId("sm"),
+            organizationId: organization.id,
+            productId: id,
+            warehouseId: whId,
+            movementType: "adjustment",
+            referenceNumber: `ADJ-${currentProd.sku}`,
+            date: new Date().toISOString().split("T")[0],
+            quantity: diff,
+            unitCost: p.costPrice ?? currentProd.costPrice,
+            totalCost: diff * (p.costPrice ?? currentProd.costPrice),
+            balanceQuantity: (currentProd.warehouseStock[whId] || 0) + diff,
+            partnerName: "تسوية جردية",
+            partnerType: "adjustment",
+            notes: `تعديل رصيد المخزن (${diff > 0 ? "+" : ""}${diff})`,
+          };
+          setStockMovements(prev => [newSm, ...prev]);
+
+          // Generate adjustment journal entry
+          const adjJournal = generateStockAdjustmentJournal(
+            organization.id,
+            activeBranchId,
+            currentProd,
+            diff,
+            p.costPrice ?? currentProd.costPrice,
+            accounts,
+            currentUser.name,
+            `تسوية رصيد الصنف ${currentProd.nameAr}`
+          );
+          const newJv: JournalEntry = { ...adjJournal, id: generateId("jv") };
+          setJournalEntries(prev => [newJv, ...prev]);
+          persistJournalEntryDB(newJv).catch(e => console.error(e));
+        }
+      }
+    }
+
+    // Update product state & DB
     setProducts(prev => prev.map(item => item.id === id ? { ...item, ...p } : item));
     updateProductDB(id, p).catch(err => console.error("Error updating product in DB:", err));
+
+    if (logsToCreate.length > 0) {
+      setProductChangeLogs(prev => [...logsToCreate, ...prev]);
+      logsToCreate.forEach(log => persistProductChangeLogDB(log).catch(e => console.error(e)));
+    }
 
     addAuditLog({
       organizationId: organization.id,
@@ -269,13 +536,33 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "update",
       entityType: "Product",
       entityId: id,
-      details: `تعديل بيانات المنتج: ${id}`,
+      details: `تعديل بيانات المنتج: ${currentProd.nameAr} (${currentProd.sku})`,
     });
   };
 
   const deleteProduct = (id: string) => {
+    const prod = products.find(p => p.id === id);
     setProducts(prev => prev.filter(item => item.id !== id));
     deleteProductDB(id).catch(err => console.error("Error deleting product from DB:", err));
+
+    if (prod) {
+      const changeLog: ProductChangeLog = {
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: id,
+        productName: prod.nameAr,
+        productSku: prod.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "deleted",
+        fieldName: "product",
+        oldValue: `المنتج: ${prod.nameAr} (${prod.sku})`,
+        newValue: "محذوف",
+        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+      };
+      setProductChangeLogs(prev => [changeLog, ...prev]);
+      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
+    }
 
     addAuditLog({
       organizationId: organization.id,
@@ -284,7 +571,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "delete",
       entityType: "Product",
       entityId: id,
-      details: `حذف المنتج: ${id}`,
+      details: `حذف المنتج: ${prod?.nameAr || id}`,
     });
   };
 
@@ -307,7 +594,158 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const addStockMovement = (m: Omit<StockMovement, "id">) => {
     const newMovement: StockMovement = { ...m, id: generateId("sm") };
-    setStockMovements(prev => [...prev, newMovement]);
+    setStockMovements(prev => [newMovement, ...prev]);
+  };
+
+  const updateStockMovement = (id: string, updatedMovement: Partial<StockMovement>) => {
+    const oldMovement = stockMovements.find(sm => sm.id === id);
+    if (!oldMovement) return;
+
+    const targetProd = products.find(p => p.id === oldMovement.productId);
+    const oldQty = oldMovement.quantity;
+    const newQty = updatedMovement.quantity !== undefined ? updatedMovement.quantity : oldQty;
+    const qtyDiff = newQty - oldQty;
+
+    // 1. Adjust product warehouse stock
+    if (targetProd && qtyDiff !== 0) {
+      const whId = updatedMovement.warehouseId || oldMovement.warehouseId;
+      const currentWhQty = targetProd.warehouseStock[whId] || 0;
+      const updatedWhStock = {
+        ...targetProd.warehouseStock,
+        [whId]: Math.max(0, currentWhQty + qtyDiff),
+      };
+
+      setProducts(prev => prev.map(p => p.id === targetProd.id ? { ...p, warehouseStock: updatedWhStock } : p));
+      updateProductDB(targetProd.id, { warehouseStock: updatedWhStock }).catch(e => console.error(e));
+    }
+
+    // 2. Update stock movement state & DB
+    setStockMovements(prev => prev.map(sm => sm.id === id ? { ...sm, ...updatedMovement } : sm));
+    updateStockMovementDB(id, updatedMovement).catch(e => console.error(e));
+
+    // 3. Log change & audit
+    if (targetProd) {
+      const changeLog: ProductChangeLog = {
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: targetProd.id,
+        productName: targetProd.nameAr,
+        productSku: targetProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "stock_adjustment",
+        fieldName: "تعديل حركة كاردكس",
+        oldValue: `كمية سابقة: ${oldQty}، تكلفة: ${oldMovement.unitCost}`,
+        newValue: `كمية جديدة: ${newQty}، تكلفة: ${updatedMovement.unitCost ?? oldMovement.unitCost}`,
+        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+      };
+      setProductChangeLogs(prev => [changeLog, ...prev]);
+      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
+    }
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "StockMovement",
+      entityId: id,
+      details: `تعديل حركة كاردكس المخزن رقم ${oldMovement.referenceNumber} للصنف ${targetProd?.nameAr || id}`,
+    });
+  };
+
+  const deleteStockMovement = (id: string) => {
+    const movement = stockMovements.find(sm => sm.id === id);
+    if (!movement) return;
+
+    const targetProd = products.find(p => p.id === movement.productId);
+
+    // 1. Reverse stock
+    if (targetProd) {
+      const whId = movement.warehouseId;
+      const currentWhQty = targetProd.warehouseStock[whId] || 0;
+      const updatedWhStock = {
+        ...targetProd.warehouseStock,
+        [whId]: Math.max(0, currentWhQty - movement.quantity),
+      };
+
+      setProducts(prev => prev.map(p => p.id === targetProd.id ? { ...p, warehouseStock: updatedWhStock } : p));
+      updateProductDB(targetProd.id, { warehouseStock: updatedWhStock }).catch(e => console.error(e));
+    }
+
+    // 2. Remove movement
+    setStockMovements(prev => prev.filter(sm => sm.id !== id));
+    deleteStockMovementDB(id).catch(e => console.error(e));
+
+    // 3. Log audit
+    if (targetProd) {
+      const changeLog: ProductChangeLog = {
+        id: generateId("pch"),
+        organizationId: organization.id,
+        productId: targetProd.id,
+        productName: targetProd.nameAr,
+        productSku: targetProd.sku,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        changeType: "deleted",
+        fieldName: "حذف حركة كاردكس",
+        oldValue: `حركة: ${movement.movementType} (${movement.quantity})`,
+        newValue: "محذوفة",
+        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+      };
+      setProductChangeLogs(prev => [changeLog, ...prev]);
+      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
+    }
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "delete",
+      entityType: "StockMovement",
+      entityId: id,
+      details: `حذف حركة كاردكس ${movement.movementType} رقم ${movement.referenceNumber}`,
+    });
+  };
+
+  const createPeriodClosing = (closing: Omit<PeriodClosing, "id" | "createdAt">): PeriodClosing => {
+    const newClosing: PeriodClosing = {
+      ...closing,
+      id: generateId("close"),
+      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
+    };
+
+    // 1. Generate closing journal entry if cogsValue is calculated
+    if (newClosing.cogsValue > 0) {
+      const closingJvDraft = generatePeriodClosingJournal(
+        organization.id,
+        activeBranchId,
+        newClosing.periodLabel,
+        newClosing.closingDate,
+        newClosing.cogsValue,
+        accounts,
+        currentUser.name
+      );
+      const newJv: JournalEntry = { ...closingJvDraft, id: generateId("jv") };
+      setJournalEntries(prev => [newJv, ...prev]);
+      persistJournalEntryDB(newJv).catch(e => console.error(e));
+      newClosing.journalEntryId = newJv.id;
+    }
+
+    setPeriodClosings(prev => [newClosing, ...prev]);
+    persistPeriodClosingDB(newClosing).catch(e => console.error(e));
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "status_change",
+      entityType: "PeriodClosing",
+      entityId: newClosing.id,
+      details: `إقفال الفترة المحاسبية (${newClosing.periodLabel}) بقيمة مخزون آخر مدة ${newClosing.closingInventoryValue}`,
+    });
+
+    return newClosing;
   };
 
   // ==========================================
@@ -368,10 +806,32 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     };
 
     let totalCogs = 0;
+    const movementsToCreate: StockMovement[] = [];
 
-    // Deduct Stock
+    // Deduct Stock & Create Stock Movements
     inv.items.forEach(item => {
       totalCogs += item.costPrice * item.quantity;
+      
+      // Stock Movement with customer partner name
+      movementsToCreate.push({
+        id: generateId("sm"),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "sales_issue",
+        referenceId: newInvoice.id,
+        referenceNumber: newInvoice.invoiceNumber,
+        date: newInvoice.date,
+        quantity: -Math.abs(item.quantity),
+        unitCost: item.costPrice,
+        totalCost: -Math.abs(item.costPrice * item.quantity),
+        balanceQuantity: 0,
+        partnerId: newInvoice.customerId,
+        partnerName: newInvoice.customerName,
+        partnerType: "customer",
+        notes: `صرف مبيعات فاتورة ${newInvoice.invoiceNumber}`,
+      });
+
       setProducts(prev => prev.map(p => {
         if (p.id === item.productId) {
           const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
@@ -386,6 +846,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         return p;
       }));
     });
+
+    if (movementsToCreate.length > 0) {
+      setStockMovements(prev => [...movementsToCreate, ...prev]);
+    }
 
     // Customer Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
@@ -419,6 +883,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const deleteSalesInvoice = (id: string) => {
     setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
+    setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
     deleteSalesInvoiceDB(id).catch(err => console.error("Error deleting sales invoice from DB:", err));
   };
 
@@ -428,8 +893,29 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       id: generateId("pinv"),
     };
 
-    // Add Stock
+    const movementsToCreate: StockMovement[] = [];
+
+    // Add Stock & Create Stock Movements
     inv.items.forEach(item => {
+      movementsToCreate.push({
+        id: generateId("sm"),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "purchase_receipt",
+        referenceId: newInvoice.id,
+        referenceNumber: newInvoice.invoiceNumber,
+        date: newInvoice.date,
+        quantity: Math.abs(item.quantity),
+        unitCost: item.unitCost,
+        totalCost: Math.abs(item.unitCost * item.quantity),
+        balanceQuantity: 0,
+        partnerId: newInvoice.supplierId,
+        partnerName: newInvoice.supplierName,
+        partnerType: "supplier",
+        notes: `توريد مشتريات فاتورة ${newInvoice.invoiceNumber}`,
+      });
+
       setProducts(prev => prev.map(p => {
         if (p.id === item.productId) {
           const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
@@ -444,6 +930,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         return p;
       }));
     });
+
+    if (movementsToCreate.length > 0) {
+      setStockMovements(prev => [...movementsToCreate, ...prev]);
+    }
 
     // Supplier Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
@@ -476,6 +966,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const deletePurchaseInvoice = (id: string) => {
     setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
+    setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
     deletePurchaseInvoiceDB(id).catch(err => console.error("Error deleting purchase invoice from DB:", err));
   };
 
@@ -632,6 +1123,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setJournalEntries(initialJournalEntries);
     setNotifications(initialNotifications);
     setAuditLogs(initialAuditLogs);
+    setProductChangeLogs([]);
+    setPeriodClosings([]);
   };
 
   return (
@@ -642,8 +1135,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         currentUser, setCurrentUser, organization, setOrganization,
         branches, activeBranchId, setActiveBranchId, users,
         products, categories, units, warehouses, stockMovements,
+        productChangeLogs, periodClosings,
         addProduct, updateProduct, deleteProduct,
         addWarehouse, updateWarehouse, deleteWarehouse, addStockMovement,
+        updateStockMovement, deleteStockMovement, addProductChangeLog, createPeriodClosing, hasPermission,
         customers, suppliers, addCustomer, updateCustomer, deleteCustomer,
         addSupplier, updateSupplier, deleteSupplier,
         salesInvoices, purchaseInvoices, createSalesInvoice, deleteSalesInvoice,

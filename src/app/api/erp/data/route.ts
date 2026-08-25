@@ -42,6 +42,8 @@ export async function GET() {
       auditLogsRes,
       categoriesRes,
       unitsRes,
+      changeHistoryRes,
+      periodClosingsRes,
     ] = await Promise.all([
       supabaseAdmin.from("customers").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("suppliers").select("*").order("created_at", { ascending: false }),
@@ -62,6 +64,8 @@ export async function GET() {
       supabaseAdmin.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100),
       supabaseAdmin.from("product_categories").select("*"),
       supabaseAdmin.from("product_units").select("*"),
+      supabaseAdmin.from("product_change_history").select("*").order("created_at", { ascending: false }).limit(200),
+      supabaseAdmin.from("period_closings").select("*").order("closing_date", { ascending: false }),
     ]);
 
     // Build warehouse stock map per product
@@ -88,6 +92,7 @@ export async function GET() {
       minStockLevel: Number(p.min_stock_level) || 5,
       status: p.status || "active",
       warehouseStock: stockMap[p.id] || {},
+      imageUrl: p.image_url || (p.description && (p.description.startsWith("data:image") || p.description.startsWith("http")) ? p.description : ""),
     }));
 
     // Map Customers
@@ -342,6 +347,9 @@ export async function GET() {
       unitCost: Number(sm.unit_cost) || 0,
       totalCost: Number(sm.total_cost) || 0,
       balanceQuantity: Number(sm.balance_quantity) || 0,
+      partnerId: sm.partner_id || undefined,
+      partnerName: sm.partner_name || undefined,
+      partnerType: sm.partner_type || undefined,
       notes: sm.notes || "",
     }));
 
@@ -356,6 +364,40 @@ export async function GET() {
       entityId: log.entity_id,
       details: log.details,
       createdAt: log.created_at,
+    }));
+
+    // Map Product Change History Logs
+    const productChangeLogs = (changeHistoryRes?.data || []).map((ch: any) => ({
+      id: ch.id,
+      organizationId: ch.organization_id,
+      productId: ch.product_id,
+      productName: ch.product_name,
+      productSku: ch.product_sku,
+      userId: ch.user_id,
+      userName: ch.user_name,
+      changeType: ch.change_type,
+      fieldName: ch.field_name,
+      oldValue: ch.old_value || "",
+      newValue: ch.new_value || "",
+      createdAt: ch.created_at,
+    }));
+
+    // Map Period Closings
+    const periodClosings = (periodClosingsRes?.data || []).map((pc: any) => ({
+      id: pc.id,
+      organizationId: pc.organization_id,
+      branchId: pc.branch_id,
+      periodType: pc.period_type,
+      periodLabel: pc.period_label,
+      closingDate: pc.closing_date,
+      openingInventoryValue: Number(pc.opening_inventory_value) || 0,
+      purchasesValue: Number(pc.purchases_value) || 0,
+      closingInventoryValue: Number(pc.closing_inventory_value) || 0,
+      cogsValue: Number(pc.cogs_value) || 0,
+      journalEntryId: pc.journal_entry_id,
+      notes: pc.notes || "",
+      createdBy: pc.created_by,
+      createdAt: pc.created_at,
     }));
 
     return NextResponse.json({
@@ -374,6 +416,8 @@ export async function GET() {
         journalEntries,
         stockMovements,
         auditLogs,
+        productChangeLogs,
+        periodClosings,
       },
     });
   } catch (error: any) {
@@ -397,7 +441,7 @@ export async function POST(request: Request) {
       // PRODUCTS (CREATE, UPDATE, DELETE)
       // ==========================================
       case "create_product": {
-        const { id, organizationId, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock } = payload;
+        const { id, organizationId, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock, imageUrl } = payload;
         
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
@@ -418,6 +462,7 @@ export async function POST(request: Request) {
           tax_rate: Number(taxRate) || 14,
           min_stock_level: Number(minStockLevel) || 5,
           status: status || "active",
+          image_url: imageUrl || null,
         };
 
         if (validId) insertRow.id = validId;
@@ -430,21 +475,43 @@ export async function POST(request: Request) {
 
         if (prodErr) throw prodErr;
 
-        // Upsert warehouse stock
+        // Upsert warehouse stock & create opening balance stock movements
         if (warehouseStock && Object.keys(warehouseStock).length > 0 && prod?.id) {
           const stockRows: any[] = [];
+          const smRows: any[] = [];
+
           for (const [whId, qty] of Object.entries(warehouseStock)) {
             const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
-            if (validWhId && Number(qty) > 0) {
+            const numQty = Number(qty) || 0;
+            if (validWhId && numQty > 0) {
               stockRows.push({
                 product_id: prod.id,
                 warehouse_id: validWhId,
-                quantity: Number(qty) || 0,
+                quantity: numQty,
+              });
+
+              smRows.push({
+                organization_id: validOrgId,
+                product_id: prod.id,
+                warehouse_id: validWhId,
+                movement_type: "opening_balance",
+                reference_number: `OB-${sku}`,
+                date: new Date().toISOString().split("T")[0],
+                quantity: numQty,
+                unit_cost: Number(costPrice) || 0,
+                total_cost: numQty * (Number(costPrice) || 0),
+                balance_quantity: numQty,
+                partner_name: "رصيد افتتاحي",
+                partner_type: "opening",
+                notes: "رصيد مخزون أول المدة",
               });
             }
           }
           if (stockRows.length > 0) {
             await supabaseAdmin.from("product_warehouse_stock").upsert(stockRows);
+          }
+          if (smRows.length > 0) {
+            await supabaseAdmin.from("stock_movements").insert(smRows);
           }
         }
 
@@ -452,7 +519,7 @@ export async function POST(request: Request) {
       }
 
       case "update_product": {
-        const { id, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock } = payload;
+        const { id, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock, imageUrl } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
 
@@ -469,6 +536,7 @@ export async function POST(request: Request) {
         if (taxRate !== undefined) updateRow.tax_rate = Number(taxRate);
         if (minStockLevel !== undefined) updateRow.min_stock_level = Number(minStockLevel);
         if (status !== undefined) updateRow.status = status;
+        if (imageUrl !== undefined) updateRow.image_url = imageUrl || null;
 
         const { data: prod, error: prodErr } = await supabaseAdmin
           .from("products")
@@ -493,6 +561,113 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, data: prod });
+      }
+
+      // ==========================================
+      // STOCK MOVEMENTS (UPDATE, DELETE)
+      // ==========================================
+      case "update_stock_movement": {
+        const { id, quantity, unitCost, totalCost, date, notes, partnerName, warehouseId } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid movement ID required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (quantity !== undefined) updateRow.quantity = Number(quantity);
+        if (unitCost !== undefined) updateRow.unit_cost = Number(unitCost);
+        if (totalCost !== undefined) updateRow.total_cost = Number(totalCost);
+        if (date !== undefined) updateRow.date = date;
+        if (notes !== undefined) updateRow.notes = notes;
+        if (partnerName !== undefined) updateRow.partner_name = partnerName;
+        if (warehouseId !== undefined) updateRow.warehouse_id = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+
+        const { data: sm, error: smErr } = await supabaseAdmin
+          .from("stock_movements")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (smErr) throw smErr;
+        return NextResponse.json({ success: true, data: sm });
+      }
+
+      case "delete_stock_movement": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid movement ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("stock_movements").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // PRODUCT CHANGE LOGS (CREATE)
+      // ==========================================
+      case "create_product_change_log": {
+        const { id, organizationId, productId, productName, productSku, userId, userName, changeType, fieldName, oldValue, newValue } = payload;
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validProdId = cleanUUID(productId, null);
+        if (!validProdId) return NextResponse.json({ success: false, message: "Valid product ID required" }, { status: 400 });
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          product_id: validProdId,
+          product_name: productName || "",
+          product_sku: productSku || "",
+          user_id: cleanUUID(userId, null),
+          user_name: userName || "النظام",
+          change_type: changeType || "stock_adjustment",
+          field_name: fieldName || "",
+          old_value: String(oldValue ?? ""),
+          new_value: String(newValue ?? ""),
+        };
+        const validId = cleanUUID(id, null);
+        if (validId) insertRow.id = validId;
+
+        const { data: log, error: logErr } = await supabaseAdmin
+          .from("product_change_history")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (logErr) console.warn("Could not persist product change log to DB:", logErr);
+        return NextResponse.json({ success: true, data: log });
+      }
+
+      // ==========================================
+      // PERIOD CLOSINGS (CREATE)
+      // ==========================================
+      case "create_period_closing": {
+        const { id, organizationId, branchId, periodType, periodLabel, closingDate, openingInventoryValue, purchasesValue, closingInventoryValue, cogsValue, journalEntryId, notes, createdBy } = payload;
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          period_type: periodType || "monthly",
+          period_label: periodLabel || "",
+          closing_date: closingDate || new Date().toISOString().split("T")[0],
+          opening_inventory_value: Number(openingInventoryValue) || 0,
+          purchases_value: Number(purchasesValue) || 0,
+          closing_inventory_value: Number(closingInventoryValue) || 0,
+          cogs_value: Number(cogsValue) || 0,
+          journal_entry_id: cleanUUID(journalEntryId, null),
+          notes: notes || null,
+          created_by: createdBy || "النظام",
+        };
+        const validId = cleanUUID(id, null);
+        if (validId) insertRow.id = validId;
+
+        const { data: pc, error: pcErr } = await supabaseAdmin
+          .from("period_closings")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (pcErr) console.warn("Could not persist period closing to DB:", pcErr);
+        return NextResponse.json({ success: true, data: pc });
       }
 
       case "delete_product": {

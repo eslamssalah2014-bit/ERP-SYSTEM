@@ -1,7 +1,8 @@
 import {
   Account, JournalEntry, JournalLine, SalesInvoice,
   PurchaseInvoice, CashReceipt, CashPayment, StockMovement,
-  StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier
+  StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier,
+  Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow
 } from "@/types/erp";
 
 export function generateSalesInvoiceJournal(
@@ -146,6 +147,167 @@ export function generatePurchaseInvoiceJournal(
   };
 }
 
+export function generateOpeningStockJournal(
+  organizationId: string,
+  branchId: string,
+  product: Product,
+  totalOpeningQty: number,
+  costPrice: number,
+  accounts: Account[],
+  createdBy: string
+): Omit<JournalEntry, "id"> | null {
+  const totalValue = totalOpeningQty * costPrice;
+  if (totalValue <= 0) return null;
+
+  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
+  const equityAccount = accounts.find(a => a.code === "3100" || a.code === "3200") || accounts.find(a => a.type === "equity") || accounts[0];
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_ob_inv",
+      accountId: invAccount.id,
+      accountCode: invAccount.code,
+      accountName: invAccount.nameAr,
+      debit: totalValue,
+      credit: 0,
+      description: `إثبات أصل مخزون أول المدة - الصنف: ${product.nameAr} (${product.sku}) - كمية ${totalOpeningQty}`,
+    },
+    {
+      id: "jl_ob_eq",
+      accountId: equityAccount.id,
+      accountCode: equityAccount.code,
+      accountName: equityAccount.nameAr,
+      debit: 0,
+      credit: totalValue,
+      description: `رأس المال / الأرصدة الافتتاحية مقابل مخزون أول المدة (${product.sku})`,
+    },
+  ];
+
+  return {
+    organizationId,
+    branchId,
+    entryNumber: `JV-OB-${product.sku}-${Date.now().toString().slice(-4)}`,
+    date: new Date().toISOString().split("T")[0],
+    referenceType: "opening_balance",
+    referenceId: product.id,
+    description: `قيد إثبات رصيد مخزون أول المدة للصنف ${product.nameAr} (${product.sku})`,
+    lines,
+    totalDebit: totalValue,
+    totalCredit: totalValue,
+    isBalanced: true,
+    status: "posted",
+    createdBy: createdBy || "النظام",
+  };
+}
+
+export function generateStockAdjustmentJournal(
+  organizationId: string,
+  branchId: string,
+  product: Product,
+  quantityDiff: number,
+  unitCost: number,
+  accounts: Account[],
+  createdBy: string,
+  notes?: string
+): Omit<JournalEntry, "id"> {
+  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
+  const cogsAccount = accounts.find(a => a.code === "5100") || accounts[0];
+  const totalAmount = Math.abs(quantityDiff) * unitCost;
+
+  const isAddition = quantityDiff > 0;
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_adj_1",
+      accountId: isAddition ? invAccount.id : cogsAccount.id,
+      accountCode: isAddition ? invAccount.code : cogsAccount.code,
+      accountName: isAddition ? invAccount.nameAr : cogsAccount.nameAr,
+      debit: totalAmount,
+      credit: 0,
+      description: isAddition
+        ? `تسوية زيادة مخزنية - الصنف ${product.nameAr} (${product.sku})`
+        : `تسوية عجز/صرف مخزني - الصنف ${product.nameAr} (${product.sku})`,
+    },
+    {
+      id: "jl_adj_2",
+      accountId: isAddition ? cogsAccount.id : invAccount.id,
+      accountCode: isAddition ? cogsAccount.code : invAccount.code,
+      accountName: isAddition ? cogsAccount.nameAr : invAccount.nameAr,
+      debit: 0,
+      credit: totalAmount,
+      description: isAddition
+        ? `تخفيض تكلفة بضاعة / تسوية مخزون (${product.sku})`
+        : `تخفيض أصل المخزون بالتسوية (${product.sku})`,
+    },
+  ];
+
+  return {
+    organizationId,
+    branchId,
+    entryNumber: `JV-ADJ-${product.sku}-${Date.now().toString().slice(-4)}`,
+    date: new Date().toISOString().split("T")[0],
+    referenceType: "adjustment",
+    referenceId: product.id,
+    description: `تسوية جردية وتعديل رصيد الصنف ${product.nameAr}: ${notes || ""}`,
+    lines,
+    totalDebit: totalAmount,
+    totalCredit: totalAmount,
+    isBalanced: true,
+    status: "posted",
+    createdBy: createdBy || "النظام",
+  };
+}
+
+export function generatePeriodClosingJournal(
+  organizationId: string,
+  branchId: string,
+  periodLabel: string,
+  closingDate: string,
+  cogsAdjustmentAmount: number,
+  accounts: Account[],
+  createdBy: string
+): Omit<JournalEntry, "id"> {
+  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
+  const cogsAccount = accounts.find(a => a.code === "5100") || accounts[0];
+  const amount = Math.abs(cogsAdjustmentAmount);
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_close_cogs",
+      accountId: cogsAccount.id,
+      accountCode: cogsAccount.code,
+      accountName: cogsAccount.nameAr,
+      debit: amount,
+      credit: 0,
+      description: `إثبات تكلفة البضاعة المباعة لإقفال فترة ${periodLabel}`,
+    },
+    {
+      id: "jl_close_inv",
+      accountId: invAccount.id,
+      accountCode: invAccount.code,
+      accountName: invAccount.nameAr,
+      debit: 0,
+      credit: amount,
+      description: `تسوية رصيد مخزون آخر المدة لإقفال فترة ${periodLabel}`,
+    },
+  ];
+
+  return {
+    organizationId,
+    branchId,
+    entryNumber: `JV-CLOSE-${periodLabel.replace(/\s+/g, "_")}`,
+    date: closingDate,
+    referenceType: "period_closing",
+    description: `قيد إقفال المخزون وتكلفة المبيعات للفترة ${periodLabel}`,
+    lines,
+    totalDebit: amount,
+    totalCredit: amount,
+    isBalanced: true,
+    status: "posted",
+    createdBy: createdBy || "النظام",
+  };
+}
+
 export function generateReceiptJournal(
   receipt: CashReceipt,
   treasuryGlAccountId: string,
@@ -242,14 +404,31 @@ export function generatePaymentJournal(
   };
 }
 
+/**
+ * Enhanced computeStockKardex
+ * - Opening balance is strictly sorted as the primary record
+ * - Running balance starts with opening balance and accumulates accurately
+ * - Partner name (Customer / Supplier / Opening Balance) is attached
+ */
 export function computeStockKardex(
   productId: string,
   warehouseId: string,
-  allMovements: StockMovement[]
+  allMovements: StockMovement[],
+  warehouses: Warehouse[] = [],
+  customers: Customer[] = [],
+  suppliers: Supplier[] = []
 ): StockCardRecord[] {
   const filtered = allMovements
     .filter(m => m.productId === productId && (warehouseId === "all" || m.warehouseId === warehouseId))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => {
+      // Prioritize opening_balance on same date or as initial transaction
+      const timeA = new Date(a.date).getTime();
+      const timeB = new Date(b.date).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      if (a.movementType === "opening_balance") return -1;
+      if (b.movementType === "opening_balance") return 1;
+      return 0;
+    });
 
   let runningQty = 0;
   let runningCost = 0;
@@ -262,18 +441,145 @@ export function computeStockKardex(
     runningQty += m.quantity;
     runningCost = runningQty * m.unitCost;
 
+    // Resolve Partner Name & Type
+    let partnerName = m.partnerName;
+    let partnerType = m.partnerType;
+
+    if (!partnerName) {
+      if (m.movementType === "opening_balance") {
+        partnerName = "رصيد افتتاحي";
+        partnerType = "opening";
+      } else if (m.movementType === "sales_issue" || m.movementType === "sales_return") {
+        const cust = customers.find(c => c.id === m.partnerId || c.id === m.referenceId);
+        partnerName = cust?.nameAr || "عميل مبيعات";
+        partnerType = "customer";
+      } else if (m.movementType === "purchase_receipt" || m.movementType === "purchase_return") {
+        const supp = suppliers.find(s => s.id === m.partnerId || s.id === m.referenceId);
+        partnerName = supp?.nameAr || "مورد مشتريات";
+        partnerType = "supplier";
+      } else if (m.movementType.startsWith("transfer")) {
+        const wh = warehouses.find(w => w.id === m.warehouseId);
+        partnerName = wh ? `مستودع: ${wh.nameAr}` : "تحويل مستودعي";
+        partnerType = "warehouse";
+      } else {
+        partnerName = m.notes || "حركة مخزنية";
+        partnerType = "adjustment";
+      }
+    }
+
+    const wh = warehouses.find(w => w.id === m.warehouseId);
+
     return {
+      movementId: m.id,
       date: m.date,
       movementType: m.movementType,
       referenceNumber: m.referenceNumber,
+      warehouseId: m.warehouseId,
+      warehouseName: wh?.nameAr || "",
+      partnerName,
+      partnerType,
       inQuantity: inQty,
       outQuantity: outQty,
       unitCost: m.unitCost,
-      totalCost: Math.abs(m.totalCost),
+      totalCost: Math.abs(m.totalCost || (m.quantity * m.unitCost)),
       balanceQuantity: runningQty,
       balanceCost: runningCost,
       runningBalance: runningQty,
       notes: m.notes,
+    };
+  });
+}
+
+/**
+ * Computes multi-criteria Stock Balance Report
+ */
+export function computeStockBalanceReport(
+  products: Product[],
+  categories: ProductCategory[],
+  units: ProductUnit[],
+  warehouses: Warehouse[],
+  stockMovements: StockMovement[],
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    warehouseId?: string;
+    categoryId?: string;
+    productId?: string;
+  }
+): StockBalanceReportRow[] {
+  const { dateFrom, dateTo, warehouseId, categoryId, productId } = filters;
+
+  const filteredProducts = products.filter(p => {
+    if (productId && productId !== "all" && p.id !== productId) return false;
+    if (categoryId && categoryId !== "all" && p.categoryId !== categoryId) return false;
+    return true;
+  });
+
+  return filteredProducts.map(prod => {
+    const cat = categories.find(c => c.id === prod.categoryId);
+    const unit = units.find(u => u.id === prod.unitId);
+
+    // Get relevant movements for this product
+    const prodMovements = stockMovements.filter(m =>
+      m.productId === prod.id &&
+      (!warehouseId || warehouseId === "all" || m.warehouseId === warehouseId)
+    );
+
+    let openingQty = 0;
+    let inQty = 0;
+    let outQty = 0;
+
+    prodMovements.forEach(m => {
+      const mDate = m.date;
+      const isBeforeFrom = dateFrom ? mDate < dateFrom : false;
+      const isInRange = (!dateFrom || mDate >= dateFrom) && (!dateTo || mDate <= dateTo);
+
+      if (isBeforeFrom) {
+        openingQty += m.quantity;
+      } else if (isInRange) {
+        if (m.quantity > 0) inQty += m.quantity;
+        else outQty += Math.abs(m.quantity);
+      }
+    });
+
+    // If no dateFrom filter, opening is strictly the opening_balance movements
+    if (!dateFrom) {
+      openingQty = prodMovements
+        .filter(m => m.movementType === "opening_balance")
+        .reduce((sum, m) => sum + m.quantity, 0);
+      inQty = prodMovements
+        .filter(m => m.movementType !== "opening_balance" && m.quantity > 0 && (!dateTo || m.date <= dateTo))
+        .reduce((sum, m) => sum + m.quantity, 0);
+      outQty = prodMovements
+        .filter(m => m.quantity < 0 && (!dateTo || m.date <= dateTo))
+        .reduce((sum, m) => sum + Math.abs(m.quantity), 0);
+    }
+
+    const closingQty = openingQty + inQty - outQty;
+    const costPrice = prod.costPrice || 0;
+    const sellingPrice = prod.sellingPrice || 0;
+
+    return {
+      productId: prod.id,
+      sku: prod.sku,
+      barcode: prod.barcode,
+      nameAr: prod.nameAr,
+      nameEn: prod.nameEn,
+      categoryId: prod.categoryId,
+      categoryNameAr: cat?.nameAr || "غير مصنف",
+      categoryNameEn: cat?.nameEn || "Uncategorized",
+      unitSymbol: unit?.symbol || "قطعة",
+      imageUrl: prod.imageUrl,
+      costPrice,
+      sellingPrice,
+      openingQuantity: openingQty,
+      openingValue: openingQty * costPrice,
+      inQuantity: inQty,
+      inValue: inQty * costPrice,
+      outQuantity: outQty,
+      outValue: outQty * costPrice,
+      closingQuantity: closingQty,
+      closingValue: closingQty * costPrice,
     };
   });
 }
@@ -332,7 +638,10 @@ export function computeTrialBalance(
 
 export function computeIncomeStatement(
   accounts: Account[],
-  entries: JournalEntry[]
+  entries: JournalEntry[],
+  products: Product[] = [],
+  purchaseInvoices: PurchaseInvoice[] = [],
+  stockMovements: StockMovement[] = []
 ) {
   const revenues = accounts.filter(a => a.type === "revenue");
   const cogs = accounts.filter(a => a.code.startsWith("51"));
@@ -344,6 +653,20 @@ export function computeIncomeStatement(
   const totalExpenses = expenses.reduce((s, a) => s + a.balance, 0);
   const netIncome = grossProfit - totalExpenses;
 
+  // Periodic Inventory COGS Formulation: COGS = Opening Inventory + Purchases - Closing Inventory
+  const openingInventoryValue = stockMovements
+    .filter(m => m.movementType === "opening_balance")
+    .reduce((sum, m) => sum + (m.quantity * m.unitCost), 0);
+
+  const purchasesValue = purchaseInvoices.reduce((sum, pinv) => sum + pinv.subtotal, 0);
+
+  const closingInventoryValue = products.reduce((sum, p) => {
+    const qty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
+    return sum + (qty * p.costPrice);
+  }, 0);
+
+  const periodicCOGS = Math.max(0, openingInventoryValue + purchasesValue - closingInventoryValue);
+
   return {
     revenues,
     cogs,
@@ -353,6 +676,10 @@ export function computeIncomeStatement(
     grossProfit,
     totalExpenses,
     netIncome,
+    openingInventoryValue,
+    purchasesValue,
+    closingInventoryValue,
+    periodicCOGS,
   };
 }
 

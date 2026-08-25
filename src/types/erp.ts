@@ -97,6 +97,7 @@ export interface Product {
   maxStockLevel?: number;
   status: 'active' | 'inactive' | 'archived';
   warehouseStock: { [warehouseId: string]: number };
+  imageUrl?: string;
 }
 
 export type StockMovementType =
@@ -122,13 +123,21 @@ export interface StockMovement {
   unitCost: number;
   totalCost: number;
   balanceQuantity: number;
+  partnerId?: string;
+  partnerName?: string;
+  partnerType?: 'customer' | 'supplier' | 'opening' | 'warehouse' | 'adjustment';
   notes?: string;
 }
 
 export interface StockCardRecord {
+  movementId?: string;
   date: string;
   movementType: StockMovementType;
   referenceNumber: string;
+  warehouseId?: string;
+  warehouseName?: string;
+  partnerName?: string;
+  partnerType?: string;
   inQuantity: number;
   outQuantity: number;
   unitCost: number;
@@ -443,3 +452,71 @@ export interface Notification {
   read: boolean;
   createdAt: string;
 }
+
+export type ProductChangeType =
+  | 'name'
+  | 'price'
+  | 'category'
+  | 'opening_balance'
+  | 'stock_adjustment'
+  | 'image'
+  | 'unit'
+  | 'status'
+  | 'created'
+  | 'deleted';
+
+export interface ProductChangeLog {
+  id: string;
+  organizationId: string;
+  productId: string;
+  productName: string;
+  productSku: string;
+  userId?: string;
+  userName: string;
+  changeType: ProductChangeType;
+  fieldName: string;
+  oldValue: string;
+  newValue: string;
+  createdAt: string;
+}
+
+export interface PeriodClosing {
+  id: string;
+  organizationId: string;
+  branchId?: string;
+  periodType: 'monthly' | 'quarterly' | 'yearly';
+  periodLabel: string;
+  closingDate: string;
+  openingInventoryValue: number;
+  purchasesValue: number;
+  closingInventoryValue: number;
+  cogsValue: number;
+  journalEntryId?: string;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface StockBalanceReportRow {
+  productId: string;
+  sku: string;
+  barcode: string;
+  nameAr: string;
+  nameEn: string;
+  categoryId: string;
+  categoryNameAr: string;
+  categoryNameEn: string;
+  unitSymbol: string;
+  imageUrl?: string;
+  costPrice: number;
+  sellingPrice: number;
+  openingQuantity: number;
+  openingValue: number;
+  inQuantity: number;
+  inValue: number;
+  outQuantity: number;
+  outValue: number;
+  closingQuantity: number;
+  closingValue: number;
+}
+

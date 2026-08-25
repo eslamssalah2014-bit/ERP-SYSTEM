@@ -1,6 +1,7 @@
 import {
   Product, Customer, Supplier, SalesInvoice, PurchaseInvoice,
-  Warehouse, CostCenter, CheckRecord, JournalEntry, CashReceipt, CashPayment
+  Warehouse, CostCenter, CheckRecord, JournalEntry, Account, TreasuryAccount,
+  StockMovement, AuditLog, ProductChangeLog, PeriodClosing
 } from "@/types/erp";
 
 export interface HydratedERPData {
@@ -11,12 +12,14 @@ export interface HydratedERPData {
   purchaseInvoices: PurchaseInvoice[];
   warehouses: Warehouse[];
   costCenters: CostCenter[];
-  accounts: any[];
-  treasuryAccounts: any[];
+  accounts: Account[];
+  treasuryAccounts: TreasuryAccount[];
   checks: CheckRecord[];
   journalEntries: JournalEntry[];
-  stockMovements: any[];
-  auditLogs: any[];
+  stockMovements: StockMovement[];
+  auditLogs: AuditLog[];
+  productChangeLogs?: ProductChangeLog[];
+  periodClosings?: PeriodClosing[];
 }
 
 /**
@@ -43,7 +46,7 @@ export async function fetchFullERPData(): Promise<HydratedERPData | null> {
 /**
  * Execute DB mutation on Supabase via server API
  */
-async function mutateERP(action: string, payload: any): Promise<{ success: boolean; data?: any; error?: string }> {
+async function mutateERP(action: string, payload: unknown): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
     const res = await fetch("/api/erp/data", {
       method: "POST",
@@ -56,9 +59,10 @@ async function mutateERP(action: string, payload: any): Promise<{ success: boole
       return { success: false, error: json.error || json.message };
     }
     return { success: true, data: json.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errMessage = error instanceof Error ? error.message : "Network error";
     console.error(`Network error during DB mutation [${action}]:`, error);
-    return { success: false, error: error.message || "Network error" };
+    return { success: false, error: errMessage };
   }
 }
 
@@ -131,6 +135,24 @@ export async function persistPurchaseInvoiceDB(inv: PurchaseInvoice) {
 }
 export async function deletePurchaseInvoiceDB(id: string) {
   return mutateERP("delete_purchase_invoice", { id });
+}
+
+// Stock Movements CRUD
+export async function updateStockMovementDB(id: string, sm: Partial<StockMovement>) {
+  return mutateERP("update_stock_movement", { id, ...sm });
+}
+export async function deleteStockMovementDB(id: string) {
+  return mutateERP("delete_stock_movement", { id });
+}
+
+// Product Change Logs
+export async function persistProductChangeLogDB(log: ProductChangeLog) {
+  return mutateERP("create_product_change_log", log);
+}
+
+// Period Closings
+export async function persistPeriodClosingDB(closing: PeriodClosing) {
+  return mutateERP("create_period_closing", closing);
 }
 
 // Checks CRUD
