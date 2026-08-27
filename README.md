@@ -23,41 +23,42 @@ A modern, full-stack Enterprise Resource Planning (ERP) web application built wi
 
 ---
 
-## 🌐 Deploy to Render (render.com)
+## 🌐 Deploy as a Standard Render Web Service (render.com)
 
-Sanad ERP includes a native **Render Blueprint (`render.yaml`)** and **multi-stage production `Dockerfile`**.
+You can deploy Sanad ERP directly on Render as a **Standard Web Service** without Blueprint configuration.
 
-### Option A: 1-Click Render Blueprint (Recommended)
-1. Fork or push this repository to your GitHub account: `https://github.com/eslamssalah2014-bit/ERP-SYSTEM.git`.
-2. Open your [Render Dashboard](https://dashboard.render.com/).
-3. Click **New +** → **Blueprint**.
-4. Connect your `ERP-SYSTEM` repository.
-5. Render will automatically detect `render.yaml` and configure the **sanad-erp** web service.
-6. Under **Environment Variables**, fill in your Supabase credentials:
-   - `NEXT_PUBLIC_SUPABASE_URL`: `https://your-project.supabase.co`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: `your-anon-key`
-   - `SUPABASE_SERVICE_ROLE_KEY`: `your-service-role-key`
-7. Click **Apply**. Render will build and deploy the service with automated health checks on `/api/health`.
+### Deployment Steps:
 
-### Option B: Manual Web Service on Render
-1. In Render Dashboard, click **New +** → **Web Service**.
-2. Select your GitHub repository.
-3. Configure the following settings:
-   - **Name**: `sanad-erp`
-   - **Region**: `Frankfurt` (EU) or `Oregon` (US)
-   - **Branch**: `main`
-   - **Runtime**: `Node` (or `Docker`)
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm run start`
+1. Open your [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** → **Web Service**.
+3. Select **Build and deploy from a Git repository** and connect: `https://github.com/eslamssalah2014-bit/ERP-SYSTEM.git`.
+4. Configure the Web Service settings:
+
+| Setting | Value | Notes |
+| :--- | :--- | :--- |
+| **Name** | `sanad-erp` | Or your preferred service name |
+| **Region** | `Frankfurt (EU Central)` | Recommended for MENA / Europe |
+| **Branch** | `main` | Production branch |
+| **Root Directory** | *(Leave blank)* | Uses root directory |
+| **Runtime** | `Node` | Standard Node.js runtime |
+| **Build Command** | `npm install && npm run build` | Installs deps and builds Next.js |
+| **Start Command** | `npm run start` | Runs Next.js production server |
+| **Instance Type** | `Free` or `Starter` | Works on both free and paid tiers |
+
+5. Under **Advanced Settings**, set:
    - **Health Check Path**: `/api/health`
-4. Add the required environment variables in the **Environment** tab:
-   ```env
-   NODE_ENV=production
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-   ```
-5. Click **Deploy Web Service**.
+
+6. Under **Environment Variables**, add the following 4 variables:
+
+| Key | Value | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Production environment mode |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://your-project-id.supabase.co` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `your-supabase-anon-key` | Public Anon Client Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | `your-supabase-service-role-key` | Server-side Admin Secret Key |
+
+7. Click **Create Web Service**.
+8. Render will build and launch the application. Once live, it will monitor `/api/health` and provide your live URL (e.g. `https://sanad-erp.onrender.com`).
 
 ---
 
