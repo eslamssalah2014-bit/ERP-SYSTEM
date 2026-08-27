@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_BRANCH_ID = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000004";
 const DEFAULT_POS_CUSTOMER_ID = "00000000-0000-0000-0000-000000000099";
+const DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000021";
+const DEFAULT_UNIT_ID = "00000000-0000-0000-0000-000000000011";
+const DEFAULT_TREASURY_ID = "00000000-0000-0000-0000-000000000301";
 
 // UUID Validator & Sanitizer
 function isValidUUID(str: any): boolean {
@@ -16,13 +23,135 @@ function cleanUUID(str: any, fallback: string | null = null): string | null {
   return isValidUUID(str) ? str : fallback;
 }
 
+function noCacheResponse(payload: any, status = 200) {
+  return NextResponse.json(payload, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
+  });
+}
+
+let hasSeededBaseline = false;
+async function ensureBaselineEntities(supabase: any) {
+  if (hasSeededBaseline) return;
+  try {
+    // 1. Ensure default Organization
+    await supabase.from("organizations").upsert([{
+      id: DEFAULT_ORG_ID,
+      name_ar: "شركة سند الدولية للحلول التكنولوجية",
+      name_en: "Sanad International Tech Solutions",
+      tax_number: "300123456700003",
+      commercial_register: "1010987654",
+      country: "EG",
+      currency: "EGP",
+      default_vat_rate: 14,
+      address: "مبنى 4، القرية الذكية، طريق مصر الإسكندرية الصحراوي، الجيزة، مصر",
+      plan_tier: "enterprise",
+    }], { onConflict: "id" });
+
+    // 2. Ensure default Branch
+    await supabase.from("branches").upsert([{
+      id: DEFAULT_BRANCH_ID,
+      organization_id: DEFAULT_ORG_ID,
+      code: "HQ-01",
+      name_ar: "الفرع الرئيسي - القاهرة",
+      name_en: "Cairo Headquarters",
+      city: "القاهرة",
+      address: "القرية الذكية، الجيزة",
+      phone: "+20 2 35350000",
+      is_headquarters: true,
+    }], { onConflict: "id" });
+
+    // 3. Ensure default User
+    await supabase.from("users").upsert([{
+      id: "00000000-0000-0000-0000-000000000003",
+      organization_id: DEFAULT_ORG_ID,
+      email: "admin@sanaderp.com",
+      name: "م. إسلام صلاح حسني",
+      role: "super_admin",
+      branch_id: DEFAULT_BRANCH_ID,
+      is_active: true,
+    }], { onConflict: "id" });
+
+    // 4. Ensure default Warehouse
+    await supabase.from("warehouses").upsert([{
+      id: DEFAULT_WAREHOUSE_ID,
+      organization_id: DEFAULT_ORG_ID,
+      branch_id: DEFAULT_BRANCH_ID,
+      code: "WH-01",
+      name_ar: "المستودع المركزي الرئيسي",
+      name_en: "Main Central Warehouse",
+      location: "المنطقة الصناعية، 6 أكتوبر",
+      manager_name: "المشرف العام",
+      manager_phone: "+20 100 0000000",
+      is_default: true,
+    }], { onConflict: "id" });
+
+    // 5. Ensure default Categories
+    await supabase.from("product_categories").upsert([
+      { id: DEFAULT_CATEGORY_ID, organization_id: DEFAULT_ORG_ID, code: "CAT-GEN", name_ar: "عام / منتجات رئيسية", name_en: "General Products" },
+      { id: "00000000-0000-0000-0000-000000000022", organization_id: DEFAULT_ORG_ID, code: "CAT-POS", name_ar: "أنظمة نقاط البيع والكاشير", name_en: "POS Systems" },
+      { id: "00000000-0000-0000-0000-000000000023", organization_id: DEFAULT_ORG_ID, code: "CAT-HW", name_ar: "أجهزة كمبيوتر وخوادم", name_en: "Hardware & Servers" },
+      { id: "00000000-0000-0000-0000-000000000024", organization_id: DEFAULT_ORG_ID, code: "CAT-SRV", name_ar: "خدمات ودعم فني", name_en: "Services & Support" },
+    ], { onConflict: "id" });
+
+    // 6. Ensure default Units
+    await supabase.from("product_units").upsert([
+      { id: DEFAULT_UNIT_ID, organization_id: DEFAULT_ORG_ID, code: "PCS", name_ar: "قطعة", name_en: "Piece", symbol: "قطعة" },
+      { id: "00000000-0000-0000-0000-000000000012", organization_id: DEFAULT_ORG_ID, code: "BOX", name_ar: "صندوق / كرتونة", name_en: "Box", symbol: "كرتونة" },
+      { id: "00000000-0000-0000-0000-000000000013", organization_id: DEFAULT_ORG_ID, code: "SET", name_ar: "طقم متكامل", name_en: "Set", symbol: "طقم" },
+      { id: "00000000-0000-0000-0000-000000000014", organization_id: DEFAULT_ORG_ID, code: "KG", name_ar: "كيلوجرام", name_en: "Kilogram", symbol: "كجم" },
+      { id: "00000000-0000-0000-0000-000000000015", organization_id: DEFAULT_ORG_ID, code: "MTR", name_ar: "متر", name_en: "Meter", symbol: "متر" },
+    ], { onConflict: "id" });
+
+    // 7. Ensure default POS Customer
+    await supabase.from("customers").upsert([{
+      id: DEFAULT_POS_CUSTOMER_ID,
+      organization_id: DEFAULT_ORG_ID,
+      code: "CUST-POS",
+      name_ar: "عميل نقدي عام (نقاط البيع)",
+      name_en: "Walk-in POS Customer",
+      mobile: "+20 100 0000000",
+      city: "القاهرة",
+      credit_limit: 0,
+      payment_terms_days: 0,
+      current_balance: 0,
+      status: "active",
+    }], { onConflict: "id" });
+
+    // 8. Ensure default Treasury Account
+    await supabase.from("treasury_accounts").upsert([{
+      id: DEFAULT_TREASURY_ID,
+      organization_id: DEFAULT_ORG_ID,
+      branch_id: DEFAULT_BRANCH_ID,
+      gl_account_id: "00000000-0000-0000-0000-000000000111",
+      code: "SAFE-01",
+      name_ar: "الخزينة الرئيسية للمنشأة",
+      name_en: "Main Central Safe",
+      type: "cash_box",
+      currency: "EGP",
+      balance: 50000,
+      is_default: true,
+    }], { onConflict: "id" });
+
+    hasSeededBaseline = true;
+  } catch (e) {
+    console.warn("Baseline entities check warning:", e);
+  }
+}
+
 // GET: Hydrate all ERP data from Supabase PostgreSQL
 export async function GET() {
   if (!isSupabaseConfigured || !supabaseAdmin) {
-    return NextResponse.json({ success: false, message: "Supabase not configured", data: null }, { status: 200 });
+    return noCacheResponse({ success: false, message: "Supabase not configured", data: null }, 200);
   }
 
   try {
+    await ensureBaselineEntities(supabaseAdmin);
+
     const [
       orgRes,
       branchesRes,
@@ -510,7 +639,7 @@ export async function GET() {
       symbol: u.symbol || "قطعة",
     }));
 
-    return NextResponse.json({
+    return noCacheResponse({
       success: true,
       data: {
         organization,
@@ -539,7 +668,7 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error("Error in GET /api/erp/data:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return noCacheResponse({ success: false, error: error.message }, 500);
   }
 }
 
@@ -589,17 +718,34 @@ export async function POST(request: Request) {
       case "create_product": {
         const { id, organizationId, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock, imageUrl } = payload;
         
+        await ensureBaselineEntities(supabaseAdmin);
+
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-        const validCategoryId = cleanUUID(categoryId, null);
-        const validUnitId = cleanUUID(unitId, null);
+        const validCategoryId = cleanUUID(categoryId, DEFAULT_CATEGORY_ID);
+        const validUnitId = cleanUUID(unitId, DEFAULT_UNIT_ID);
+
+        let finalSku = (sku || "").trim();
+        if (!finalSku) finalSku = "PRD-" + Date.now().toString().slice(-6);
+
+        // Check if SKU already exists for this org to prevent duplicate key constraint
+        const { data: existingSku } = await supabaseAdmin
+          .from("products")
+          .select("id")
+          .eq("organization_id", validOrgId)
+          .eq("sku", finalSku)
+          .maybeSingle();
+
+        if (existingSku && (!validId || existingSku.id !== validId)) {
+          finalSku = `${finalSku}-${Date.now().toString().slice(-4)}`;
+        }
 
         const insertRow: any = {
           organization_id: validOrgId,
-          sku,
+          sku: finalSku,
           barcode: barcode || null,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          name_ar: nameAr || "منتج جديد",
+          name_en: nameEn || nameAr || "New Product",
           description: description || null,
           category_id: validCategoryId,
           unit_id: validUnitId,
@@ -608,7 +754,7 @@ export async function POST(request: Request) {
           tax_rate: Number(taxRate) || 14,
           min_stock_level: Number(minStockLevel) || 5,
           status: status || "active",
-          image_url: imageUrl || null,
+          image_url: imageUrl && imageUrl.length < 500000 ? imageUrl : null,
         };
 
         if (validId) insertRow.id = validId;
@@ -622,6 +768,7 @@ export async function POST(request: Request) {
         if (prodErr) throw prodErr;
 
         // Upsert warehouse stock & create opening balance stock movements
+        const finalStock: { [whId: string]: number } = {};
         if (warehouseStock && Object.keys(warehouseStock).length > 0 && prod?.id) {
           const stockRows: any[] = [];
           const smRows: any[] = [];
@@ -630,6 +777,7 @@ export async function POST(request: Request) {
             const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
             const numQty = Number(qty) || 0;
             if (validWhId && numQty > 0) {
+              finalStock[validWhId] = numQty;
               stockRows.push({
                 product_id: prod.id,
                 warehouse_id: validWhId,
@@ -641,7 +789,7 @@ export async function POST(request: Request) {
                 product_id: prod.id,
                 warehouse_id: validWhId,
                 movement_type: "opening_balance",
-                reference_number: `OB-${sku}`,
+                reference_number: `OB-${finalSku}`,
                 date: new Date().toISOString().split("T")[0],
                 quantity: numQty,
                 unit_cost: Number(costPrice) || 0,
@@ -661,13 +809,32 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: prod });
+        const mappedProduct = {
+          id: prod.id,
+          organizationId: prod.organization_id,
+          sku: prod.sku,
+          barcode: prod.barcode || "",
+          nameAr: prod.name_ar,
+          nameEn: prod.name_en || prod.name_ar,
+          description: prod.description || "",
+          categoryId: prod.category_id || "",
+          unitId: prod.unit_id || "",
+          costPrice: Number(prod.cost_price) || 0,
+          sellingPrice: Number(prod.selling_price) || 0,
+          taxRate: Number(prod.tax_rate) || 14,
+          minStockLevel: Number(prod.min_stock_level) || 5,
+          status: prod.status || "active",
+          warehouseStock: finalStock,
+          imageUrl: prod.image_url || "",
+        };
+
+        return noCacheResponse({ success: true, data: mappedProduct });
       }
 
       case "update_product": {
         const { id, sku, barcode, nameAr, nameEn, description, categoryId, unitId, costPrice, sellingPrice, taxRate, minStockLevel, status, warehouseStock, imageUrl } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid product ID is required" }, 400);
 
         const updateRow: any = { updated_at: new Date().toISOString() };
         if (sku !== undefined) updateRow.sku = sku;
@@ -675,14 +842,14 @@ export async function POST(request: Request) {
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
         if (description !== undefined) updateRow.description = description || null;
-        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, null);
-        if (unitId !== undefined) updateRow.unit_id = cleanUUID(unitId, null);
+        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, DEFAULT_CATEGORY_ID);
+        if (unitId !== undefined) updateRow.unit_id = cleanUUID(unitId, DEFAULT_UNIT_ID);
         if (costPrice !== undefined) updateRow.cost_price = Number(costPrice);
         if (sellingPrice !== undefined) updateRow.selling_price = Number(sellingPrice);
         if (taxRate !== undefined) updateRow.tax_rate = Number(taxRate);
         if (minStockLevel !== undefined) updateRow.min_stock_level = Number(minStockLevel);
         if (status !== undefined) updateRow.status = status;
-        if (imageUrl !== undefined) updateRow.image_url = imageUrl || null;
+        if (imageUrl !== undefined) updateRow.image_url = (imageUrl && imageUrl.length < 500000) ? imageUrl : null;
 
         const { data: prod, error: prodErr } = await supabaseAdmin
           .from("products")
@@ -693,10 +860,12 @@ export async function POST(request: Request) {
 
         if (prodErr) throw prodErr;
 
+        const finalStock: { [whId: string]: number } = {};
         if (warehouseStock && typeof warehouseStock === "object") {
           for (const [whId, qty] of Object.entries(warehouseStock)) {
             const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
             if (validWhId) {
+              finalStock[validWhId] = Number(qty) || 0;
               await supabaseAdmin.from("product_warehouse_stock").upsert({
                 product_id: validId,
                 warehouse_id: validWhId,
@@ -706,7 +875,26 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: prod });
+        const mappedProduct = {
+          id: prod.id,
+          organizationId: prod.organization_id,
+          sku: prod.sku,
+          barcode: prod.barcode || "",
+          nameAr: prod.name_ar,
+          nameEn: prod.name_en || prod.name_ar,
+          description: prod.description || "",
+          categoryId: prod.category_id || "",
+          unitId: prod.unit_id || "",
+          costPrice: Number(prod.cost_price) || 0,
+          sellingPrice: Number(prod.selling_price) || 0,
+          taxRate: Number(prod.tax_rate) || 14,
+          minStockLevel: Number(prod.min_stock_level) || 5,
+          status: prod.status || "active",
+          warehouseStock: finalStock,
+          imageUrl: prod.image_url || "",
+        };
+
+        return noCacheResponse({ success: true, data: mappedProduct });
       }
 
       case "delete_product": {

@@ -351,45 +351,49 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   // INVENTORY & PRODUCT CATEGORIES / UNITS
   // ==========================================
   const addProduct = async (p: Omit<Product, "id">): Promise<Product> => {
-    const newProduct: Product = { ...p, id: generateId() };
-    
+    const res = await persistProductDB(p);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ المنتج في قاعدة البيانات");
+    }
+    const savedProduct = res.data;
+
     // 1. Check opening stock allocations
     const openingMovements: StockMovement[] = [];
     let totalOpeningQty = 0;
 
-    if (p.warehouseStock) {
-      for (const [whId, qty] of Object.entries(p.warehouseStock)) {
+    if (savedProduct.warehouseStock) {
+      for (const [whId, qty] of Object.entries(savedProduct.warehouseStock)) {
         const numQty = Number(qty) || 0;
         if (numQty > 0) {
           totalOpeningQty += numQty;
           openingMovements.push({
             id: generateId(),
             organizationId: organization.id,
-            productId: newProduct.id,
+            productId: savedProduct.id,
             warehouseId: whId,
             movementType: "opening_balance",
-            referenceNumber: `OB-${newProduct.sku}`,
+            referenceNumber: `OB-${savedProduct.sku}`,
             date: new Date().toISOString().split("T")[0],
             quantity: numQty,
-            unitCost: newProduct.costPrice,
-            totalCost: numQty * newProduct.costPrice,
+            unitCost: savedProduct.costPrice,
+            totalCost: numQty * savedProduct.costPrice,
             balanceQuantity: numQty,
             partnerName: "رصيد افتتاحي",
             partnerType: "opening",
-            notes: `رصيد أول المدة للصنف ${newProduct.nameAr}`,
+            notes: `رصيد أول المدة للصنف ${savedProduct.nameAr}`,
           });
         }
       }
     }
 
     // 2. Generate Opening Stock Journal Entry
-    if (totalOpeningQty > 0 && newProduct.costPrice > 0) {
+    if (totalOpeningQty > 0 && savedProduct.costPrice > 0) {
       const journalDraft = generateOpeningStockJournal(
         organization.id,
         activeBranchId,
-        newProduct,
+        savedProduct,
         totalOpeningQty,
-        newProduct.costPrice,
+        savedProduct.costPrice,
         accounts,
         currentUser.name
       );
@@ -405,20 +409,19 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setStockMovements(prev => [...openingMovements, ...prev]);
     }
 
-    setProducts(prev => [newProduct, ...prev]);
-    await persistProductDB(newProduct);
+    setProducts(prev => [savedProduct, ...prev.filter(x => x.id !== savedProduct.id)]);
 
     await addProductChangeLog({
       organizationId: organization.id,
-      productId: newProduct.id,
-      productName: newProduct.nameAr,
-      productSku: newProduct.sku,
+      productId: savedProduct.id,
+      productName: savedProduct.nameAr,
+      productSku: savedProduct.sku,
       userId: currentUser.id,
       userName: currentUser.name,
       changeType: "created",
       fieldName: "إنشاء صنف جديد",
       oldValue: "---",
-      newValue: `${newProduct.nameAr} (سعر البيع: ${newProduct.sellingPrice}, التكلفة: ${newProduct.costPrice})`,
+      newValue: `${savedProduct.nameAr} (سعر البيع: ${savedProduct.sellingPrice}, التكلفة: ${savedProduct.costPrice})`,
     });
 
     addAuditLog({
@@ -427,16 +430,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "Product",
-      entityId: newProduct.id,
-      details: `إضافة منتج جديد: ${newProduct.nameAr} (${newProduct.sku})`,
+      entityId: savedProduct.id,
+      details: `إضافة منتج جديد: ${savedProduct.nameAr} (${savedProduct.sku})`,
     });
 
-    return newProduct;
+    return savedProduct;
   };
 
   const updateProduct = async (id: string, p: Partial<Product>) => {
     const existing = products.find(prod => prod.id === id);
     if (!existing) return;
+
+    const res = await updateProductDB(id, p);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل تحديث بيانات المنتج في قاعدة البيانات");
+    }
+    const updatedProduct = res.data;
 
     if (p.nameAr && p.nameAr !== existing.nameAr) {
       await addProductChangeLog({
@@ -542,8 +551,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    setProducts(prev => prev.map(prod => prod.id === id ? { ...prod, ...p } : prod));
-    await updateProductDB(id, p);
+    setProducts(prev => prev.map(prod => prod.id === id ? { ...prod, ...updatedProduct } : prod));
 
     addAuditLog({
       organizationId: organization.id,
@@ -558,9 +566,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProduct = async (id: string) => {
     const prod = products.find(p => p.id === id);
+    const res = await deleteProductDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف المنتج من قاعدة البيانات");
+    }
+
     setProducts(prev => prev.filter(p => p.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.productId !== id));
-    await deleteProductDB(id);
 
     if (prod) {
       await addProductChangeLog({
@@ -590,50 +602,77 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   // Categories CRUD
   const addCategory = async (c: Omit<ProductCategory, "id">): Promise<ProductCategory> => {
-    const newCat: ProductCategory = { ...c, id: generateId() };
-    setCategories(prev => [...prev, newCat]);
-    await persistCategoryDB(newCat);
-    return newCat;
+    const res = await persistCategoryDB(c);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ التصنيف في قاعدة البيانات");
+    }
+    const savedCat = res.data;
+    setCategories(prev => [...prev.filter(x => x.id !== savedCat.id), savedCat]);
+    return savedCat;
   };
   const updateCategory = async (id: string, c: Partial<ProductCategory>) => {
+    const res = await updateCategoryDB(id, c);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل التصنيف في قاعدة البيانات");
+    }
     setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...c } : cat));
-    await updateCategoryDB(id, c);
   };
   const deleteCategory = async (id: string) => {
+    const res = await deleteCategoryDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف التصنيف من قاعدة البيانات");
+    }
     setCategories(prev => prev.filter(cat => cat.id !== id));
-    await deleteCategoryDB(id);
   };
 
   // Units CRUD
   const addUnit = async (u: Omit<ProductUnit, "id">): Promise<ProductUnit> => {
-    const newUnit: ProductUnit = { ...u, id: generateId() };
-    setUnits(prev => [...prev, newUnit]);
-    await persistUnitDB(newUnit);
-    return newUnit;
+    const res = await persistUnitDB(u);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ وحدة القياس في قاعدة البيانات");
+    }
+    const savedUnit = res.data;
+    setUnits(prev => [...prev.filter(x => x.id !== savedUnit.id), savedUnit]);
+    return savedUnit;
   };
   const updateUnit = async (id: string, u: Partial<ProductUnit>) => {
+    const res = await updateUnitDB(id, u);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل وحدة القياس في قاعدة البيانات");
+    }
     setUnits(prev => prev.map(unit => unit.id === id ? { ...unit, ...u } : unit));
-    await updateUnitDB(id, u);
   };
   const deleteUnit = async (id: string) => {
+    const res = await deleteUnitDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف وحدة القياس من قاعدة البيانات");
+    }
     setUnits(prev => prev.filter(unit => unit.id !== id));
-    await deleteUnitDB(id);
   };
 
   // Warehouses CRUD
   const addWarehouse = async (w: Omit<Warehouse, "id">): Promise<Warehouse> => {
-    const newW: Warehouse = { ...w, id: generateId() };
-    setWarehouses(prev => [...prev, newW]);
-    await persistWarehouseDB(newW);
-    return newW;
+    const res = await persistWarehouseDB(w);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ المستودع في قاعدة البيانات");
+    }
+    const savedWarehouse = res.data;
+    setWarehouses(prev => [...prev.filter(x => x.id !== savedWarehouse.id), savedWarehouse]);
+    return savedWarehouse;
   };
   const updateWarehouse = async (id: string, w: Partial<Warehouse>) => {
+    const res = await updateWarehouseDB(id, w);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل بيانات المستودع في قاعدة البيانات");
+    }
     setWarehouses(prev => prev.map(wh => wh.id === id ? { ...wh, ...w } : wh));
-    await updateWarehouseDB(id, w);
   };
   const deleteWarehouse = async (id: string) => {
+    const res = await deleteWarehouseDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف المستودع من قاعدة البيانات");
+    }
     setWarehouses(prev => prev.filter(wh => wh.id !== id));
-    await deleteWarehouseDB(id);
   };
 
   // Stock Movements CRUD
@@ -642,18 +681,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setStockMovements(prev => [newM, ...prev]);
   };
   const updateStockMovement = async (id: string, sm: Partial<StockMovement>) => {
+    const res = await updateStockMovementDB(id, sm);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل حركة المخزون");
+    }
     setStockMovements(prev => prev.map(item => item.id === id ? { ...item, ...sm } : item));
-    await updateStockMovementDB(id, sm);
   };
   const deleteStockMovement = async (id: string) => {
+    const res = await deleteStockMovementDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف حركة المخزون");
+    }
     setStockMovements(prev => prev.filter(item => item.id !== id));
-    await deleteStockMovementDB(id);
   };
 
   // Period Closings CRUD
   const createPeriodClosing = async (closing: Omit<PeriodClosing, "id" | "createdAt">): Promise<PeriodClosing> => {
-    const newClosingId = generateId();
-    
     // Generate Accounting Journal Entry for COGS Closing
     const journalDraft = generatePeriodClosingJournal(
       closing.organizationId,
@@ -673,15 +716,16 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       createdJournalId = newJournal.id;
     }
 
-    const newClosing: PeriodClosing = {
+    const res = await persistPeriodClosingDB({
       ...closing,
-      id: newClosingId,
       journalEntryId: createdJournalId,
-      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
-    };
+    } as any);
 
-    setPeriodClosings(prev => [newClosing, ...prev]);
-    await persistPeriodClosingDB(newClosing);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ الإقفال الدوري في قاعدة البيانات");
+    }
+    const savedClosing = res.data;
+    setPeriodClosings(prev => [savedClosing, ...prev]);
 
     addAuditLog({
       organizationId: organization.id,
@@ -689,35 +733,42 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "PeriodClosing",
-      entityId: newClosing.id,
-      details: `إجراء إقفال دوري للمخزون (${newClosing.periodLabel}) بقيمة تكلفة مباعة ${newClosing.cogsValue}`,
+      entityId: savedClosing.id,
+      details: `إجراء إقفال دوري للمخزون (${savedClosing.periodLabel}) بقيمة تكلفة مباعة ${savedClosing.cogsValue}`,
     });
 
-    return newClosing;
+    return savedClosing;
   };
 
   // ==========================================
   // CUSTOMERS & SUPPLIERS CRUD
   // ==========================================
   const addCustomer = async (c: Omit<Customer, "id">): Promise<Customer> => {
-    const newC: Customer = { ...c, id: generateId() };
-    setCustomers(prev => [newC, ...prev]);
-    await persistCustomerDB(newC);
+    const res = await persistCustomerDB(c);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ العميل في قاعدة البيانات");
+    }
+    const savedCust = res.data;
+    setCustomers(prev => [savedCust, ...prev.filter(x => x.id !== savedCust.id)]);
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
       userName: currentUser.name,
       action: "create",
       entityType: "Customer",
-      entityId: newC.id,
-      details: `إضافة عميل جديد: ${newC.nameAr}`,
+      entityId: savedCust.id,
+      details: `إضافة عميل جديد: ${savedCust.nameAr}`,
     });
-    return newC;
+    return savedCust;
   };
 
   const updateCustomer = async (id: string, c: Partial<Customer>) => {
+    const res = await updateCustomerDB(id, c);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل بيانات العميل في قاعدة البيانات");
+    }
     setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...c } : item));
-    await updateCustomerDB(id, c);
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -730,8 +781,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteCustomer = async (id: string) => {
+    const res = await deleteCustomerDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف العميل من قاعدة البيانات");
+    }
     setCustomers(prev => prev.filter(item => item.id !== id));
-    await deleteCustomerDB(id);
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -744,24 +798,31 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addSupplier = async (s: Omit<Supplier, "id">): Promise<Supplier> => {
-    const newS: Supplier = { ...s, id: generateId() };
-    setSuppliers(prev => [newS, ...prev]);
-    await persistSupplierDB(newS);
+    const res = await persistSupplierDB(s);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ المورد في قاعدة البيانات");
+    }
+    const savedSupp = res.data;
+    setSuppliers(prev => [savedSupp, ...prev.filter(x => x.id !== savedSupp.id)]);
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
       userName: currentUser.name,
       action: "create",
       entityType: "Supplier",
-      entityId: newS.id,
-      details: `إضافة مورد جديد: ${newS.nameAr}`,
+      entityId: savedSupp.id,
+      details: `إضافة مورد جديد: ${savedSupp.nameAr}`,
     });
-    return newS;
+    return savedSupp;
   };
 
   const updateSupplier = async (id: string, s: Partial<Supplier>) => {
+    const res = await updateSupplierDB(id, s);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل بيانات المورد في قاعدة البيانات");
+    }
     setSuppliers(prev => prev.map(item => item.id === id ? { ...item, ...s } : item));
-    await updateSupplierDB(id, s);
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -774,8 +835,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteSupplier = async (id: string) => {
+    const res = await deleteSupplierDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف المورد من قاعدة البيانات");
+    }
     setSuppliers(prev => prev.filter(item => item.id !== id));
-    await deleteSupplierDB(id);
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -791,17 +855,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   // SALES & PURCHASES CRUD
   // ==========================================
   const createSalesInvoice = async (inv: Omit<SalesInvoice, "id">): Promise<SalesInvoice> => {
-    const newInvoice: SalesInvoice = {
-      ...inv,
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-    };
+    const res = await persistSalesInvoiceDB(inv as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ فاتورة المبيعات في قاعدة البيانات");
+    }
+    const savedInvoice = res.data;
 
     let totalCogs = 0;
     const movementsToCreate: StockMovement[] = [];
 
     // Deduct Stock & Create Stock Movements
-    inv.items.forEach(item => {
+    savedInvoice.items.forEach(item => {
       totalCogs += item.costPrice * item.quantity;
       
       movementsToCreate.push({
@@ -810,17 +874,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         productId: item.productId,
         warehouseId: item.warehouseId,
         movementType: "sales_issue",
-        referenceId: newInvoice.id,
-        referenceNumber: newInvoice.invoiceNumber,
-        date: newInvoice.date,
+        referenceId: savedInvoice.id,
+        referenceNumber: savedInvoice.invoiceNumber,
+        date: savedInvoice.date,
         quantity: -Math.abs(item.quantity),
         unitCost: item.costPrice,
         totalCost: -Math.abs(item.costPrice * item.quantity),
         balanceQuantity: 0,
-        partnerId: newInvoice.customerId,
-        partnerName: newInvoice.customerName,
+        partnerId: savedInvoice.customerId,
+        partnerName: savedInvoice.customerName,
         partnerType: "customer",
-        notes: `صرف مبيعات فاتورة ${newInvoice.invoiceNumber}`,
+        notes: `صرف مبيعات فاتورة ${savedInvoice.invoiceNumber}`,
       });
 
       setProducts(prev => prev.map(p => {
@@ -842,20 +906,20 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setStockMovements(prev => [...movementsToCreate, ...prev]);
     }
 
-    if (inv.status === "unpaid" || inv.status === "partially_paid") {
+    if (savedInvoice.status === "unpaid" || savedInvoice.status === "partially_paid") {
       setCustomers(prev => prev.map(c =>
-        c.id === inv.customerId ? { ...c, currentBalance: c.currentBalance + inv.dueAmount } : c
+        c.id === savedInvoice.customerId ? { ...c, currentBalance: c.currentBalance + savedInvoice.dueAmount } : c
       ));
     }
 
-    const journalDraft = generateSalesInvoiceJournal(newInvoice, accounts, totalCogs);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-    setJournalEntries(prev => [newJournal, ...prev]);
+    const journalDraft = generateSalesInvoiceJournal(savedInvoice, accounts, totalCogs);
+    if (journalDraft) {
+      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
+      setJournalEntries(prev => [newJournal, ...prev]);
+      await persistJournalEntryDB(newJournal);
+    }
 
-    setSalesInvoices(prev => [newInvoice, ...prev]);
-
-    await persistSalesInvoiceDB(newInvoice);
-    await persistJournalEntryDB(newJournal);
+    setSalesInvoices(prev => [savedInvoice, ...prev.filter(x => x.id !== savedInvoice.id)]);
 
     addAuditLog({
       organizationId: organization.id,
@@ -863,46 +927,49 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "SalesInvoice",
-      entityId: newInvoice.id,
-      details: `إصدار فاتورة مبيعات ${newInvoice.invoiceNumber} بمبلغ ${newInvoice.grandTotal}`,
+      entityId: savedInvoice.id,
+      details: `إصدار فاتورة مبيعات ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
     });
 
-    return newInvoice;
+    return savedInvoice;
   };
 
   const deleteSalesInvoice = async (id: string) => {
+    const res = await deleteSalesInvoiceDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف فاتورة المبيعات من قاعدة البيانات");
+    }
     setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
-    await deleteSalesInvoiceDB(id);
   };
 
   const createPurchaseInvoice = async (inv: Omit<PurchaseInvoice, "id">): Promise<PurchaseInvoice> => {
-    const newInvoice: PurchaseInvoice = {
-      ...inv,
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-    };
+    const res = await persistPurchaseInvoiceDB(inv as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ فاتورة المشتريات في قاعدة البيانات");
+    }
+    const savedInvoice = res.data;
 
     const movementsToCreate: StockMovement[] = [];
 
-    inv.items.forEach(item => {
+    savedInvoice.items.forEach(item => {
       movementsToCreate.push({
         id: generateId(),
         organizationId: organization.id,
         productId: item.productId,
         warehouseId: item.warehouseId,
         movementType: "purchase_receipt",
-        referenceId: newInvoice.id,
-        referenceNumber: newInvoice.invoiceNumber,
-        date: newInvoice.date,
+        referenceId: savedInvoice.id,
+        referenceNumber: savedInvoice.invoiceNumber,
+        date: savedInvoice.date,
         quantity: Math.abs(item.quantity),
         unitCost: item.unitCost,
         totalCost: Math.abs(item.unitCost * item.quantity),
         balanceQuantity: 0,
-        partnerId: newInvoice.supplierId,
-        partnerName: newInvoice.supplierName,
+        partnerId: savedInvoice.supplierId,
+        partnerName: savedInvoice.supplierName,
         partnerType: "supplier",
-        notes: `توريد مشتريات فاتورة ${newInvoice.invoiceNumber}`,
+        notes: `توريد مشتريات فاتورة ${savedInvoice.invoiceNumber}`,
       });
 
       setProducts(prev => prev.map(p => {
@@ -924,20 +991,20 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setStockMovements(prev => [...movementsToCreate, ...prev]);
     }
 
-    if (inv.status === "unpaid" || inv.status === "partially_paid") {
+    if (savedInvoice.status === "unpaid" || savedInvoice.status === "partially_paid") {
       setSuppliers(prev => prev.map(s =>
-        s.id === inv.supplierId ? { ...s, currentBalance: s.currentBalance + inv.dueAmount } : s
+        s.id === savedInvoice.supplierId ? { ...s, currentBalance: s.currentBalance + savedInvoice.dueAmount } : s
       ));
     }
 
-    const journalDraft = generatePurchaseInvoiceJournal(newInvoice, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-    setJournalEntries(prev => [newJournal, ...prev]);
+    const journalDraft = generatePurchaseInvoiceJournal(savedInvoice, accounts);
+    if (journalDraft) {
+      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
+      setJournalEntries(prev => [newJournal, ...prev]);
+      await persistJournalEntryDB(newJournal);
+    }
 
-    setPurchaseInvoices(prev => [newInvoice, ...prev]);
-
-    await persistPurchaseInvoiceDB(newInvoice);
-    await persistJournalEntryDB(newJournal);
+    setPurchaseInvoices(prev => [savedInvoice, ...prev.filter(x => x.id !== savedInvoice.id)]);
 
     addAuditLog({
       organizationId: organization.id,
@@ -945,59 +1012,75 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "PurchaseInvoice",
-      entityId: newInvoice.id,
-      details: `تسجيل فاتورة مشتريات وتوريد مخزن ${newInvoice.invoiceNumber} بمبلغ ${newInvoice.grandTotal}`,
+      entityId: savedInvoice.id,
+      details: `تسجيل فاتورة مشتريات وتوريد مخزن ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
     });
 
-    return newInvoice;
+    return savedInvoice;
   };
 
   const deletePurchaseInvoice = async (id: string) => {
+    const res = await deletePurchaseInvoiceDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف فاتورة المشتريات من قاعدة البيانات");
+    }
     setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
-    await deletePurchaseInvoiceDB(id);
   };
 
   // ==========================================
   // TREASURY & CHECKS CRUD
   // ==========================================
   const addTreasuryAccount = async (t: Omit<TreasuryAccount, "id">): Promise<TreasuryAccount> => {
-    const newT: TreasuryAccount = { ...t, id: generateId() };
-    setTreasuryAccounts(prev => [...prev, newT]);
-    await persistTreasuryAccountDB(newT);
-    return newT;
+    const res = await persistTreasuryAccountDB(t);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ الحساب المالي / الخزينة في قاعدة البيانات");
+    }
+    const savedTreasury = res.data;
+    setTreasuryAccounts(prev => [...prev.filter(x => x.id !== savedTreasury.id), savedTreasury]);
+    return savedTreasury;
   };
   const updateTreasuryAccount = async (id: string, t: Partial<TreasuryAccount>) => {
+    const res = await updateTreasuryAccountDB(id, t);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل بيانات الخزينة في قاعدة البيانات");
+    }
     setTreasuryAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...t } : acc));
-    await updateTreasuryAccountDB(id, t);
   };
   const deleteTreasuryAccount = async (id: string) => {
+    const res = await deleteTreasuryAccountDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف الخزينة من قاعدة البيانات");
+    }
     setTreasuryAccounts(prev => prev.filter(acc => acc.id !== id));
-    await deleteTreasuryAccountDB(id);
   };
 
   const createCashReceipt = async (rcp: Omit<CashReceipt, "id">): Promise<CashReceipt> => {
-    const newReceipt: CashReceipt = { ...rcp, id: generateId(), createdAt: new Date().toISOString() };
-    setCashReceipts(prev => [newReceipt, ...prev]);
+    const res = await persistCashReceiptDB(rcp as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ سند القبض في قاعدة البيانات");
+    }
+    const savedReceipt = res.data;
+    setCashReceipts(prev => [savedReceipt, ...prev.filter(x => x.id !== savedReceipt.id)]);
 
     setTreasuryAccounts(prev => prev.map(t =>
-      t.id === rcp.treasuryAccountId ? { ...t, balance: t.balance + rcp.amount } : t
+      t.id === savedReceipt.treasuryAccountId ? { ...t, balance: t.balance + savedReceipt.amount } : t
     ));
 
-    if (rcp.customerId) {
+    if (savedReceipt.customerId) {
       setCustomers(prev => prev.map(c =>
-        c.id === rcp.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - rcp.amount) } : c
+        c.id === savedReceipt.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - savedReceipt.amount) } : c
       ));
     }
 
-    const targetTreasury = treasuryAccounts.find(t => t.id === rcp.treasuryAccountId);
+    const targetTreasury = treasuryAccounts.find(t => t.id === savedReceipt.treasuryAccountId);
     const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
-    const journalDraft = generateReceiptJournal(newReceipt, treasuryGlId, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-    setJournalEntries(prev => [newJournal, ...prev]);
-
-    await persistCashReceiptDB(newReceipt);
-    await persistJournalEntryDB(newJournal);
+    const journalDraft = generateReceiptJournal(savedReceipt, treasuryGlId, accounts);
+    if (journalDraft) {
+      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
+      setJournalEntries(prev => [newJournal, ...prev]);
+      await persistJournalEntryDB(newJournal);
+    }
 
     addAuditLog({
       organizationId: organization.id,
@@ -1005,40 +1088,47 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "CashReceipt",
-      entityId: newReceipt.id,
-      details: `سند قبض نقدية ${newReceipt.receiptNumber} بمبلغ ${newReceipt.amount} ${newReceipt.currency}`,
+      entityId: savedReceipt.id,
+      details: `سند قبض نقدية ${savedReceipt.receiptNumber} بمبلغ ${savedReceipt.amount} ${savedReceipt.currency}`,
     });
 
-    return newReceipt;
+    return savedReceipt;
   };
 
   const deleteCashReceipt = async (id: string) => {
+    const res = await deleteCashReceiptDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف سند القبض من قاعدة البيانات");
+    }
     setCashReceipts(prev => prev.filter(r => r.id !== id));
-    await deleteCashReceiptDB(id);
   };
 
   const createCashPayment = async (pay: Omit<CashPayment, "id">): Promise<CashPayment> => {
-    const newPayment: CashPayment = { ...pay, id: generateId(), createdAt: new Date().toISOString() };
-    setCashPayments(prev => [newPayment, ...prev]);
+    const res = await persistCashPaymentDB(pay as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ سند الصرف في قاعدة البيانات");
+    }
+    const savedPayment = res.data;
+    setCashPayments(prev => [savedPayment, ...prev.filter(x => x.id !== savedPayment.id)]);
 
     setTreasuryAccounts(prev => prev.map(t =>
-      t.id === pay.treasuryAccountId ? { ...t, balance: t.balance - pay.amount } : t
+      t.id === savedPayment.treasuryAccountId ? { ...t, balance: t.balance - savedPayment.amount } : t
     ));
 
-    if (pay.supplierId) {
+    if (savedPayment.supplierId) {
       setSuppliers(prev => prev.map(s =>
-        s.id === pay.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - pay.amount) } : s
+        s.id === savedPayment.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - savedPayment.amount) } : s
       ));
     }
 
-    const targetTreasury = treasuryAccounts.find(t => t.id === pay.treasuryAccountId);
+    const targetTreasury = treasuryAccounts.find(t => t.id === savedPayment.treasuryAccountId);
     const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
-    const journalDraft = generatePaymentJournal(newPayment, treasuryGlId, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-    setJournalEntries(prev => [newJournal, ...prev]);
-
-    await persistCashPaymentDB(newPayment);
-    await persistJournalEntryDB(newJournal);
+    const journalDraft = generatePaymentJournal(savedPayment, treasuryGlId, accounts);
+    if (journalDraft) {
+      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
+      setJournalEntries(prev => [newJournal, ...prev]);
+      await persistJournalEntryDB(newJournal);
+    }
 
     addAuditLog({
       organizationId: organization.id,
@@ -1046,36 +1136,48 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userName: currentUser.name,
       action: "create",
       entityType: "CashPayment",
-      entityId: newPayment.id,
-      details: `سند صرف نقدية ${newPayment.paymentNumber} بمبلغ ${newPayment.amount} ${newPayment.currency}`,
+      entityId: savedPayment.id,
+      details: `سند صرف نقدية ${savedPayment.paymentNumber} بمبلغ ${savedPayment.amount} ${savedPayment.currency}`,
     });
 
-    return newPayment;
+    return savedPayment;
   };
 
   const deleteCashPayment = async (id: string) => {
+    const res = await deleteCashPaymentDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف سند الصرف من قاعدة البيانات");
+    }
     setCashPayments(prev => prev.filter(p => p.id !== id));
-    await deleteCashPaymentDB(id);
   };
 
   const addCheck = async (chk: Omit<CheckRecord, "id">): Promise<CheckRecord> => {
-    const newCheck: CheckRecord = { ...chk, id: generateId() };
-    setChecks(prev => [newCheck, ...prev]);
-    await persistCheckDB(newCheck);
+    const res = await persistCheckDB(chk);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ الشيك في قاعدة البيانات");
+    }
+    const savedCheck = res.data;
+    setChecks(prev => [savedCheck, ...prev.filter(x => x.id !== savedCheck.id)]);
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
       userName: currentUser.name,
       action: "create",
       entityType: "CheckRecord",
-      entityId: newCheck.id,
-      details: `إضافة شيك ${newCheck.checkNumber} بمبلغ ${newCheck.amount} (${newCheck.type === "incoming" ? "شيك وارد/قبض" : "شيك صادر/دفع"})`,
+      entityId: savedCheck.id,
+      details: `إضافة شيك ${savedCheck.checkNumber} بمبلغ ${savedCheck.amount} (${savedCheck.type === "incoming" ? "شيك وارد/قبض" : "شيك صادر/دفع"})`,
     });
-    return newCheck;
+    return savedCheck;
   };
 
   const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
     const check = checks.find(c => c.id === checkId);
+    const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تحديث حالة الشيك في قاعدة البيانات");
+    }
+
     setChecks(prev => prev.map(chk => {
       if (chk.id === checkId) {
         return {
@@ -1093,62 +1195,87 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         t.id === targetTreasuryId ? { ...t, balance: t.balance + check.amount } : t
       ));
     }
-
-    await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
   };
 
   const deleteCheck = async (id: string) => {
+    const res = await deleteCheckDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف الشيك من قاعدة البيانات");
+    }
     setChecks(prev => prev.filter(chk => chk.id !== id));
-    await deleteCheckDB(id);
   };
 
   // ==========================================
   // ACCOUNTING & COST CENTERS CRUD
   // ==========================================
   const addAccount = async (acc: Omit<Account, "id">): Promise<Account> => {
-    const newAcc: Account = { ...acc, id: generateId() };
-    setAccounts(prev => [...prev, newAcc]);
-    await persistAccountDB(newAcc);
-    return newAcc;
+    const res = await persistAccountDB(acc);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ الحساب في شجرة الحسابات");
+    }
+    const savedAccount = res.data;
+    setAccounts(prev => [...prev.filter(x => x.id !== savedAccount.id), savedAccount]);
+    return savedAccount;
   };
 
   const updateAccount = async (id: string, acc: Partial<Account>) => {
+    const res = await updateAccountDB(id, acc);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل الحساب في قاعدة البيانات");
+    }
     setAccounts(prev => prev.map(item => item.id === id ? { ...item, ...acc } : item));
-    await updateAccountDB(id, acc);
   };
 
   const deleteAccount = async (id: string) => {
+    const res = await deleteAccountDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف الحساب من شجرة الحسابات");
+    }
     setAccounts(prev => prev.filter(item => item.id !== id));
-    await deleteAccountDB(id);
   };
 
   const addCostCenter = async (cc: Omit<CostCenter, "id">): Promise<CostCenter> => {
-    const newCc: CostCenter = { ...cc, id: generateId() };
-    setCostCenters(prev => [...prev, newCc]);
-    await persistCostCenterDB(newCc);
-    return newCc;
+    const res = await persistCostCenterDB(cc);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ مركز التكلفة في قاعدة البيانات");
+    }
+    const savedCc = res.data;
+    setCostCenters(prev => [...prev.filter(x => x.id !== savedCc.id), savedCc]);
+    return savedCc;
   };
 
   const updateCostCenter = async (id: string, cc: Partial<CostCenter>) => {
+    const res = await updateCostCenterDB(id, cc);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تعديل مركز التكلفة في قاعدة البيانات");
+    }
     setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...cc } : item));
-    await updateCostCenterDB(id, cc);
   };
 
   const deleteCostCenter = async (id: string) => {
+    const res = await deleteCostCenterDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف مركز التكلفة من قاعدة البيانات");
+    }
     setCostCenters(prev => prev.filter(item => item.id !== id));
-    await deleteCostCenterDB(id);
   };
 
   const addJournalEntry = async (entry: Omit<JournalEntry, "id">): Promise<JournalEntry> => {
-    const newEntry: JournalEntry = { ...entry, id: generateId() };
-    setJournalEntries(prev => [newEntry, ...prev]);
-    await persistJournalEntryDB(newEntry);
-    return newEntry;
+    const res = await persistJournalEntryDB(entry);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ القيد المحاسبي في دفتر اليومية");
+    }
+    const savedEntry = res.data;
+    setJournalEntries(prev => [savedEntry, ...prev.filter(x => x.id !== savedEntry.id)]);
+    return savedEntry;
   };
 
   const deleteJournalEntry = async (id: string) => {
+    const res = await deleteJournalEntryDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف القيد المحاسبي من قاعدة البيانات");
+    }
     setJournalEntries(prev => prev.filter(je => je.id !== id));
-    await deleteJournalEntryDB(id);
   };
 
   const resetToDemoData = () => {
