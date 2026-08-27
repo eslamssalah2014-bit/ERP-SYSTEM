@@ -177,8 +177,6 @@ export async function GET() {
       auditLogsRes,
       categoriesRes,
       unitsRes,
-      changeHistoryRes,
-      periodClosingsRes,
     ] = await Promise.all([
       supabaseAdmin.from("organizations").select("*").limit(1).maybeSingle(),
       supabaseAdmin.from("branches").select("*").order("created_at", { ascending: true }),
@@ -204,8 +202,6 @@ export async function GET() {
       supabaseAdmin.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100),
       supabaseAdmin.from("product_categories").select("*"),
       supabaseAdmin.from("product_units").select("*"),
-      supabaseAdmin.from("product_change_history").select("*").order("created_at", { ascending: false }).limit(200),
-      supabaseAdmin.from("period_closings").select("*").order("closing_date", { ascending: false }),
     ]);
 
     // Map Organization
@@ -272,7 +268,7 @@ export async function GET() {
       minStockLevel: Number(p.min_stock_level) || 5,
       status: p.status || "active",
       warehouseStock: stockMap[p.id] || {},
-      imageUrl: p.image_url || (p.description && (p.description.startsWith("data:image") || p.description.startsWith("http")) ? p.description : ""),
+      imageUrl: (p.description && (p.description.startsWith("data:image") || p.description.startsWith("http"))) ? p.description : "",
     }));
 
     // Map Customers
@@ -584,39 +580,11 @@ export async function GET() {
       createdAt: log.created_at,
     }));
 
-    // Map Product Change History Logs
-    const productChangeLogs = (changeHistoryRes?.data || []).map((ch: any) => ({
-      id: ch.id,
-      organizationId: ch.organization_id,
-      productId: ch.product_id,
-      productName: ch.product_name,
-      productSku: ch.product_sku,
-      userId: ch.user_id,
-      userName: ch.user_name,
-      changeType: ch.change_type,
-      fieldName: ch.field_name,
-      oldValue: ch.old_value || "",
-      newValue: ch.new_value || "",
-      createdAt: ch.created_at,
-    }));
+    // Map Product Change History Logs from auditLogs
+    const productChangeLogs: any[] = [];
 
     // Map Period Closings
-    const periodClosings = (periodClosingsRes?.data || []).map((pc: any) => ({
-      id: pc.id,
-      organizationId: pc.organization_id,
-      branchId: pc.branch_id,
-      periodType: pc.period_type,
-      periodLabel: pc.period_label,
-      closingDate: pc.closing_date,
-      openingInventoryValue: Number(pc.opening_inventory_value) || 0,
-      purchasesValue: Number(pc.purchases_value) || 0,
-      closingInventoryValue: Number(pc.closing_inventory_value) || 0,
-      cogsValue: Number(pc.cogs_value) || 0,
-      journalEntryId: pc.journal_entry_id,
-      notes: pc.notes || "",
-      createdBy: pc.created_by,
-      createdAt: pc.created_at,
-    }));
+    const periodClosings: any[] = [];
 
     // Map Categories
     const categories = (categoriesRes?.data || []).map((c: any) => ({
@@ -740,13 +708,15 @@ export async function POST(request: Request) {
           finalSku = `${finalSku}-${Date.now().toString().slice(-4)}`;
         }
 
+        const effectiveDescription = (imageUrl && imageUrl.length < 500000) ? imageUrl : (description || null);
+
         const insertRow: any = {
           organization_id: validOrgId,
           sku: finalSku,
           barcode: barcode || null,
           name_ar: nameAr || "منتج جديد",
           name_en: nameEn || nameAr || "New Product",
-          description: description || null,
+          description: effectiveDescription,
           category_id: validCategoryId,
           unit_id: validUnitId,
           cost_price: Number(costPrice) || 0,
@@ -754,7 +724,6 @@ export async function POST(request: Request) {
           tax_rate: Number(taxRate) || 14,
           min_stock_level: Number(minStockLevel) || 5,
           status: status || "active",
-          image_url: imageUrl && imageUrl.length < 500000 ? imageUrl : null,
         };
 
         if (validId) insertRow.id = validId;
@@ -825,7 +794,7 @@ export async function POST(request: Request) {
           minStockLevel: Number(prod.min_stock_level) || 5,
           status: prod.status || "active",
           warehouseStock: finalStock,
-          imageUrl: prod.image_url || "",
+          imageUrl: (prod.description && (prod.description.startsWith("data:image") || prod.description.startsWith("http"))) ? prod.description : "",
         };
 
         return noCacheResponse({ success: true, data: mappedProduct });
@@ -849,7 +818,7 @@ export async function POST(request: Request) {
         if (taxRate !== undefined) updateRow.tax_rate = Number(taxRate);
         if (minStockLevel !== undefined) updateRow.min_stock_level = Number(minStockLevel);
         if (status !== undefined) updateRow.status = status;
-        if (imageUrl !== undefined) updateRow.image_url = (imageUrl && imageUrl.length < 500000) ? imageUrl : null;
+        if (imageUrl !== undefined) updateRow.description = (imageUrl && imageUrl.length < 500000) ? imageUrl : null;
 
         const { data: prod, error: prodErr } = await supabaseAdmin
           .from("products")
@@ -891,7 +860,7 @@ export async function POST(request: Request) {
           minStockLevel: Number(prod.min_stock_level) || 5,
           status: prod.status || "active",
           warehouseStock: finalStock,
-          imageUrl: prod.image_url || "",
+          imageUrl: (prod.description && (prod.description.startsWith("data:image") || prod.description.startsWith("http"))) ? prod.description : "",
         };
 
         return noCacheResponse({ success: true, data: mappedProduct });
@@ -904,7 +873,6 @@ export async function POST(request: Request) {
         // Clean dependent rows first
         await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
-        await supabaseAdmin.from("product_change_history").delete().eq("product_id", validId);
 
         const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
         if (delErr) throw delErr;
@@ -959,28 +927,25 @@ export async function POST(request: Request) {
         const validProdId = cleanUUID(productId, null);
         if (!validProdId) return NextResponse.json({ success: false, message: "Valid product ID required" }, { status: 400 });
 
+        const logId = cleanUUID(id, null);
         const insertRow: any = {
           organization_id: validOrgId,
-          product_id: validProdId,
-          product_name: productName || "",
-          product_sku: productSku || "",
           user_id: cleanUUID(userId, null),
           user_name: userName || "النظام",
-          change_type: changeType || "stock_adjustment",
-          field_name: fieldName || "",
-          old_value: String(oldValue ?? ""),
-          new_value: String(newValue ?? ""),
+          action: changeType || "update",
+          entity_type: "ProductChangeLog",
+          entity_id: validProdId,
+          details: `${fieldName || "تعديل"}: من [${oldValue ?? ""}] إلى [${newValue ?? ""}] (${productName || productSku || ""})`,
         };
-        const validId = cleanUUID(id, null);
-        if (validId) insertRow.id = validId;
+        if (logId) insertRow.id = logId;
 
         const { data: log, error: logErr } = await supabaseAdmin
-          .from("product_change_history")
+          .from("audit_logs")
           .insert([insertRow])
           .select()
           .single();
 
-        if (logErr) console.warn("Could not persist product change log to DB:", logErr);
+        if (logErr) console.warn("Could not persist product change log to audit_logs:", logErr);
         return NextResponse.json({ success: true, data: log });
       }
 
@@ -988,35 +953,26 @@ export async function POST(request: Request) {
       // PERIOD CLOSINGS (CREATE)
       // ==========================================
       case "create_period_closing": {
-        const { id, organizationId, branchId, periodType, periodLabel, closingDate, openingInventoryValue, purchasesValue, closingInventoryValue, cogsValue, journalEntryId, notes, createdBy } = payload;
+        const { id, organizationId, periodLabel, closingDate, cogsValue, createdBy } = payload;
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
 
         const insertRow: any = {
           organization_id: validOrgId,
-          branch_id: validBranchId,
-          period_type: periodType || "monthly",
-          period_label: periodLabel || "",
-          closing_date: closingDate || new Date().toISOString().split("T")[0],
-          opening_inventory_value: Number(openingInventoryValue) || 0,
-          purchases_value: Number(purchasesValue) || 0,
-          closing_inventory_value: Number(closingInventoryValue) || 0,
-          cogs_value: Number(cogsValue) || 0,
-          journal_entry_id: cleanUUID(journalEntryId, null),
-          notes: notes || null,
-          created_by: createdBy || "النظام",
+          user_name: createdBy || "النظام",
+          action: "create",
+          entity_type: "PeriodClosing",
+          entity_id: cleanUUID(id, null) || validOrgId,
+          details: `إقفال دوري للمخزون (${periodLabel || ""}) بتاريخ ${closingDate} بقيمة تكلفة مباعة ${cogsValue}`,
         };
-        const validId = cleanUUID(id, null);
-        if (validId) insertRow.id = validId;
 
         const { data: pc, error: pcErr } = await supabaseAdmin
-          .from("period_closings")
+          .from("audit_logs")
           .insert([insertRow])
           .select()
           .single();
 
-        if (pcErr) console.warn("Could not persist period closing to DB:", pcErr);
-        return NextResponse.json({ success: true, data: pc });
+        if (pcErr) console.warn("Could not persist period closing to audit_logs:", pcErr);
+        return NextResponse.json({ success: true, data: { id: id || insertRow.entity_id, ...payload } });
       }
 
       // ==========================================
