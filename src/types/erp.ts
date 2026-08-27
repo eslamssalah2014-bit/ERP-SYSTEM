@@ -261,6 +261,7 @@ export interface PurchaseInvoice {
   dueAmount: number;
   notes?: string;
   createdBy: string;
+  createdAt?: string;
 }
 
 export type TreasuryType = 'cash_box' | 'bank_account';

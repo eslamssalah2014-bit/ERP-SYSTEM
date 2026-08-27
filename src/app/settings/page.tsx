@@ -6,7 +6,7 @@ import { Currency } from "@/types/erp";
 import { Settings, Building2, Globe, Shield, Save, Check } from "lucide-react";
 
 export default function SettingsPage() {
-  const { organization, setOrganization, branches, locale } = useERP();
+  const { organization, updateOrganization, branches, locale } = useERP();
   const isAr = locale === "ar";
 
   const [nameAr, setNameAr] = useState(organization.nameAr);
@@ -16,20 +16,37 @@ export default function SettingsPage() {
   const [defaultVatRate, setDefaultVatRate] = useState(organization.defaultVatRate);
   const [address, setAddress] = useState(organization.address || "");
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  // Sync state when organization updates
+  React.useEffect(() => {
+    setNameAr(organization.nameAr);
+    setNameEn(organization.nameEn);
+    setTaxNumber(organization.taxNumber);
+    setCurrency(organization.currency);
+    setDefaultVatRate(organization.defaultVatRate);
+    setAddress(organization.address || "");
+  }, [organization]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setOrganization({
-      ...organization,
-      nameAr,
-      nameEn,
-      taxNumber,
-      currency,
-      defaultVatRate,
-      address,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setIsSaving(true);
+    try {
+      await updateOrganization({
+        nameAr,
+        nameEn,
+        taxNumber,
+        currency,
+        defaultVatRate,
+        address,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

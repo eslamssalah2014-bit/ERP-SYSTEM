@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
 import { SalesInvoice, SalesInvoiceItem } from "@/types/erp";
@@ -24,35 +24,52 @@ export default function SalesInvoicesPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // New Invoice Form State
-  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
+  const [customerId, setCustomerId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 30*24*3600*1000).toISOString().split("T")[0]);
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || "");
-  const [items, setItems] = useState<Omit<SalesInvoiceItem, "id">[]>([
-    {
-      productId: products[0]?.id || "",
-      productName: products[0]?.nameAr || "",
-      warehouseId: warehouses[0]?.id || "",
-      quantity: 1,
-      unitPrice: products[0]?.sellingPrice || 0,
-      costPrice: products[0]?.costPrice || 0,
-      discountPercent: 0,
-      discountAmount: 0,
-      taxRate: organization.defaultVatRate,
-      taxAmount: ((products[0]?.sellingPrice || 0) * organization.defaultVatRate) / 100,
-      total: (products[0]?.sellingPrice || 0) * (1 + organization.defaultVatRate / 100),
+  const [warehouseId, setWarehouseId] = useState("");
+  const [items, setItems] = useState<Omit<SalesInvoiceItem, "id">[]>([]);
+
+  const handleOpenAddModal = () => {
+    const defaultCust = customers[0]?.id || "";
+    const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
+    const defaultProd = products[0];
+
+    setCustomerId(defaultCust);
+    setWarehouseId(defaultWh);
+    setDate(new Date().toISOString().split("T")[0]);
+    setDueDate(new Date(Date.now() + 30*24*3600*1000).toISOString().split("T")[0]);
+
+    if (defaultProd) {
+      setItems([{
+        productId: defaultProd.id,
+        productName: isAr ? defaultProd.nameAr : defaultProd.nameEn,
+        warehouseId: defaultWh,
+        quantity: 1,
+        unitPrice: defaultProd.sellingPrice,
+        costPrice: defaultProd.costPrice,
+        discountPercent: 0,
+        discountAmount: 0,
+        taxRate: organization.defaultVatRate,
+        taxAmount: (defaultProd.sellingPrice * organization.defaultVatRate) / 100,
+        total: defaultProd.sellingPrice * (1 + organization.defaultVatRate / 100),
+      }]);
+    } else {
+      setItems([]);
     }
-  ]);
+    setIsAddModalOpen(true);
+  };
 
   const handleAddItem = () => {
     const p = products[0];
     if (!p) return;
+    const currentWh = warehouseId || warehouses[0]?.id || "";
     setItems(prev => [
       ...prev,
       {
         productId: p.id,
-        productName: p.nameAr,
-        warehouseId: warehouses[0]?.id || "",
+        productName: isAr ? p.nameAr : p.nameEn,
+        warehouseId: currentWh,
         quantity: 1,
         unitPrice: p.sellingPrice,
         costPrice: p.costPrice,
@@ -101,14 +118,14 @@ export default function SalesInvoicesPage() {
   const taxTotal = items.reduce((sum, item) => sum + item.taxAmount, 0);
   const grandTotal = subtotal + taxTotal;
 
-  const handleCreateInvoice = (e: React.FormEvent) => {
+  const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cust = customers.find(c => c.id === customerId);
+    const cust = customers.find(c => c.id === customerId) || customers[0];
     if (!cust || items.length === 0) return;
 
     const invoiceNumber = "INV-" + new Date().getFullYear() + "-" + (salesInvoices.length + 1).toString().padStart(3, "0");
 
-    const created = createSalesInvoice({
+    const created = await createSalesInvoice({
       organizationId: organization.id,
       branchId: activeBranchId,
       invoiceNumber,
@@ -119,9 +136,9 @@ export default function SalesInvoicesPage() {
       customerTaxNumber: cust.taxNumber,
       salesRepId: currentUser.id,
       salesRepName: currentUser.name,
-      warehouseId,
+      warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
       status: "unpaid",
-      items: items.map((item, idx) => ({ ...item, id: "item_" + idx })),
+      items: items.map(item => ({ ...item, id: generateId() })),
       subtotal,
       discountTotal: 0,
       taxTotal,
@@ -158,7 +175,7 @@ export default function SalesInvoicesPage() {
         </div>
 
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={handleOpenAddModal}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
         >
           <Plus className="w-4 h-4" />

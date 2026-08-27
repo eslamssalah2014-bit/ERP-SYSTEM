@@ -4,6 +4,7 @@ import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_BRANCH_ID = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_WAREHOUSE_ID = "00000000-0000-0000-0000-000000000004";
+const DEFAULT_POS_CUSTOMER_ID = "00000000-0000-0000-0000-000000000099";
 
 // UUID Validator & Sanitizer
 function isValidUUID(str: any): boolean {
@@ -23,6 +24,9 @@ export async function GET() {
 
   try {
     const [
+      orgRes,
+      branchesRes,
+      usersRes,
       customersRes,
       suppliersRes,
       productsRes,
@@ -35,6 +39,8 @@ export async function GET() {
       costCentersRes,
       accountsRes,
       treasuryRes,
+      cashReceiptsRes,
+      cashPaymentsRes,
       checksRes,
       journalEntriesRes,
       journalLinesRes,
@@ -45,6 +51,9 @@ export async function GET() {
       changeHistoryRes,
       periodClosingsRes,
     ] = await Promise.all([
+      supabaseAdmin.from("organizations").select("*").limit(1).maybeSingle(),
+      supabaseAdmin.from("branches").select("*").order("created_at", { ascending: true }),
+      supabaseAdmin.from("users").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("customers").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("suppliers").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("products").select("*").order("created_at", { ascending: false }),
@@ -57,6 +66,8 @@ export async function GET() {
       supabaseAdmin.from("cost_centers").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("accounts").select("*").order("code", { ascending: true }),
       supabaseAdmin.from("treasury_accounts").select("*").order("created_at", { ascending: true }),
+      supabaseAdmin.from("cash_receipts").select("*").order("date", { ascending: false }),
+      supabaseAdmin.from("cash_payments").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("check_records").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("journal_entries").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("journal_lines").select("*"),
@@ -68,11 +79,51 @@ export async function GET() {
       supabaseAdmin.from("period_closings").select("*").order("closing_date", { ascending: false }),
     ]);
 
+    // Map Organization
+    const organization = orgRes.data ? {
+      id: orgRes.data.id,
+      nameAr: orgRes.data.name_ar,
+      nameEn: orgRes.data.name_en || orgRes.data.name_ar,
+      taxNumber: orgRes.data.tax_number,
+      commercialRegister: orgRes.data.commercial_register || undefined,
+      country: orgRes.data.country || "EG",
+      currency: orgRes.data.currency || "EGP",
+      defaultVatRate: Number(orgRes.data.default_vat_rate) || 14,
+      address: orgRes.data.address || undefined,
+      logoUrl: orgRes.data.logo_url || undefined,
+      planTier: orgRes.data.plan_tier || "enterprise",
+    } : undefined;
+
+    // Map Branches
+    const branches = (branchesRes.data || []).map((b: any) => ({
+      id: b.id,
+      organizationId: b.organization_id,
+      code: b.code,
+      nameAr: b.name_ar,
+      nameEn: b.name_en || b.name_ar,
+      city: b.city || "",
+      address: b.address || undefined,
+      phone: b.phone || undefined,
+      isHeadquarters: Boolean(b.is_headquarters),
+    }));
+
+    // Map Users
+    const users = (usersRes.data || []).map((u: any) => ({
+      id: u.id,
+      organizationId: u.organization_id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      branchId: u.branch_id || undefined,
+      avatarUrl: u.avatar_url || undefined,
+      isActive: Boolean(u.is_active),
+    }));
+
     // Build warehouse stock map per product
     const stockMap: { [productId: string]: { [whId: string]: number } } = {};
     (warehouseStockRes.data || []).forEach((row: any) => {
       if (!stockMap[row.product_id]) stockMap[row.product_id] = {};
-      stockMap[row.product_id][row.warehouse_id] = row.quantity;
+      stockMap[row.product_id][row.warehouse_id] = Number(row.quantity) || 0;
     });
 
     // Map Products
@@ -280,6 +331,44 @@ export async function GET() {
       isDefault: Boolean(t.is_default),
     }));
 
+    // Map Cash Receipts (NEW!)
+    const cashReceipts = (cashReceiptsRes.data || []).map((r: any) => ({
+      id: r.id,
+      organizationId: r.organization_id,
+      branchId: r.branch_id,
+      receiptNumber: r.receipt_number,
+      date: r.date,
+      treasuryAccountId: r.treasury_account_id,
+      amount: Number(r.amount) || 0,
+      currency: r.currency || "EGP",
+      receivedFrom: r.received_from,
+      customerId: r.customer_id || undefined,
+      creditAccountId: r.credit_account_id,
+      costCenterId: r.cost_center_id || undefined,
+      notes: r.notes || "",
+      createdBy: r.created_by || "",
+      createdAt: r.created_at,
+    }));
+
+    // Map Cash Payments (NEW!)
+    const cashPayments = (cashPaymentsRes.data || []).map((p: any) => ({
+      id: p.id,
+      organizationId: p.organization_id,
+      branchId: p.branch_id,
+      paymentNumber: p.payment_number,
+      date: p.date,
+      treasuryAccountId: p.treasury_account_id,
+      amount: Number(p.amount) || 0,
+      currency: p.currency || "EGP",
+      paidTo: p.paid_to,
+      supplierId: p.supplier_id || undefined,
+      debitAccountId: p.debit_account_id,
+      costCenterId: p.cost_center_id || undefined,
+      notes: p.notes || "",
+      createdBy: p.created_by || "",
+      createdAt: p.created_at,
+    }));
+
     // Map Checks
     const checks = (checksRes.data || []).map((chk: any) => ({
       id: chk.id,
@@ -400,10 +489,36 @@ export async function GET() {
       createdAt: pc.created_at,
     }));
 
+    // Map Categories
+    const categories = (categoriesRes?.data || []).map((c: any) => ({
+      id: c.id,
+      organizationId: c.organization_id,
+      code: c.code,
+      nameAr: c.name_ar,
+      nameEn: c.name_en || c.name_ar,
+      parentId: c.parent_id || undefined,
+      createdAt: c.created_at,
+    }));
+
+    // Map Units
+    const units = (unitsRes?.data || []).map((u: any) => ({
+      id: u.id,
+      organizationId: u.organization_id,
+      code: u.code,
+      nameAr: u.name_ar,
+      nameEn: u.name_en || u.name_ar,
+      symbol: u.symbol || "قطعة",
+    }));
+
     return NextResponse.json({
       success: true,
       data: {
+        organization,
+        branches,
+        users,
         products,
+        categories,
+        units,
         customers,
         suppliers,
         salesInvoices,
@@ -412,6 +527,8 @@ export async function GET() {
         costCenters,
         accounts,
         treasuryAccounts,
+        cashReceipts,
+        cashPayments,
         checks,
         journalEntries,
         stockMovements,
@@ -437,6 +554,35 @@ export async function POST(request: Request) {
     const { action, payload } = body;
 
     switch (action) {
+      // ==========================================
+      // ORGANIZATION SETTINGS (UPDATE)
+      // ==========================================
+      case "update_organization": {
+        const { id, nameAr, nameEn, taxNumber, commercialRegister, country, currency, defaultVatRate, address, logoUrl } = payload;
+        const validId = cleanUUID(id, DEFAULT_ORG_ID);
+
+        const updateRow: any = { updated_at: new Date().toISOString() };
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
+        if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister || null;
+        if (country !== undefined) updateRow.country = country;
+        if (currency !== undefined) updateRow.currency = currency;
+        if (defaultVatRate !== undefined) updateRow.default_vat_rate = Number(defaultVatRate);
+        if (address !== undefined) updateRow.address = address || null;
+        if (logoUrl !== undefined) updateRow.logo_url = logoUrl || null;
+
+        const { data: org, error: orgErr } = await supabaseAdmin
+          .from("organizations")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (orgErr) throw orgErr;
+        return NextResponse.json({ success: true, data: org });
+      }
+
       // ==========================================
       // PRODUCTS (CREATE, UPDATE, DELETE)
       // ==========================================
@@ -563,6 +709,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, data: prod });
       }
 
+      case "delete_product": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
+
+        // Clean dependent rows first
+        await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
+        await supabaseAdmin.from("product_change_history").delete().eq("product_id", validId);
+
+        const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
       // ==========================================
       // STOCK MOVEMENTS (UPDATE, DELETE)
       // ==========================================
@@ -668,20 +829,6 @@ export async function POST(request: Request) {
 
         if (pcErr) console.warn("Could not persist period closing to DB:", pcErr);
         return NextResponse.json({ success: true, data: pc });
-      }
-
-      case "delete_product": {
-        const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
-
-        // Clean dependent rows first
-        await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
-        await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
-
-        const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
-        if (delErr) throw delErr;
-
-        return NextResponse.json({ success: true, id: validId });
       }
 
       // ==========================================
@@ -984,7 +1131,7 @@ export async function POST(request: Request) {
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
         const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
-        const validCustId = cleanUUID(customerId, null);
+        const validCustId = cleanUUID(customerId, DEFAULT_POS_CUSTOMER_ID);
         const validRepId = cleanUUID(salesRepId, null);
 
         const insertRow: any = {
@@ -1056,9 +1203,22 @@ export async function POST(request: Request) {
                 unit_cost: Number(it.costPrice) || 0,
                 total_cost: -Math.abs((Number(it.costPrice) || 0) * (Number(it.quantity) || 1)),
                 balance_quantity: 0,
+                partner_id: validCustId,
+                partner_name: customerName,
+                partner_type: "customer",
                 notes: `صرف مبيعات فاتورة ${invoiceNumber}`,
               }]);
             }
+          }
+        }
+
+        // Atomically update customer balance in PostgreSQL
+        if (validCustId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
+          const { data: currentCust } = await supabaseAdmin.from("customers").select("current_balance").eq("id", validCustId).single();
+          if (currentCust) {
+            await supabaseAdmin.from("customers").update({
+              current_balance: (Number(currentCust.current_balance) || 0) + (Number(dueAmount) || Number(grandTotal) || 0)
+            }).eq("id", validCustId);
           }
         }
 
@@ -1159,9 +1319,22 @@ export async function POST(request: Request) {
                 unit_cost: Number(it.unitCost) || 0,
                 total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
                 balance_quantity: 0,
+                partner_id: validSuppId,
+                partner_name: supplierName,
+                partner_type: "supplier",
                 notes: `توريد مشتريات فاتورة ${invoiceNumber}`,
               }]);
             }
+          }
+        }
+
+        // Atomically update supplier balance in PostgreSQL
+        if (validSuppId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
+          const { data: currentSupp } = await supabaseAdmin.from("suppliers").select("current_balance").eq("id", validSuppId).single();
+          if (currentSupp) {
+            await supabaseAdmin.from("suppliers").update({
+              current_balance: (Number(currentSupp.current_balance) || 0) + (Number(dueAmount) || Number(grandTotal) || 0)
+            }).eq("id", validSuppId);
           }
         }
 
@@ -1177,6 +1350,219 @@ export async function POST(request: Request) {
         await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
 
         const { error: delErr } = await supabaseAdmin.from("purchase_invoices").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // TREASURY ACCOUNTS (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_treasury_account": {
+        const { id, organizationId, branchId, glAccountId, code, nameAr, nameEn, type, currency, balance, bankName, accountNumber, isDefault } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          gl_account_id: cleanUUID(glAccountId, "00000000-0000-0000-0000-000000000111"),
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          type: type || "cash_box",
+          currency: currency || "EGP",
+          balance: Number(balance) || 0,
+          bank_name: bankName || null,
+          account_number: accountNumber || null,
+          is_default: Boolean(isDefault),
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: t, error: tErr } = await supabaseAdmin
+          .from("treasury_accounts")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (tErr) throw tErr;
+        return NextResponse.json({ success: true, data: t });
+      }
+
+      case "update_treasury_account": {
+        const { id, code, nameAr, nameEn, glAccountId, balance, bankName, accountNumber, isDefault } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid treasury account ID required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (glAccountId !== undefined) updateRow.gl_account_id = cleanUUID(glAccountId, null);
+        if (balance !== undefined) updateRow.balance = Number(balance);
+        if (bankName !== undefined) updateRow.bank_name = bankName || null;
+        if (accountNumber !== undefined) updateRow.account_number = accountNumber || null;
+        if (isDefault !== undefined) updateRow.is_default = Boolean(isDefault);
+
+        const { data: t, error: tErr } = await supabaseAdmin
+          .from("treasury_accounts")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (tErr) throw tErr;
+        return NextResponse.json({ success: true, data: t });
+      }
+
+      case "delete_treasury_account": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid treasury account ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("treasury_accounts").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // CASH RECEIPTS (CREATE, DELETE)
+      // ==========================================
+      case "create_cash_receipt": {
+        const { id, organizationId, branchId, receiptNumber, date, treasuryAccountId, amount, currency, receivedFrom, customerId, creditAccountId, costCenterId, notes, createdBy } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validTreasuryId = cleanUUID(treasuryAccountId, null);
+        const validCustId = cleanUUID(customerId, null);
+        const validCreditAccId = cleanUUID(creditAccountId, "00000000-0000-0000-0000-000000000120");
+        const numAmount = Number(amount) || 0;
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          receipt_number: receiptNumber || ("RCP-" + Date.now().toString().slice(-6)),
+          date: date || new Date().toISOString().split("T")[0],
+          treasury_account_id: validTreasuryId,
+          amount: numAmount,
+          currency: currency || "EGP",
+          received_from: receivedFrom || "عميل",
+          customer_id: validCustId,
+          credit_account_id: validCreditAccId,
+          cost_center_id: cleanUUID(costCenterId, null),
+          notes: notes || null,
+          created_by: createdBy || null,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: rcp, error: rcpErr } = await supabaseAdmin
+          .from("cash_receipts")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (rcpErr) throw rcpErr;
+
+        // Atomically update Treasury Balance
+        if (validTreasuryId && numAmount > 0) {
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasuryId).single();
+          if (t) {
+            await supabaseAdmin.from("treasury_accounts").update({
+              balance: (Number(t.balance) || 0) + numAmount
+            }).eq("id", validTreasuryId);
+          }
+        }
+
+        // Atomically update Customer Balance
+        if (validCustId && numAmount > 0) {
+          const { data: c } = await supabaseAdmin.from("customers").select("current_balance").eq("id", validCustId).single();
+          if (c) {
+            await supabaseAdmin.from("customers").update({
+              current_balance: Math.max(0, (Number(c.current_balance) || 0) - numAmount)
+            }).eq("id", validCustId);
+          }
+        }
+
+        return NextResponse.json({ success: true, data: rcp });
+      }
+
+      case "delete_cash_receipt": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid cash receipt ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("cash_receipts").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // CASH PAYMENTS (CREATE, DELETE)
+      // ==========================================
+      case "create_cash_payment": {
+        const { id, organizationId, branchId, paymentNumber, date, treasuryAccountId, amount, currency, paidTo, supplierId, debitAccountId, costCenterId, notes, createdBy } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validTreasuryId = cleanUUID(treasuryAccountId, null);
+        const validSuppId = cleanUUID(supplierId, null);
+        const validDebitAccId = cleanUUID(debitAccountId, "00000000-0000-0000-0000-000000000211");
+        const numAmount = Number(amount) || 0;
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          payment_number: paymentNumber || ("PAY-" + Date.now().toString().slice(-6)),
+          date: date || new Date().toISOString().split("T")[0],
+          treasury_account_id: validTreasuryId,
+          amount: numAmount,
+          currency: currency || "EGP",
+          paid_to: paidTo || "مورد / جهة صرف",
+          supplier_id: validSuppId,
+          debit_account_id: validDebitAccId,
+          cost_center_id: cleanUUID(costCenterId, null),
+          notes: notes || null,
+          created_by: createdBy || null,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: pay, error: payErr } = await supabaseAdmin
+          .from("cash_payments")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (payErr) throw payErr;
+
+        // Atomically update Treasury Balance
+        if (validTreasuryId && numAmount > 0) {
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasuryId).single();
+          if (t) {
+            await supabaseAdmin.from("treasury_accounts").update({
+              balance: (Number(t.balance) || 0) - numAmount
+            }).eq("id", validTreasuryId);
+          }
+        }
+
+        // Atomically update Supplier Balance
+        if (validSuppId && numAmount > 0) {
+          const { data: s } = await supabaseAdmin.from("suppliers").select("current_balance").eq("id", validSuppId).single();
+          if (s) {
+            await supabaseAdmin.from("suppliers").update({
+              current_balance: Math.max(0, (Number(s.current_balance) || 0) - numAmount)
+            }).eq("id", validSuppId);
+          }
+        }
+
+        return NextResponse.json({ success: true, data: pay });
+      }
+
+      case "delete_cash_payment": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid cash payment ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("cash_payments").delete().eq("id", validId);
         if (delErr) throw delErr;
 
         return NextResponse.json({ success: true, id: validId });
@@ -1222,14 +1608,26 @@ export async function POST(request: Request) {
         const { checkId, newStatus, targetTreasuryId } = payload;
         const validCheckId = cleanUUID(checkId, null);
         if (!validCheckId) return NextResponse.json({ success: false, message: "Invalid check ID" }, { status: 400 });
+        const validTreasuryId = cleanUUID(targetTreasuryId, null);
 
         const { data: chk, error: chkErr } = await supabaseAdmin.from("check_records").update({
           status: newStatus,
-          target_treasury_id: cleanUUID(targetTreasuryId, null),
+          target_treasury_id: validTreasuryId,
           collection_date: newStatus === "collected" ? new Date().toISOString().split("T")[0] : null,
         }).eq("id", validCheckId).select().single();
 
         if (chkErr) throw chkErr;
+
+        // If collected, atomically update treasury balance in PostgreSQL
+        if (newStatus === "collected" && validTreasuryId && chk?.amount) {
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasuryId).single();
+          if (t) {
+            await supabaseAdmin.from("treasury_accounts").update({
+              balance: (Number(t.balance) || 0) + Number(chk.amount)
+            }).eq("id", validTreasuryId);
+          }
+        }
+
         return NextResponse.json({ success: true, data: chk });
       }
 
@@ -1300,6 +1698,195 @@ export async function POST(request: Request) {
 
         await supabaseAdmin.from("journal_lines").delete().eq("journal_entry_id", validId);
         const { error: delErr } = await supabaseAdmin.from("journal_entries").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // ACCOUNTS / CHART OF ACCOUNTS (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_account": {
+        const { id, organizationId, code, nameAr, nameEn, type, parentId, level, nature, balance, currency, isActive, isSystem } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          type,
+          parent_id: cleanUUID(parentId, null),
+          level: Number(level) || 1,
+          nature: nature || "debit",
+          balance: Number(balance) || 0,
+          currency: currency || "EGP",
+          is_active: isActive !== false,
+          is_system: Boolean(isSystem),
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: acc, error: accErr } = await supabaseAdmin
+          .from("accounts")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (accErr) throw accErr;
+        return NextResponse.json({ success: true, data: acc });
+      }
+
+      case "update_account": {
+        const { id, code, nameAr, nameEn, type, parentId, level, nature, balance, isActive } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid account ID is required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (type !== undefined) updateRow.type = type;
+        if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
+        if (level !== undefined) updateRow.level = Number(level);
+        if (nature !== undefined) updateRow.nature = nature;
+        if (balance !== undefined) updateRow.balance = Number(balance);
+        if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
+
+        const { data: acc, error: accErr } = await supabaseAdmin
+          .from("accounts")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (accErr) throw accErr;
+        return NextResponse.json({ success: true, data: acc });
+      }
+
+      case "delete_account": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid account ID is required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("accounts").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // PRODUCT CATEGORIES (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_category": {
+        const { id, organizationId, code, nameAr, nameEn, parentId } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          parent_id: cleanUUID(parentId, null),
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: cat, error: catErr } = await supabaseAdmin
+          .from("product_categories")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (catErr) throw catErr;
+        return NextResponse.json({ success: true, data: cat });
+      }
+
+      case "update_category": {
+        const { id, code, nameAr, nameEn, parentId } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid category ID required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
+
+        const { data: cat, error: catErr } = await supabaseAdmin
+          .from("product_categories")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (catErr) throw catErr;
+        return NextResponse.json({ success: true, data: cat });
+      }
+
+      case "delete_category": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid category ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("product_categories").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return NextResponse.json({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // PRODUCT UNITS (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_unit": {
+        const { id, organizationId, code, nameAr, nameEn, symbol } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          code,
+          name_ar: nameAr,
+          name_en: nameEn || nameAr,
+          symbol: symbol || "قطعة",
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: u, error: uErr } = await supabaseAdmin
+          .from("product_units")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (uErr) throw uErr;
+        return NextResponse.json({ success: true, data: u });
+      }
+
+      case "update_unit": {
+        const { id, code, nameAr, nameEn, symbol } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid unit ID required" }, { status: 400 });
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (symbol !== undefined) updateRow.symbol = symbol;
+
+        const { data: u, error: uErr } = await supabaseAdmin
+          .from("product_units")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (uErr) throw uErr;
+        return NextResponse.json({ success: true, data: u });
+      }
+
+      case "delete_unit": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return NextResponse.json({ success: false, message: "Valid unit ID required" }, { status: 400 });
+
+        const { error: delErr } = await supabaseAdmin.from("product_units").delete().eq("id", validId);
         if (delErr) throw delErr;
 
         return NextResponse.json({ success: true, id: validId });

@@ -23,11 +23,11 @@ export default function ChartOfAccountsPage() {
   const [parentId, setParentId] = useState<string>("");
   const [nature, setNature] = useState<"debit" | "credit">("debit");
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !nameAr) return;
 
-    addAccount({
+    await addAccount({
       organizationId: organization.id,
       code,
       nameAr,

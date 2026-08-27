@@ -1,11 +1,14 @@
 import {
   Product, Customer, Supplier, SalesInvoice, PurchaseInvoice,
   Warehouse, CostCenter, CheckRecord, JournalEntry, Account, TreasuryAccount,
-  StockMovement, AuditLog, ProductChangeLog, PeriodClosing
+  StockMovement, AuditLog, ProductChangeLog, PeriodClosing, ProductCategory,
+  ProductUnit, Organization, Branch, User, CashReceipt, CashPayment
 } from "@/types/erp";
 
 export interface HydratedERPData {
   products: Product[];
+  categories?: ProductCategory[];
+  units?: ProductUnit[];
   customers: Customer[];
   suppliers: Supplier[];
   salesInvoices: SalesInvoice[];
@@ -14,12 +17,17 @@ export interface HydratedERPData {
   costCenters: CostCenter[];
   accounts: Account[];
   treasuryAccounts: TreasuryAccount[];
+  cashReceipts?: CashReceipt[];
+  cashPayments?: CashPayment[];
   checks: CheckRecord[];
   journalEntries: JournalEntry[];
   stockMovements: StockMovement[];
   auditLogs: AuditLog[];
   productChangeLogs?: ProductChangeLog[];
   periodClosings?: PeriodClosing[];
+  organization?: Organization;
+  branches?: Branch[];
+  users?: User[];
 }
 
 /**
@@ -66,6 +74,11 @@ async function mutateERP(action: string, payload: unknown): Promise<{ success: b
   }
 }
 
+// Organization Settings
+export async function updateOrganizationDB(org: Partial<Organization>) {
+  return mutateERP("update_organization", org);
+}
+
 // Products CRUD
 export async function persistProductDB(p: Product) {
   return mutateERP("create_product", p);
@@ -75,6 +88,28 @@ export async function updateProductDB(id: string, p: Partial<Product>) {
 }
 export async function deleteProductDB(id: string) {
   return mutateERP("delete_product", { id });
+}
+
+// Product Categories CRUD
+export async function persistCategoryDB(cat: ProductCategory) {
+  return mutateERP("create_category", cat);
+}
+export async function updateCategoryDB(id: string, cat: Partial<ProductCategory>) {
+  return mutateERP("update_category", { id, ...cat });
+}
+export async function deleteCategoryDB(id: string) {
+  return mutateERP("delete_category", { id });
+}
+
+// Product Units CRUD
+export async function persistUnitDB(u: ProductUnit) {
+  return mutateERP("create_unit", u);
+}
+export async function updateUnitDB(id: string, u: Partial<ProductUnit>) {
+  return mutateERP("update_unit", { id, ...u });
+}
+export async function deleteUnitDB(id: string) {
+  return mutateERP("delete_unit", { id });
 }
 
 // Customers CRUD
@@ -119,6 +154,44 @@ export async function updateCostCenterDB(id: string, cc: Partial<CostCenter>) {
 }
 export async function deleteCostCenterDB(id: string) {
   return mutateERP("delete_cost_center", { id });
+}
+
+// Accounts CRUD
+export async function persistAccountDB(acc: Account) {
+  return mutateERP("create_account", acc);
+}
+export async function updateAccountDB(id: string, acc: Partial<Account>) {
+  return mutateERP("update_account", { id, ...acc });
+}
+export async function deleteAccountDB(id: string) {
+  return mutateERP("delete_account", { id });
+}
+
+// Treasury Accounts CRUD
+export async function persistTreasuryAccountDB(t: TreasuryAccount) {
+  return mutateERP("create_treasury_account", t);
+}
+export async function updateTreasuryAccountDB(id: string, t: Partial<TreasuryAccount>) {
+  return mutateERP("update_treasury_account", { id, ...t });
+}
+export async function deleteTreasuryAccountDB(id: string) {
+  return mutateERP("delete_treasury_account", { id });
+}
+
+// Cash Receipts CRUD (NEW!)
+export async function persistCashReceiptDB(rcp: CashReceipt) {
+  return mutateERP("create_cash_receipt", rcp);
+}
+export async function deleteCashReceiptDB(id: string) {
+  return mutateERP("delete_cash_receipt", { id });
+}
+
+// Cash Payments CRUD (NEW!)
+export async function persistCashPaymentDB(pay: CashPayment) {
+  return mutateERP("create_cash_payment", pay);
+}
+export async function deleteCashPaymentDB(id: string) {
+  return mutateERP("delete_cash_payment", { id });
 }
 
 // Sales Invoices CRUD

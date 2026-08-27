@@ -30,6 +30,12 @@ import {
   persistProductDB,
   updateProductDB,
   deleteProductDB,
+  persistCategoryDB,
+  updateCategoryDB,
+  deleteCategoryDB,
+  persistUnitDB,
+  updateUnitDB,
+  deleteUnitDB,
   persistCustomerDB,
   updateCustomerDB,
   deleteCustomerDB,
@@ -46,6 +52,16 @@ import {
   persistCostCenterDB,
   updateCostCenterDB,
   deleteCostCenterDB,
+  persistAccountDB,
+  updateAccountDB,
+  deleteAccountDB,
+  persistTreasuryAccountDB,
+  updateTreasuryAccountDB,
+  deleteTreasuryAccountDB,
+  persistCashReceiptDB,
+  deleteCashReceiptDB,
+  persistCashPaymentDB,
+  deleteCashPaymentDB,
   persistCheckDB,
   persistCheckStatusDB,
   deleteCheckDB,
@@ -54,7 +70,8 @@ import {
   updateStockMovementDB,
   deleteStockMovementDB,
   persistProductChangeLogDB,
-  persistPeriodClosingDB
+  persistPeriodClosingDB,
+  updateOrganizationDB
 } from "@/lib/erp-service";
 
 interface ERPContextType {
@@ -75,6 +92,7 @@ interface ERPContextType {
   setCurrentUser: (u: User) => void;
   organization: Organization;
   setOrganization: (org: Organization) => void;
+  updateOrganization: (org: Partial<Organization>) => Promise<void>;
   branches: Branch[];
   activeBranchId: string;
   setActiveBranchId: (id: string) => void;
@@ -88,57 +106,71 @@ interface ERPContextType {
   stockMovements: StockMovement[];
   productChangeLogs: ProductChangeLog[];
   periodClosings: PeriodClosing[];
-  addProduct: (p: Omit<Product, "id">) => Product;
-  updateProduct: (id: string, p: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  addWarehouse: (w: Omit<Warehouse, "id">) => Warehouse;
-  updateWarehouse: (id: string, w: Partial<Warehouse>) => void;
-  deleteWarehouse: (id: string) => void;
-  addStockMovement: (m: Omit<StockMovement, "id">) => void;
-  updateStockMovement: (id: string, sm: Partial<StockMovement>) => void;
-  deleteStockMovement: (id: string) => void;
-  addProductChangeLog: (log: Omit<ProductChangeLog, "id" | "createdAt">) => void;
-  createPeriodClosing: (closing: Omit<PeriodClosing, "id" | "createdAt">) => PeriodClosing;
+  addProduct: (p: Omit<Product, "id">) => Promise<Product>;
+  updateProduct: (id: string, p: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addCategory: (c: Omit<ProductCategory, "id">) => Promise<ProductCategory>;
+  updateCategory: (id: string, c: Partial<ProductCategory>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  addUnit: (u: Omit<ProductUnit, "id">) => Promise<ProductUnit>;
+  updateUnit: (id: string, u: Partial<ProductUnit>) => Promise<void>;
+  deleteUnit: (id: string) => Promise<void>;
+  addWarehouse: (w: Omit<Warehouse, "id">) => Promise<Warehouse>;
+  updateWarehouse: (id: string, w: Partial<Warehouse>) => Promise<void>;
+  deleteWarehouse: (id: string) => Promise<void>;
+  addStockMovement: (m: Omit<StockMovement, "id">) => Promise<void>;
+  updateStockMovement: (id: string, sm: Partial<StockMovement>) => Promise<void>;
+  deleteStockMovement: (id: string) => Promise<void>;
+  addProductChangeLog: (log: Omit<ProductChangeLog, "id" | "createdAt">) => Promise<void>;
+  createPeriodClosing: (closing: Omit<PeriodClosing, "id" | "createdAt">) => Promise<PeriodClosing>;
   hasPermission: (requiredRoles: UserRole | UserRole[]) => boolean;
 
   // CRM & Partners
   customers: Customer[];
   suppliers: Supplier[];
-  addCustomer: (c: Omit<Customer, "id">) => Customer;
-  updateCustomer: (id: string, c: Partial<Customer>) => void;
-  deleteCustomer: (id: string) => void;
-  addSupplier: (s: Omit<Supplier, "id">) => Supplier;
-  updateSupplier: (id: string, s: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
+  addCustomer: (c: Omit<Customer, "id">) => Promise<Customer>;
+  updateCustomer: (id: string, c: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
+  addSupplier: (s: Omit<Supplier, "id">) => Promise<Supplier>;
+  updateSupplier: (id: string, s: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
 
   // Sales & Purchases
   salesInvoices: SalesInvoice[];
   purchaseInvoices: PurchaseInvoice[];
-  createSalesInvoice: (inv: Omit<SalesInvoice, "id">) => SalesInvoice;
-  deleteSalesInvoice: (id: string) => void;
-  createPurchaseInvoice: (inv: Omit<PurchaseInvoice, "id">) => PurchaseInvoice;
-  deletePurchaseInvoice: (id: string) => void;
+  createSalesInvoice: (inv: Omit<SalesInvoice, "id">) => Promise<SalesInvoice>;
+  deleteSalesInvoice: (id: string) => Promise<void>;
+  createPurchaseInvoice: (inv: Omit<PurchaseInvoice, "id">) => Promise<PurchaseInvoice>;
+  deletePurchaseInvoice: (id: string) => Promise<void>;
 
   // Treasury & Checks
   treasuryAccounts: TreasuryAccount[];
   cashReceipts: CashReceipt[];
   cashPayments: CashPayment[];
   checks: CheckRecord[];
-  createCashReceipt: (rcp: Omit<CashReceipt, "id">) => CashReceipt;
-  createCashPayment: (pay: Omit<CashPayment, "id">) => CashPayment;
-  updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => void;
-  deleteCheck: (id: string) => void;
+  addTreasuryAccount: (t: Omit<TreasuryAccount, "id">) => Promise<TreasuryAccount>;
+  updateTreasuryAccount: (id: string, t: Partial<TreasuryAccount>) => Promise<void>;
+  deleteTreasuryAccount: (id: string) => Promise<void>;
+  createCashReceipt: (rcp: Omit<CashReceipt, "id">) => Promise<CashReceipt>;
+  deleteCashReceipt: (id: string) => Promise<void>;
+  createCashPayment: (pay: Omit<CashPayment, "id">) => Promise<CashPayment>;
+  deleteCashPayment: (id: string) => Promise<void>;
+  addCheck: (chk: Omit<CheckRecord, "id">) => Promise<CheckRecord>;
+  updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => Promise<void>;
+  deleteCheck: (id: string) => Promise<void>;
 
   // Accounting & GL
   accounts: Account[];
   costCenters: CostCenter[];
   journalEntries: JournalEntry[];
-  addAccount: (acc: Omit<Account, "id">) => Account;
-  addCostCenter: (cc: Omit<CostCenter, "id">) => CostCenter;
-  updateCostCenter: (id: string, cc: Partial<CostCenter>) => void;
-  deleteCostCenter: (id: string) => void;
-  addJournalEntry: (entry: Omit<JournalEntry, "id">) => JournalEntry;
-  deleteJournalEntry: (id: string) => void;
+  addAccount: (acc: Omit<Account, "id">) => Promise<Account>;
+  updateAccount: (id: string, acc: Partial<Account>) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  addCostCenter: (cc: Omit<CostCenter, "id">) => Promise<CostCenter>;
+  updateCostCenter: (id: string, cc: Partial<CostCenter>) => Promise<void>;
+  deleteCostCenter: (id: string) => Promise<void>;
+  addJournalEntry: (entry: Omit<JournalEntry, "id">) => Promise<JournalEntry>;
+  deleteJournalEntry: (id: string) => Promise<void>;
 
   // Audit & Notifications
   auditLogs: AuditLog[];
@@ -168,35 +200,35 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>(initialUsers[0]);
 
   // Inventory State
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [categories, setCategories] = useState<ProductCategory[]>(initialCategories);
-  const [units, setUnits] = useState<ProductUnit[]>(initialUnits);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>(initialStockMovements);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [units, setUnits] = useState<ProductUnit[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
   const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
 
   // CRM State
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   // Invoices State
-  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(initialSalesInvoices);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>(initialPurchaseInvoices);
+  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
 
   // Treasury State
-  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>(initialTreasuryAccounts);
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>([]);
   const [cashReceipts, setCashReceipts] = useState<CashReceipt[]>([]);
   const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
-  const [checks, setChecks] = useState<CheckRecord[]>(initialChecks);
+  const [checks, setChecks] = useState<CheckRecord[]>([]);
 
   // Accounting State
-  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialCostCenters);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(initialJournalEntries);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
 
   // Audit & Notifications
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
 
   // Sync HTML dir and lang
@@ -210,31 +242,57 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
   }, [direction, locale, theme]);
 
-  // Hydrate Data from Supabase Database on Mount
+  // Hydrate Data from Supabase Database on Mount & Refresh
   const loadDatabaseData = useCallback(async () => {
     setIsLoadingData(true);
     try {
       const liveData = await fetchFullERPData();
       if (liveData) {
         setIsDbConnected(true);
-        if (liveData.products) setProducts(liveData.products);
-        if (liveData.customers) setCustomers(liveData.customers);
-        if (liveData.suppliers) setSuppliers(liveData.suppliers);
-        if (liveData.salesInvoices) setSalesInvoices(liveData.salesInvoices);
-        if (liveData.purchaseInvoices) setPurchaseInvoices(liveData.purchaseInvoices);
-        if (liveData.warehouses && liveData.warehouses.length > 0) setWarehouses(liveData.warehouses);
-        if (liveData.costCenters) setCostCenters(liveData.costCenters);
-        if (liveData.accounts && liveData.accounts.length > 0) setAccounts(liveData.accounts);
-        if (liveData.treasuryAccounts && liveData.treasuryAccounts.length > 0) setTreasuryAccounts(liveData.treasuryAccounts);
-        if (liveData.checks) setChecks(liveData.checks);
-        if (liveData.journalEntries) setJournalEntries(liveData.journalEntries);
-        if (liveData.stockMovements) setStockMovements(liveData.stockMovements);
-        if (liveData.auditLogs) setAuditLogs(liveData.auditLogs);
-        if (liveData.productChangeLogs) setProductChangeLogs(liveData.productChangeLogs);
-        if (liveData.periodClosings) setPeriodClosings(liveData.periodClosings);
+        if (liveData.organization) setOrganization(liveData.organization);
+        if (Array.isArray(liveData.branches) && liveData.branches.length > 0) setBranches(liveData.branches);
+        if (Array.isArray(liveData.users) && liveData.users.length > 0) setUsers(liveData.users);
+        if (Array.isArray(liveData.products)) setProducts(liveData.products);
+        if (Array.isArray(liveData.categories)) setCategories(liveData.categories);
+        if (Array.isArray(liveData.units)) setUnits(liveData.units);
+        if (Array.isArray(liveData.customers)) setCustomers(liveData.customers);
+        if (Array.isArray(liveData.suppliers)) setSuppliers(liveData.suppliers);
+        if (Array.isArray(liveData.salesInvoices)) setSalesInvoices(liveData.salesInvoices);
+        if (Array.isArray(liveData.purchaseInvoices)) setPurchaseInvoices(liveData.purchaseInvoices);
+        if (Array.isArray(liveData.warehouses)) setWarehouses(liveData.warehouses);
+        if (Array.isArray(liveData.costCenters)) setCostCenters(liveData.costCenters);
+        if (Array.isArray(liveData.accounts)) setAccounts(liveData.accounts);
+        if (Array.isArray(liveData.treasuryAccounts)) setTreasuryAccounts(liveData.treasuryAccounts);
+        if (Array.isArray(liveData.cashReceipts)) setCashReceipts(liveData.cashReceipts);
+        if (Array.isArray(liveData.cashPayments)) setCashPayments(liveData.cashPayments);
+        if (Array.isArray(liveData.checks)) setChecks(liveData.checks);
+        if (Array.isArray(liveData.journalEntries)) setJournalEntries(liveData.journalEntries);
+        if (Array.isArray(liveData.stockMovements)) setStockMovements(liveData.stockMovements);
+        if (Array.isArray(liveData.auditLogs)) setAuditLogs(liveData.auditLogs);
+        if (Array.isArray(liveData.productChangeLogs)) setProductChangeLogs(liveData.productChangeLogs);
+        if (Array.isArray(liveData.periodClosings)) setPeriodClosings(liveData.periodClosings);
+      } else {
+        // Fallback to Demo Seed Data if DB is offline
+        setIsDbConnected(false);
+        setProducts(initialProducts);
+        setCategories(initialCategories);
+        setUnits(initialUnits);
+        setWarehouses(initialWarehouses);
+        setCustomers(initialCustomers);
+        setSuppliers(initialSuppliers);
+        setAccounts(initialAccounts);
+        setTreasuryAccounts(initialTreasuryAccounts);
+        setCostCenters(initialCostCenters);
+        setChecks(initialChecks);
+        setSalesInvoices(initialSalesInvoices);
+        setPurchaseInvoices(initialPurchaseInvoices);
+        setStockMovements(initialStockMovements);
+        setJournalEntries(initialJournalEntries);
+        setAuditLogs(initialAuditLogs);
       }
     } catch (e) {
       console.error("Failed to load initial data from DB:", e);
+      setIsDbConnected(false);
     } finally {
       setIsLoadingData(false);
     }
@@ -247,20 +305,20 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const addAuditLog = (log: Omit<AuditLog, "id" | "createdAt">) => {
     const newLog: AuditLog = {
       ...log,
-      id: generateId("audit"),
+      id: generateId(),
       createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
     };
     setAuditLogs(prev => [newLog, ...prev]);
   };
 
-  const addProductChangeLog = (log: Omit<ProductChangeLog, "id" | "createdAt">) => {
+  const addProductChangeLog = async (log: Omit<ProductChangeLog, "id" | "createdAt">) => {
     const newLog: ProductChangeLog = {
       ...log,
-      id: generateId("pch"),
+      id: generateId(),
       createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
     };
     setProductChangeLogs(prev => [newLog, ...prev]);
-    persistProductChangeLogDB(newLog).catch(err => console.error("Error saving change log to DB:", err));
+    await persistProductChangeLogDB(newLog);
   };
 
   const markNotificationRead = (id: string) => {
@@ -273,11 +331,27 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return roles.includes(currentUser.role);
   };
 
+  // Organization Settings
+  const updateOrganization = async (org: Partial<Organization>) => {
+    const updated = { ...organization, ...org };
+    setOrganization(updated);
+    await updateOrganizationDB(updated);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "Organization",
+      entityId: organization.id,
+      details: `تحديث إعدادات المنشأة: ${updated.nameAr}`,
+    });
+  };
+
   // ==========================================
-  // INVENTORY CRUD WITH OPENING STOCK & AUDIT
+  // INVENTORY & PRODUCT CATEGORIES / UNITS
   // ==========================================
-  const addProduct = (p: Omit<Product, "id">): Product => {
-    const newProduct: Product = { ...p, id: generateId("prod") };
+  const addProduct = async (p: Omit<Product, "id">): Promise<Product> => {
+    const newProduct: Product = { ...p, id: generateId() };
     
     // 1. Check opening stock allocations
     const openingMovements: StockMovement[] = [];
@@ -288,8 +362,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         const numQty = Number(qty) || 0;
         if (numQty > 0) {
           totalOpeningQty += numQty;
-          const newSm: StockMovement = {
-            id: generateId("sm"),
+          openingMovements.push({
+            id: generateId(),
             organizationId: organization.id,
             productId: newProduct.id,
             warehouseId: whId,
@@ -302,22 +376,15 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
             balanceQuantity: numQty,
             partnerName: "رصيد افتتاحي",
             partnerType: "opening",
-            notes: "رصيد مخزون أول المدة",
-          };
-          openingMovements.push(newSm);
+            notes: `رصيد أول المدة للصنف ${newProduct.nameAr}`,
+          });
         }
       }
     }
 
-    // 2. Add product & movements to state
-    setProducts(prev => [newProduct, ...prev]);
-    if (openingMovements.length > 0) {
-      setStockMovements(prev => [...openingMovements, ...prev]);
-    }
-
-    // 3. Generate opening stock journal entry if opening quantity > 0
-    if (totalOpeningQty > 0) {
-      const obJournalDraft = generateOpeningStockJournal(
+    // 2. Generate Opening Stock Journal Entry
+    if (totalOpeningQty > 0 && newProduct.costPrice > 0) {
+      const journalDraft = generateOpeningStockJournal(
         organization.id,
         activeBranchId,
         newProduct,
@@ -326,16 +393,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         accounts,
         currentUser.name
       );
-      if (obJournalDraft) {
-        const newJournal: JournalEntry = { ...obJournalDraft, id: generateId("jv") };
+
+      if (journalDraft) {
+        const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
         setJournalEntries(prev => [newJournal, ...prev]);
-        persistJournalEntryDB(newJournal).catch(err => console.error("Error saving opening journal to DB:", err));
+        await persistJournalEntryDB(newJournal);
       }
     }
 
-    // 4. Log in product change history
-    const changeLog: ProductChangeLog = {
-      id: generateId("pch"),
+    if (openingMovements.length > 0) {
+      setStockMovements(prev => [...openingMovements, ...prev]);
+    }
+
+    setProducts(prev => [newProduct, ...prev]);
+    await persistProductDB(newProduct);
+
+    await addProductChangeLog({
       organizationId: organization.id,
       productId: newProduct.id,
       productName: newProduct.nameAr,
@@ -343,15 +416,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       userId: currentUser.id,
       userName: currentUser.name,
       changeType: "created",
-      fieldName: "product",
+      fieldName: "إنشاء صنف جديد",
       oldValue: "---",
-      newValue: `تم إنشاء المنتج برصيد افتتاحي ${totalOpeningQty} قطعة بقيمة ${totalOpeningQty * newProduct.costPrice}`,
-      createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
-    };
-    setProductChangeLogs(prev => [changeLog, ...prev]);
-    persistProductChangeLogDB(changeLog).catch(err => console.error("Error saving change log to DB:", err));
+      newValue: `${newProduct.nameAr} (سعر البيع: ${newProduct.sellingPrice}, التكلفة: ${newProduct.costPrice})`,
+    });
 
-    // 5. Audit Log
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -359,175 +428,122 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "create",
       entityType: "Product",
       entityId: newProduct.id,
-      details: `إضافة منتج جديد: ${newProduct.nameAr} (${newProduct.sku}) برصيد افتتاحي ${totalOpeningQty}`,
+      details: `إضافة منتج جديد: ${newProduct.nameAr} (${newProduct.sku})`,
     });
 
-    // 6. Persist to DB
-    persistProductDB(newProduct).catch(err => console.error("Error saving product to DB:", err));
     return newProduct;
   };
 
-  const updateProduct = (id: string, p: Partial<Product>) => {
-    const currentProd = products.find(prod => prod.id === id);
-    if (!currentProd) return;
+  const updateProduct = async (id: string, p: Partial<Product>) => {
+    const existing = products.find(prod => prod.id === id);
+    if (!existing) return;
 
-    const logsToCreate: ProductChangeLog[] = [];
-    const nowStr = new Date().toISOString().replace("T", " ").substring(0, 19);
-
-    if (p.nameAr !== undefined && p.nameAr !== currentProd.nameAr) {
-      logsToCreate.push({
-        id: generateId("pch"),
+    if (p.nameAr && p.nameAr !== existing.nameAr) {
+      await addProductChangeLog({
         organizationId: organization.id,
         productId: id,
         productName: p.nameAr,
-        productSku: currentProd.sku,
+        productSku: existing.sku,
         userId: currentUser.id,
         userName: currentUser.name,
         changeType: "name",
-        fieldName: "اسم المنتج بالعربية",
-        oldValue: currentProd.nameAr,
+        fieldName: "اسم الصنف بالعربية",
+        oldValue: existing.nameAr,
         newValue: p.nameAr,
-        createdAt: nowStr,
       });
     }
 
-    if (p.costPrice !== undefined && p.costPrice !== currentProd.costPrice) {
-      logsToCreate.push({
-        id: generateId("pch"),
+    if (p.sellingPrice !== undefined && p.sellingPrice !== existing.sellingPrice) {
+      await addProductChangeLog({
         organizationId: organization.id,
         productId: id,
-        productName: currentProd.nameAr,
-        productSku: currentProd.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "price",
-        fieldName: "سعر التكلفة",
-        oldValue: String(currentProd.costPrice),
-        newValue: String(p.costPrice),
-        createdAt: nowStr,
-      });
-    }
-
-    if (p.sellingPrice !== undefined && p.sellingPrice !== currentProd.sellingPrice) {
-      logsToCreate.push({
-        id: generateId("pch"),
-        organizationId: organization.id,
-        productId: id,
-        productName: currentProd.nameAr,
-        productSku: currentProd.sku,
+        productName: existing.nameAr,
+        productSku: existing.sku,
         userId: currentUser.id,
         userName: currentUser.name,
         changeType: "price",
         fieldName: "سعر البيع",
-        oldValue: String(currentProd.sellingPrice),
-        newValue: String(p.sellingPrice),
-        createdAt: nowStr,
+        oldValue: `${existing.sellingPrice}`,
+        newValue: `${p.sellingPrice}`,
       });
     }
 
-    if (p.categoryId !== undefined && p.categoryId !== currentProd.categoryId) {
-      const oldCat = categories.find(c => c.id === currentProd.categoryId)?.nameAr || currentProd.categoryId;
-      const newCat = categories.find(c => c.id === p.categoryId)?.nameAr || p.categoryId;
-      logsToCreate.push({
-        id: generateId("pch"),
+    if (p.costPrice !== undefined && p.costPrice !== existing.costPrice) {
+      await addProductChangeLog({
         organizationId: organization.id,
         productId: id,
-        productName: currentProd.nameAr,
-        productSku: currentProd.sku,
+        productName: existing.nameAr,
+        productSku: existing.sku,
         userId: currentUser.id,
         userName: currentUser.name,
-        changeType: "category",
-        fieldName: "التصنيف",
-        oldValue: oldCat,
-        newValue: newCat,
-        createdAt: nowStr,
+        changeType: "price",
+        fieldName: "سعر التكلفة",
+        oldValue: `${existing.costPrice}`,
+        newValue: `${p.costPrice}`,
       });
     }
 
-    if (p.imageUrl !== undefined && p.imageUrl !== currentProd.imageUrl) {
-      logsToCreate.push({
-        id: generateId("pch"),
-        organizationId: organization.id,
-        productId: id,
-        productName: currentProd.nameAr,
-        productSku: currentProd.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "image",
-        fieldName: "صورة المنتج",
-        oldValue: currentProd.imageUrl ? "صورة سابقة" : "بدون صورة",
-        newValue: p.imageUrl ? "تم تحديث الصورة" : "تم حذف الصورة",
-        createdAt: nowStr,
-      });
-    }
-
-    // Stock adjustments if warehouseStock changed
+    // Handle Stock Adjustment Difference
     if (p.warehouseStock) {
       for (const [whId, newQty] of Object.entries(p.warehouseStock)) {
-        const oldQty = currentProd.warehouseStock[whId] || 0;
-        const diff = Number(newQty) - oldQty;
-        if (diff !== 0) {
-          const whName = warehouses.find(w => w.id === whId)?.nameAr || whId;
-          logsToCreate.push({
-            id: generateId("pch"),
-            organizationId: organization.id,
-            productId: id,
-            productName: currentProd.nameAr,
-            productSku: currentProd.sku,
-            userId: currentUser.id,
-            userName: currentUser.name,
-            changeType: "stock_adjustment",
-            fieldName: `رصيد المستودع (${whName})`,
-            oldValue: `${oldQty}`,
-            newValue: `${newQty}`,
-            createdAt: nowStr,
-          });
+        const oldQty = existing.warehouseStock[whId] || 0;
+        const diff = (Number(newQty) || 0) - oldQty;
 
-          // Add adjustment stock movement
-          const newSm: StockMovement = {
-            id: generateId("sm"),
+        if (diff !== 0) {
+          const adjMovement: StockMovement = {
+            id: generateId(),
             organizationId: organization.id,
             productId: id,
             warehouseId: whId,
             movementType: "adjustment",
-            referenceNumber: `ADJ-${currentProd.sku}`,
+            referenceNumber: `ADJ-${existing.sku}-${Date.now().toString().slice(-4)}`,
             date: new Date().toISOString().split("T")[0],
             quantity: diff,
-            unitCost: p.costPrice ?? currentProd.costPrice,
-            totalCost: diff * (p.costPrice ?? currentProd.costPrice),
-            balanceQuantity: (currentProd.warehouseStock[whId] || 0) + diff,
+            unitCost: p.costPrice ?? existing.costPrice,
+            totalCost: diff * (p.costPrice ?? existing.costPrice),
+            balanceQuantity: Number(newQty) || 0,
             partnerName: "تسوية جردية",
             partnerType: "adjustment",
-            notes: `تعديل رصيد المخزن (${diff > 0 ? "+" : ""}${diff})`,
+            notes: diff > 0 ? `تسوية جردية بالزيادة (+${diff})` : `تسوية جردية بالعجز (${diff})`,
           };
-          setStockMovements(prev => [newSm, ...prev]);
 
-          // Generate adjustment journal entry
-          const adjJournal = generateStockAdjustmentJournal(
+          setStockMovements(prev => [adjMovement, ...prev]);
+
+          const adjJournalDraft = generateStockAdjustmentJournal(
             organization.id,
             activeBranchId,
-            currentProd,
+            existing,
             diff,
-            p.costPrice ?? currentProd.costPrice,
+            p.costPrice ?? existing.costPrice,
             accounts,
             currentUser.name,
-            `تسوية رصيد الصنف ${currentProd.nameAr}`
+            adjMovement.notes
           );
-          const newJv: JournalEntry = { ...adjJournal, id: generateId("jv") };
-          setJournalEntries(prev => [newJv, ...prev]);
-          persistJournalEntryDB(newJv).catch(e => console.error(e));
+
+          if (adjJournalDraft) {
+            const newJournal: JournalEntry = { ...adjJournalDraft, id: generateId() };
+            setJournalEntries(prev => [newJournal, ...prev]);
+            await persistJournalEntryDB(newJournal);
+          }
+
+          await addProductChangeLog({
+            organizationId: organization.id,
+            productId: id,
+            productName: existing.nameAr,
+            productSku: existing.sku,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            changeType: "stock_adjustment",
+            fieldName: "رصيد المستودع (تسوية جردية)",
+            oldValue: `${oldQty}`,
+            newValue: `${newQty} (${diff > 0 ? `+${diff}` : diff})`,
+          });
         }
       }
     }
 
-    // Update product state & DB
-    setProducts(prev => prev.map(item => item.id === id ? { ...item, ...p } : item));
-    updateProductDB(id, p).catch(err => console.error("Error updating product in DB:", err));
-
-    if (logsToCreate.length > 0) {
-      setProductChangeLogs(prev => [...logsToCreate, ...prev]);
-      logsToCreate.forEach(log => persistProductChangeLogDB(log).catch(e => console.error(e)));
-    }
+    setProducts(prev => prev.map(prod => prod.id === id ? { ...prod, ...p } : prod));
+    await updateProductDB(id, p);
 
     addAuditLog({
       organizationId: organization.id,
@@ -536,18 +552,18 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "update",
       entityType: "Product",
       entityId: id,
-      details: `تعديل بيانات المنتج: ${currentProd.nameAr} (${currentProd.sku})`,
+      details: `تعديل بيانات المنتج: ${existing.nameAr}`,
     });
   };
 
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string) => {
     const prod = products.find(p => p.id === id);
-    setProducts(prev => prev.filter(item => item.id !== id));
-    deleteProductDB(id).catch(err => console.error("Error deleting product from DB:", err));
+    setProducts(prev => prev.filter(p => p.id !== id));
+    setStockMovements(prev => prev.filter(sm => sm.productId !== id));
+    await deleteProductDB(id);
 
     if (prod) {
-      const changeLog: ProductChangeLog = {
-        id: generateId("pch"),
+      await addProductChangeLog({
         organizationId: organization.id,
         productId: id,
         productName: prod.nameAr,
@@ -555,13 +571,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         userId: currentUser.id,
         userName: currentUser.name,
         changeType: "deleted",
-        fieldName: "product",
-        oldValue: `المنتج: ${prod.nameAr} (${prod.sku})`,
-        newValue: "محذوف",
-        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
-      };
-      setProductChangeLogs(prev => [changeLog, ...prev]);
-      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
+        fieldName: "حذف الصنف",
+        oldValue: `${prod.nameAr} (${prod.sku})`,
+        newValue: "تم الحذف نهائياً",
+      });
     }
 
     addAuditLog({
@@ -575,233 +588,212 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addWarehouse = (w: Omit<Warehouse, "id">): Warehouse => {
-    const newWh: Warehouse = { ...w, id: generateId("wh") };
-    setWarehouses(prev => [...prev, newWh]);
-    persistWarehouseDB(newWh).catch(err => console.error("Error saving warehouse to DB:", err));
-    return newWh;
+  // Categories CRUD
+  const addCategory = async (c: Omit<ProductCategory, "id">): Promise<ProductCategory> => {
+    const newCat: ProductCategory = { ...c, id: generateId() };
+    setCategories(prev => [...prev, newCat]);
+    await persistCategoryDB(newCat);
+    return newCat;
+  };
+  const updateCategory = async (id: string, c: Partial<ProductCategory>) => {
+    setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...c } : cat));
+    await updateCategoryDB(id, c);
+  };
+  const deleteCategory = async (id: string) => {
+    setCategories(prev => prev.filter(cat => cat.id !== id));
+    await deleteCategoryDB(id);
   };
 
-  const updateWarehouse = (id: string, w: Partial<Warehouse>) => {
-    setWarehouses(prev => prev.map(item => item.id === id ? { ...item, ...w } : item));
-    updateWarehouseDB(id, w).catch(err => console.error("Error updating warehouse in DB:", err));
+  // Units CRUD
+  const addUnit = async (u: Omit<ProductUnit, "id">): Promise<ProductUnit> => {
+    const newUnit: ProductUnit = { ...u, id: generateId() };
+    setUnits(prev => [...prev, newUnit]);
+    await persistUnitDB(newUnit);
+    return newUnit;
+  };
+  const updateUnit = async (id: string, u: Partial<ProductUnit>) => {
+    setUnits(prev => prev.map(unit => unit.id === id ? { ...unit, ...u } : unit));
+    await updateUnitDB(id, u);
+  };
+  const deleteUnit = async (id: string) => {
+    setUnits(prev => prev.filter(unit => unit.id !== id));
+    await deleteUnitDB(id);
   };
 
-  const deleteWarehouse = (id: string) => {
-    setWarehouses(prev => prev.filter(item => item.id !== id));
-    deleteWarehouseDB(id).catch(err => console.error("Error deleting warehouse from DB:", err));
+  // Warehouses CRUD
+  const addWarehouse = async (w: Omit<Warehouse, "id">): Promise<Warehouse> => {
+    const newW: Warehouse = { ...w, id: generateId() };
+    setWarehouses(prev => [...prev, newW]);
+    await persistWarehouseDB(newW);
+    return newW;
+  };
+  const updateWarehouse = async (id: string, w: Partial<Warehouse>) => {
+    setWarehouses(prev => prev.map(wh => wh.id === id ? { ...wh, ...w } : wh));
+    await updateWarehouseDB(id, w);
+  };
+  const deleteWarehouse = async (id: string) => {
+    setWarehouses(prev => prev.filter(wh => wh.id !== id));
+    await deleteWarehouseDB(id);
   };
 
-  const addStockMovement = (m: Omit<StockMovement, "id">) => {
-    const newMovement: StockMovement = { ...m, id: generateId("sm") };
-    setStockMovements(prev => [newMovement, ...prev]);
+  // Stock Movements CRUD
+  const addStockMovement = async (m: Omit<StockMovement, "id">) => {
+    const newM: StockMovement = { ...m, id: generateId() };
+    setStockMovements(prev => [newM, ...prev]);
+  };
+  const updateStockMovement = async (id: string, sm: Partial<StockMovement>) => {
+    setStockMovements(prev => prev.map(item => item.id === id ? { ...item, ...sm } : item));
+    await updateStockMovementDB(id, sm);
+  };
+  const deleteStockMovement = async (id: string) => {
+    setStockMovements(prev => prev.filter(item => item.id !== id));
+    await deleteStockMovementDB(id);
   };
 
-  const updateStockMovement = (id: string, updatedMovement: Partial<StockMovement>) => {
-    const oldMovement = stockMovements.find(sm => sm.id === id);
-    if (!oldMovement) return;
+  // Period Closings CRUD
+  const createPeriodClosing = async (closing: Omit<PeriodClosing, "id" | "createdAt">): Promise<PeriodClosing> => {
+    const newClosingId = generateId();
+    
+    // Generate Accounting Journal Entry for COGS Closing
+    const journalDraft = generatePeriodClosingJournal(
+      closing.organizationId,
+      closing.branchId || activeBranchId,
+      closing.periodLabel,
+      closing.closingDate,
+      closing.cogsValue,
+      accounts,
+      currentUser.name
+    );
 
-    const targetProd = products.find(p => p.id === oldMovement.productId);
-    const oldQty = oldMovement.quantity;
-    const newQty = updatedMovement.quantity !== undefined ? updatedMovement.quantity : oldQty;
-    const qtyDiff = newQty - oldQty;
-
-    // 1. Adjust product warehouse stock
-    if (targetProd && qtyDiff !== 0) {
-      const whId = updatedMovement.warehouseId || oldMovement.warehouseId;
-      const currentWhQty = targetProd.warehouseStock[whId] || 0;
-      const updatedWhStock = {
-        ...targetProd.warehouseStock,
-        [whId]: Math.max(0, currentWhQty + qtyDiff),
-      };
-
-      setProducts(prev => prev.map(p => p.id === targetProd.id ? { ...p, warehouseStock: updatedWhStock } : p));
-      updateProductDB(targetProd.id, { warehouseStock: updatedWhStock }).catch(e => console.error(e));
+    let createdJournalId: string | undefined = undefined;
+    if (journalDraft) {
+      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
+      setJournalEntries(prev => [newJournal, ...prev]);
+      await persistJournalEntryDB(newJournal);
+      createdJournalId = newJournal.id;
     }
 
-    // 2. Update stock movement state & DB
-    setStockMovements(prev => prev.map(sm => sm.id === id ? { ...sm, ...updatedMovement } : sm));
-    updateStockMovementDB(id, updatedMovement).catch(e => console.error(e));
-
-    // 3. Log change & audit
-    if (targetProd) {
-      const changeLog: ProductChangeLog = {
-        id: generateId("pch"),
-        organizationId: organization.id,
-        productId: targetProd.id,
-        productName: targetProd.nameAr,
-        productSku: targetProd.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "stock_adjustment",
-        fieldName: "تعديل حركة كاردكس",
-        oldValue: `كمية سابقة: ${oldQty}، تكلفة: ${oldMovement.unitCost}`,
-        newValue: `كمية جديدة: ${newQty}، تكلفة: ${updatedMovement.unitCost ?? oldMovement.unitCost}`,
-        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
-      };
-      setProductChangeLogs(prev => [changeLog, ...prev]);
-      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
-    }
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "update",
-      entityType: "StockMovement",
-      entityId: id,
-      details: `تعديل حركة كاردكس المخزن رقم ${oldMovement.referenceNumber} للصنف ${targetProd?.nameAr || id}`,
-    });
-  };
-
-  const deleteStockMovement = (id: string) => {
-    const movement = stockMovements.find(sm => sm.id === id);
-    if (!movement) return;
-
-    const targetProd = products.find(p => p.id === movement.productId);
-
-    // 1. Reverse stock
-    if (targetProd) {
-      const whId = movement.warehouseId;
-      const currentWhQty = targetProd.warehouseStock[whId] || 0;
-      const updatedWhStock = {
-        ...targetProd.warehouseStock,
-        [whId]: Math.max(0, currentWhQty - movement.quantity),
-      };
-
-      setProducts(prev => prev.map(p => p.id === targetProd.id ? { ...p, warehouseStock: updatedWhStock } : p));
-      updateProductDB(targetProd.id, { warehouseStock: updatedWhStock }).catch(e => console.error(e));
-    }
-
-    // 2. Remove movement
-    setStockMovements(prev => prev.filter(sm => sm.id !== id));
-    deleteStockMovementDB(id).catch(e => console.error(e));
-
-    // 3. Log audit
-    if (targetProd) {
-      const changeLog: ProductChangeLog = {
-        id: generateId("pch"),
-        organizationId: organization.id,
-        productId: targetProd.id,
-        productName: targetProd.nameAr,
-        productSku: targetProd.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "deleted",
-        fieldName: "حذف حركة كاردكس",
-        oldValue: `حركة: ${movement.movementType} (${movement.quantity})`,
-        newValue: "محذوفة",
-        createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
-      };
-      setProductChangeLogs(prev => [changeLog, ...prev]);
-      persistProductChangeLogDB(changeLog).catch(e => console.error(e));
-    }
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "delete",
-      entityType: "StockMovement",
-      entityId: id,
-      details: `حذف حركة كاردكس ${movement.movementType} رقم ${movement.referenceNumber}`,
-    });
-  };
-
-  const createPeriodClosing = (closing: Omit<PeriodClosing, "id" | "createdAt">): PeriodClosing => {
     const newClosing: PeriodClosing = {
       ...closing,
-      id: generateId("close"),
+      id: newClosingId,
+      journalEntryId: createdJournalId,
       createdAt: new Date().toISOString().replace("T", " ").substring(0, 19),
     };
 
-    // 1. Generate closing journal entry if cogsValue is calculated
-    if (newClosing.cogsValue > 0) {
-      const closingJvDraft = generatePeriodClosingJournal(
-        organization.id,
-        activeBranchId,
-        newClosing.periodLabel,
-        newClosing.closingDate,
-        newClosing.cogsValue,
-        accounts,
-        currentUser.name
-      );
-      const newJv: JournalEntry = { ...closingJvDraft, id: generateId("jv") };
-      setJournalEntries(prev => [newJv, ...prev]);
-      persistJournalEntryDB(newJv).catch(e => console.error(e));
-      newClosing.journalEntryId = newJv.id;
-    }
-
     setPeriodClosings(prev => [newClosing, ...prev]);
-    persistPeriodClosingDB(newClosing).catch(e => console.error(e));
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "status_change",
-      entityType: "PeriodClosing",
-      entityId: newClosing.id,
-      details: `إقفال الفترة المحاسبية (${newClosing.periodLabel}) بقيمة مخزون آخر مدة ${newClosing.closingInventoryValue}`,
-    });
-
-    return newClosing;
-  };
-
-  // ==========================================
-  // CRM / PARTNERS CRUD
-  // ==========================================
-  const addCustomer = (c: Omit<Customer, "id">): Customer => {
-    const newCust: Customer = { ...c, id: generateId("cust") };
-    setCustomers(prev => [newCust, ...prev]);
-    persistCustomerDB(newCust).catch(err => console.error("Error saving customer to DB:", err));
+    await persistPeriodClosingDB(newClosing);
 
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
       userName: currentUser.name,
       action: "create",
-      entityType: "Customer",
-      entityId: newCust.id,
-      details: `إضافة عميل جديد: ${newCust.nameAr} (${newCust.code})`,
+      entityType: "PeriodClosing",
+      entityId: newClosing.id,
+      details: `إجراء إقفال دوري للمخزون (${newClosing.periodLabel}) بقيمة تكلفة مباعة ${newClosing.cogsValue}`,
     });
-    return newCust;
+
+    return newClosing;
   };
 
-  const updateCustomer = (id: string, c: Partial<Customer>) => {
+  // ==========================================
+  // CUSTOMERS & SUPPLIERS CRUD
+  // ==========================================
+  const addCustomer = async (c: Omit<Customer, "id">): Promise<Customer> => {
+    const newC: Customer = { ...c, id: generateId() };
+    setCustomers(prev => [newC, ...prev]);
+    await persistCustomerDB(newC);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "Customer",
+      entityId: newC.id,
+      details: `إضافة عميل جديد: ${newC.nameAr}`,
+    });
+    return newC;
+  };
+
+  const updateCustomer = async (id: string, c: Partial<Customer>) => {
     setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...c } : item));
-    updateCustomerDB(id, c).catch(err => console.error("Error updating customer in DB:", err));
+    await updateCustomerDB(id, c);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "Customer",
+      entityId: id,
+      details: `تحديث بيانات العميل: ${c.nameAr || id}`,
+    });
   };
 
-  const deleteCustomer = (id: string) => {
+  const deleteCustomer = async (id: string) => {
     setCustomers(prev => prev.filter(item => item.id !== id));
-    deleteCustomerDB(id).catch(err => console.error("Error deleting customer from DB:", err));
+    await deleteCustomerDB(id);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "delete",
+      entityType: "Customer",
+      entityId: id,
+      details: `حذف العميل: ${id}`,
+    });
   };
 
-  const addSupplier = (s: Omit<Supplier, "id">): Supplier => {
-    const newSupp: Supplier = { ...s, id: generateId("supp") };
-    setSuppliers(prev => [newSupp, ...prev]);
-    persistSupplierDB(newSupp).catch(err => console.error("Error saving supplier to DB:", err));
-    return newSupp;
+  const addSupplier = async (s: Omit<Supplier, "id">): Promise<Supplier> => {
+    const newS: Supplier = { ...s, id: generateId() };
+    setSuppliers(prev => [newS, ...prev]);
+    await persistSupplierDB(newS);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "Supplier",
+      entityId: newS.id,
+      details: `إضافة مورد جديد: ${newS.nameAr}`,
+    });
+    return newS;
   };
 
-  const updateSupplier = (id: string, s: Partial<Supplier>) => {
+  const updateSupplier = async (id: string, s: Partial<Supplier>) => {
     setSuppliers(prev => prev.map(item => item.id === id ? { ...item, ...s } : item));
-    updateSupplierDB(id, s).catch(err => console.error("Error updating supplier in DB:", err));
+    await updateSupplierDB(id, s);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "Supplier",
+      entityId: id,
+      details: `تحديث بيانات المورد: ${s.nameAr || id}`,
+    });
   };
 
-  const deleteSupplier = (id: string) => {
+  const deleteSupplier = async (id: string) => {
     setSuppliers(prev => prev.filter(item => item.id !== id));
-    deleteSupplierDB(id).catch(err => console.error("Error deleting supplier from DB:", err));
+    await deleteSupplierDB(id);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "delete",
+      entityType: "Supplier",
+      entityId: id,
+      details: `حذف المورد: ${id}`,
+    });
   };
 
   // ==========================================
   // SALES & PURCHASES CRUD
   // ==========================================
-  const createSalesInvoice = (inv: Omit<SalesInvoice, "id">): SalesInvoice => {
+  const createSalesInvoice = async (inv: Omit<SalesInvoice, "id">): Promise<SalesInvoice> => {
     const newInvoice: SalesInvoice = {
       ...inv,
-      id: generateId("sinv"),
+      id: generateId(),
       createdAt: new Date().toISOString(),
     };
 
@@ -812,9 +804,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     inv.items.forEach(item => {
       totalCogs += item.costPrice * item.quantity;
       
-      // Stock Movement with customer partner name
       movementsToCreate.push({
-        id: generateId("sm"),
+        id: generateId(),
         organizationId: organization.id,
         productId: item.productId,
         warehouseId: item.warehouseId,
@@ -851,22 +842,20 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setStockMovements(prev => [...movementsToCreate, ...prev]);
     }
 
-    // Customer Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
       setCustomers(prev => prev.map(c =>
         c.id === inv.customerId ? { ...c, currentBalance: c.currentBalance + inv.dueAmount } : c
       ));
     }
 
-    // Balanced GL Entry
     const journalDraft = generateSalesInvoiceJournal(newInvoice, accounts, totalCogs);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
+    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
     setJournalEntries(prev => [newJournal, ...prev]);
 
     setSalesInvoices(prev => [newInvoice, ...prev]);
 
-    persistSalesInvoiceDB(newInvoice).catch(err => console.error("Error saving invoice to DB:", err));
-    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
+    await persistSalesInvoiceDB(newInvoice);
+    await persistJournalEntryDB(newJournal);
 
     addAuditLog({
       organizationId: organization.id,
@@ -881,24 +870,24 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newInvoice;
   };
 
-  const deleteSalesInvoice = (id: string) => {
+  const deleteSalesInvoice = async (id: string) => {
     setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
-    deleteSalesInvoiceDB(id).catch(err => console.error("Error deleting sales invoice from DB:", err));
+    await deleteSalesInvoiceDB(id);
   };
 
-  const createPurchaseInvoice = (inv: Omit<PurchaseInvoice, "id">): PurchaseInvoice => {
+  const createPurchaseInvoice = async (inv: Omit<PurchaseInvoice, "id">): Promise<PurchaseInvoice> => {
     const newInvoice: PurchaseInvoice = {
       ...inv,
-      id: generateId("pinv"),
+      id: generateId(),
+      createdAt: new Date().toISOString(),
     };
 
     const movementsToCreate: StockMovement[] = [];
 
-    // Add Stock & Create Stock Movements
     inv.items.forEach(item => {
       movementsToCreate.push({
-        id: generateId("sm"),
+        id: generateId(),
         organizationId: organization.id,
         productId: item.productId,
         warehouseId: item.warehouseId,
@@ -935,7 +924,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setStockMovements(prev => [...movementsToCreate, ...prev]);
     }
 
-    // Supplier Balance
     if (inv.status === "unpaid" || inv.status === "partially_paid") {
       setSuppliers(prev => prev.map(s =>
         s.id === inv.supplierId ? { ...s, currentBalance: s.currentBalance + inv.dueAmount } : s
@@ -943,13 +931,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
 
     const journalDraft = generatePurchaseInvoiceJournal(newInvoice, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
+    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
     setJournalEntries(prev => [newJournal, ...prev]);
 
     setPurchaseInvoices(prev => [newInvoice, ...prev]);
 
-    persistPurchaseInvoiceDB(newInvoice).catch(err => console.error("Error saving purchase to DB:", err));
-    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving journal to DB:", err));
+    await persistPurchaseInvoiceDB(newInvoice);
+    await persistJournalEntryDB(newJournal);
 
     addAuditLog({
       organizationId: organization.id,
@@ -964,17 +952,32 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newInvoice;
   };
 
-  const deletePurchaseInvoice = (id: string) => {
+  const deletePurchaseInvoice = async (id: string) => {
     setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
-    deletePurchaseInvoiceDB(id).catch(err => console.error("Error deleting purchase invoice from DB:", err));
+    await deletePurchaseInvoiceDB(id);
   };
 
   // ==========================================
   // TREASURY & CHECKS CRUD
   // ==========================================
-  const createCashReceipt = (rcp: Omit<CashReceipt, "id">): CashReceipt => {
-    const newReceipt: CashReceipt = { ...rcp, id: generateId("rcp") };
+  const addTreasuryAccount = async (t: Omit<TreasuryAccount, "id">): Promise<TreasuryAccount> => {
+    const newT: TreasuryAccount = { ...t, id: generateId() };
+    setTreasuryAccounts(prev => [...prev, newT]);
+    await persistTreasuryAccountDB(newT);
+    return newT;
+  };
+  const updateTreasuryAccount = async (id: string, t: Partial<TreasuryAccount>) => {
+    setTreasuryAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...t } : acc));
+    await updateTreasuryAccountDB(id, t);
+  };
+  const deleteTreasuryAccount = async (id: string) => {
+    setTreasuryAccounts(prev => prev.filter(acc => acc.id !== id));
+    await deleteTreasuryAccountDB(id);
+  };
+
+  const createCashReceipt = async (rcp: Omit<CashReceipt, "id">): Promise<CashReceipt> => {
+    const newReceipt: CashReceipt = { ...rcp, id: generateId(), createdAt: new Date().toISOString() };
     setCashReceipts(prev => [newReceipt, ...prev]);
 
     setTreasuryAccounts(prev => prev.map(t =>
@@ -990,9 +993,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     const targetTreasury = treasuryAccounts.find(t => t.id === rcp.treasuryAccountId);
     const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
     const journalDraft = generateReceiptJournal(newReceipt, treasuryGlId, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
+    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
     setJournalEntries(prev => [newJournal, ...prev]);
-    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving receipt journal to DB:", err));
+
+    await persistCashReceiptDB(newReceipt);
+    await persistJournalEntryDB(newJournal);
 
     addAuditLog({
       organizationId: organization.id,
@@ -1007,8 +1012,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newReceipt;
   };
 
-  const createCashPayment = (pay: Omit<CashPayment, "id">): CashPayment => {
-    const newPayment: CashPayment = { ...pay, id: generateId("pay") };
+  const deleteCashReceipt = async (id: string) => {
+    setCashReceipts(prev => prev.filter(r => r.id !== id));
+    await deleteCashReceiptDB(id);
+  };
+
+  const createCashPayment = async (pay: Omit<CashPayment, "id">): Promise<CashPayment> => {
+    const newPayment: CashPayment = { ...pay, id: generateId(), createdAt: new Date().toISOString() };
     setCashPayments(prev => [newPayment, ...prev]);
 
     setTreasuryAccounts(prev => prev.map(t =>
@@ -1024,9 +1034,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     const targetTreasury = treasuryAccounts.find(t => t.id === pay.treasuryAccountId);
     const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
     const journalDraft = generatePaymentJournal(newPayment, treasuryGlId, accounts);
-    const newJournal: JournalEntry = { ...journalDraft, id: generateId("jv") };
+    const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
     setJournalEntries(prev => [newJournal, ...prev]);
-    persistJournalEntryDB(newJournal).catch(err => console.error("Error saving payment journal to DB:", err));
+
+    await persistCashPaymentDB(newPayment);
+    await persistJournalEntryDB(newJournal);
 
     addAuditLog({
       organizationId: organization.id,
@@ -1041,7 +1053,29 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return newPayment;
   };
 
-  const updateCheckStatus = (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
+  const deleteCashPayment = async (id: string) => {
+    setCashPayments(prev => prev.filter(p => p.id !== id));
+    await deleteCashPaymentDB(id);
+  };
+
+  const addCheck = async (chk: Omit<CheckRecord, "id">): Promise<CheckRecord> => {
+    const newCheck: CheckRecord = { ...chk, id: generateId() };
+    setChecks(prev => [newCheck, ...prev]);
+    await persistCheckDB(newCheck);
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "CheckRecord",
+      entityId: newCheck.id,
+      details: `إضافة شيك ${newCheck.checkNumber} بمبلغ ${newCheck.amount} (${newCheck.type === "incoming" ? "شيك وارد/قبض" : "شيك صادر/دفع"})`,
+    });
+    return newCheck;
+  };
+
+  const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
+    const check = checks.find(c => c.id === checkId);
     setChecks(prev => prev.map(chk => {
       if (chk.id === checkId) {
         return {
@@ -1054,61 +1088,73 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       return chk;
     }));
 
-    persistCheckStatusDB(checkId, newStatus, targetTreasuryId).catch(err => console.error("Error updating check in DB:", err));
-
-    const check = checks.find(c => c.id === checkId);
     if (check && newStatus === "collected" && targetTreasuryId) {
       setTreasuryAccounts(prev => prev.map(t =>
         t.id === targetTreasuryId ? { ...t, balance: t.balance + check.amount } : t
       ));
     }
+
+    await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
   };
 
-  const deleteCheck = (id: string) => {
+  const deleteCheck = async (id: string) => {
     setChecks(prev => prev.filter(chk => chk.id !== id));
-    deleteCheckDB(id).catch(err => console.error("Error deleting check from DB:", err));
+    await deleteCheckDB(id);
   };
 
   // ==========================================
   // ACCOUNTING & COST CENTERS CRUD
   // ==========================================
-  const addAccount = (acc: Omit<Account, "id">): Account => {
-    const newAcc: Account = { ...acc, id: generateId("acc") };
+  const addAccount = async (acc: Omit<Account, "id">): Promise<Account> => {
+    const newAcc: Account = { ...acc, id: generateId() };
     setAccounts(prev => [...prev, newAcc]);
+    await persistAccountDB(newAcc);
     return newAcc;
   };
 
-  const addCostCenter = (cc: Omit<CostCenter, "id">): CostCenter => {
-    const newCc: CostCenter = { ...cc, id: generateId("cc") };
+  const updateAccount = async (id: string, acc: Partial<Account>) => {
+    setAccounts(prev => prev.map(item => item.id === id ? { ...item, ...acc } : item));
+    await updateAccountDB(id, acc);
+  };
+
+  const deleteAccount = async (id: string) => {
+    setAccounts(prev => prev.filter(item => item.id !== id));
+    await deleteAccountDB(id);
+  };
+
+  const addCostCenter = async (cc: Omit<CostCenter, "id">): Promise<CostCenter> => {
+    const newCc: CostCenter = { ...cc, id: generateId() };
     setCostCenters(prev => [...prev, newCc]);
-    persistCostCenterDB(newCc).catch(err => console.error("Error saving cost center to DB:", err));
+    await persistCostCenterDB(newCc);
     return newCc;
   };
 
-  const updateCostCenter = (id: string, cc: Partial<CostCenter>) => {
+  const updateCostCenter = async (id: string, cc: Partial<CostCenter>) => {
     setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...cc } : item));
-    updateCostCenterDB(id, cc).catch(err => console.error("Error updating cost center in DB:", err));
+    await updateCostCenterDB(id, cc);
   };
 
-  const deleteCostCenter = (id: string) => {
+  const deleteCostCenter = async (id: string) => {
     setCostCenters(prev => prev.filter(item => item.id !== id));
-    deleteCostCenterDB(id).catch(err => console.error("Error deleting cost center from DB:", err));
+    await deleteCostCenterDB(id);
   };
 
-  const addJournalEntry = (entry: Omit<JournalEntry, "id">): JournalEntry => {
-    const newEntry: JournalEntry = { ...entry, id: generateId("jv") };
+  const addJournalEntry = async (entry: Omit<JournalEntry, "id">): Promise<JournalEntry> => {
+    const newEntry: JournalEntry = { ...entry, id: generateId() };
     setJournalEntries(prev => [newEntry, ...prev]);
-    persistJournalEntryDB(newEntry).catch(err => console.error("Error saving journal entry to DB:", err));
+    await persistJournalEntryDB(newEntry);
     return newEntry;
   };
 
-  const deleteJournalEntry = (id: string) => {
+  const deleteJournalEntry = async (id: string) => {
     setJournalEntries(prev => prev.filter(je => je.id !== id));
-    deleteJournalEntryDB(id).catch(err => console.error("Error deleting journal entry from DB:", err));
+    await deleteJournalEntryDB(id);
   };
 
   const resetToDemoData = () => {
     setProducts(initialProducts);
+    setCategories(initialCategories);
+    setUnits(initialUnits);
     setCustomers(initialCustomers);
     setSuppliers(initialSuppliers);
     setSalesInvoices(initialSalesInvoices);
@@ -1132,11 +1178,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       value={{
         locale, setLocale, direction, theme, setTheme,
         isDbConnected, isLoadingData, refreshData: loadDatabaseData,
-        currentUser, setCurrentUser, organization, setOrganization,
+        currentUser, setCurrentUser, organization, setOrganization, updateOrganization,
         branches, activeBranchId, setActiveBranchId, users,
         products, categories, units, warehouses, stockMovements,
         productChangeLogs, periodClosings,
         addProduct, updateProduct, deleteProduct,
+        addCategory, updateCategory, deleteCategory,
+        addUnit, updateUnit, deleteUnit,
         addWarehouse, updateWarehouse, deleteWarehouse, addStockMovement,
         updateStockMovement, deleteStockMovement, addProductChangeLog, createPeriodClosing, hasPermission,
         customers, suppliers, addCustomer, updateCustomer, deleteCustomer,
@@ -1144,8 +1192,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         salesInvoices, purchaseInvoices, createSalesInvoice, deleteSalesInvoice,
         createPurchaseInvoice, deletePurchaseInvoice,
         treasuryAccounts, cashReceipts, cashPayments, checks,
-        createCashReceipt, createCashPayment, updateCheckStatus, deleteCheck,
-        accounts, costCenters, journalEntries, addAccount,
+        addTreasuryAccount, updateTreasuryAccount, deleteTreasuryAccount,
+        createCashReceipt, deleteCashReceipt, createCashPayment, deleteCashPayment,
+        addCheck, updateCheckStatus, deleteCheck,
+        accounts, costCenters, journalEntries, addAccount, updateAccount, deleteAccount,
         addCostCenter, updateCostCenter, deleteCostCenter,
         addJournalEntry, deleteJournalEntry,
         auditLogs, notifications, addAuditLog, markNotificationRead, resetToDemoData

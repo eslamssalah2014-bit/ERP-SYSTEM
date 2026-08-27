@@ -6,54 +6,78 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import {
   Wallet, Plus, ArrowDownLeft, ArrowUpRight, Building2,
-  CreditCard, CheckCircle2, History, Banknote
+  CreditCard, CheckCircle2, History, Banknote, Trash2
 } from "lucide-react";
 
 export default function TreasuryPage() {
   const {
     treasuryAccounts, cashReceipts, cashPayments,
-    customers, suppliers, accounts, createCashReceipt,
-    createCashPayment, organization, activeBranchId,
-    currentUser, locale
+    customers, suppliers, accounts, createCashReceipt, deleteCashReceipt,
+    createCashPayment, deleteCashPayment, organization, activeBranchId,
+    currentUser, locale, hasPermission
   } = useERP();
 
   const isAr = locale === "ar";
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
+  const canManage = hasPermission(["super_admin", "tenant_admin", "accountant"]);
+
   // Receipt Form State
-  const [rcpTreasuryId, setRcpTreasuryId] = useState(treasuryAccounts[0]?.id || "");
+  const [rcpTreasuryId, setRcpTreasuryId] = useState("");
   const [rcpAmount, setRcpAmount] = useState<number>(0);
   const [rcpReceivedFrom, setRcpReceivedFrom] = useState("");
   const [rcpCustomerId, setRcpCustomerId] = useState<string>("");
-  const [rcpCreditAccId, setRcpCreditAccId] = useState(accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "");
+  const [rcpCreditAccId, setRcpCreditAccId] = useState("");
   const [rcpNotes, setRcpNotes] = useState("");
 
   // Payment Form State
-  const [payTreasuryId, setPayTreasuryId] = useState(treasuryAccounts[0]?.id || "");
+  const [payTreasuryId, setPayTreasuryId] = useState("");
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payPaidTo, setPayPaidTo] = useState("");
   const [paySupplierId, setPaySupplierId] = useState<string>("");
-  const [payDebitAccId, setPayDebitAccId] = useState(accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "");
+  const [payDebitAccId, setPayDebitAccId] = useState("");
   const [payNotes, setPayNotes] = useState("");
 
-  const handleCreateReceipt = (e: React.FormEvent) => {
+  const handleOpenReceiptModal = () => {
+    setRcpTreasuryId(treasuryAccounts[0]?.id || "");
+    setRcpCreditAccId(accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "");
+    setRcpAmount(0);
+    setRcpReceivedFrom("");
+    setRcpCustomerId("");
+    setRcpNotes("");
+    setIsReceiptModalOpen(true);
+  };
+
+  const handleOpenPaymentModal = () => {
+    setPayTreasuryId(treasuryAccounts[0]?.id || "");
+    setPayDebitAccId(accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "");
+    setPayAmount(0);
+    setPayPaidTo("");
+    setPaySupplierId("");
+    setPayNotes("");
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleCreateReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (rcpAmount <= 0) return;
 
     const receiptNumber = "RCP-" + Date.now().toString().slice(-6);
+    const targetTreasury = rcpTreasuryId || treasuryAccounts[0]?.id || "";
+    const targetCreditAcc = rcpCreditAccId || accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "";
 
-    createCashReceipt({
+    await createCashReceipt({
       organizationId: organization.id,
       branchId: activeBranchId,
       receiptNumber,
       date: new Date().toISOString().split("T")[0],
-      treasuryAccountId: rcpTreasuryId,
+      treasuryAccountId: targetTreasury,
       amount: rcpAmount,
       currency: organization.currency,
       receivedFrom: rcpReceivedFrom || (customers.find(c => c.id === rcpCustomerId)?.nameAr || "عميل"),
       customerId: rcpCustomerId || undefined,
-      creditAccountId: rcpCreditAccId,
+      creditAccountId: targetCreditAcc,
       notes: rcpNotes,
       createdBy: currentUser.name,
     });
@@ -63,23 +87,25 @@ export default function TreasuryPage() {
     setRcpNotes("");
   };
 
-  const handleCreatePayment = (e: React.FormEvent) => {
+  const handleCreatePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (payAmount <= 0) return;
 
     const paymentNumber = "PAY-" + Date.now().toString().slice(-6);
+    const targetTreasury = payTreasuryId || treasuryAccounts[0]?.id || "";
+    const targetDebitAcc = payDebitAccId || accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "";
 
-    createCashPayment({
+    await createCashPayment({
       organizationId: organization.id,
       branchId: activeBranchId,
       paymentNumber,
       date: new Date().toISOString().split("T")[0],
-      treasuryAccountId: payTreasuryId,
+      treasuryAccountId: targetTreasury,
       amount: payAmount,
       currency: organization.currency,
       paidTo: payPaidTo || (suppliers.find(s => s.id === paySupplierId)?.nameAr || "مورد / مصروف"),
       supplierId: paySupplierId || undefined,
-      debitAccountId: payDebitAccId,
+      debitAccountId: targetDebitAcc,
       notes: payNotes,
       createdBy: currentUser.name,
     });
@@ -109,14 +135,14 @@ export default function TreasuryPage() {
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => setIsReceiptModalOpen(true)}
+            onClick={handleOpenReceiptModal}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
           >
             <ArrowDownLeft className="w-4 h-4" />
             <span>{isAr ? "تحرير سند قبض (إيداع)" : "New Cash Receipt"}</span>
           </button>
           <button
-            onClick={() => setIsPaymentModalOpen(true)}
+            onClick={handleOpenPaymentModal}
             className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-rose-400 text-xs font-bold rounded-xl border border-slate-700 transition-all"
           >
             <ArrowUpRight className="w-4 h-4" />
@@ -177,16 +203,31 @@ export default function TreasuryPage() {
               </div>
             ) : (
               cashReceipts.map(rcp => (
-                <div key={rcp.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+                <div key={rcp.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors">
                   <div>
                     <div className="font-mono font-bold text-white">{rcp.receiptNumber}</div>
                     <div className="text-slate-400 text-[11px] mt-0.5">{rcp.receivedFrom}</div>
                   </div>
-                  <div className="text-left">
-                    <div className="font-mono font-black text-emerald-400">
-                      +{formatCurrency(rcp.amount, rcp.currency, locale)}
+                  <div className="flex items-center gap-3">
+                    <div className="text-left">
+                      <div className="font-mono font-black text-emerald-400">
+                        +{formatCurrency(rcp.amount, rcp.currency, locale)}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{formatDate(rcp.date, locale)}</div>
                     </div>
-                    <div className="text-[10px] text-slate-500">{formatDate(rcp.date, locale)}</div>
+                    {canManage && (
+                      <button
+                        onClick={async () => {
+                          if (confirm(isAr ? "هل أنت متأكد من حذف سند القبض هذا؟" : "Delete this cash receipt?")) {
+                            await deleteCashReceipt(rcp.id);
+                          }
+                        }}
+                        title={isAr ? "حذف سند القبض" : "Delete"}
+                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -212,16 +253,31 @@ export default function TreasuryPage() {
               </div>
             ) : (
               cashPayments.map(pay => (
-                <div key={pay.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+                <div key={pay.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors">
                   <div>
                     <div className="font-mono font-bold text-white">{pay.paymentNumber}</div>
                     <div className="text-slate-400 text-[11px] mt-0.5">{pay.paidTo}</div>
                   </div>
-                  <div className="text-left">
-                    <div className="font-mono font-black text-rose-400">
-                      -{formatCurrency(pay.amount, pay.currency, locale)}
+                  <div className="flex items-center gap-3">
+                    <div className="text-left">
+                      <div className="font-mono font-black text-rose-400">
+                        -{formatCurrency(pay.amount, pay.currency, locale)}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{formatDate(pay.date, locale)}</div>
                     </div>
-                    <div className="text-[10px] text-slate-500">{formatDate(pay.date, locale)}</div>
+                    {canManage && (
+                      <button
+                        onClick={async () => {
+                          if (confirm(isAr ? "هل أنت متأكد من حذف سند الصرف هذا؟" : "Delete this cash payment?")) {
+                            await deleteCashPayment(pay.id);
+                          }
+                        }}
+                        title={isAr ? "حذف سند الصرف" : "Delete"}
+                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))

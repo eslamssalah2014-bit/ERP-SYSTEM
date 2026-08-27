@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import { JournalLine } from "@/types/erp";
 import {
@@ -65,20 +65,20 @@ export default function JournalPage() {
   const totalCredit = lines.reduce((sum, l) => sum + l.credit, 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
 
-  const handleCreateJournal = (e: React.FormEvent) => {
+  const handleCreateJournal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isBalanced || !description) return;
 
     const entryNumber = "JV-" + new Date().getFullYear() + "-" + (journalEntries.length + 1).toString().padStart(3, "0");
 
-    addJournalEntry({
+    await addJournalEntry({
       organizationId: organization.id,
       branchId: activeBranchId,
       entryNumber,
       date,
       referenceType: "manual_entry",
       description,
-      lines: lines.map((l, idx) => ({ ...l, id: "line_" + idx })),
+      lines: lines.map(l => ({ ...l, id: generateId() })),
       totalDebit,
       totalCredit,
       isBalanced: true,

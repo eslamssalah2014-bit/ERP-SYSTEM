@@ -2,53 +2,73 @@
 
 import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import { PurchaseInvoice } from "@/types/erp";
 import {
   ShoppingBag, Plus, Search, Filter, Eye, CheckCircle2,
-  Trash2, Building2
+  Trash2, Building2, Printer, FileText, Calendar, User, Package
 } from "lucide-react";
 
 export default function PurchasesPage() {
   const {
     purchaseInvoices, suppliers, products, warehouses,
-    createPurchaseInvoice, organization, activeBranchId,
-    currentUser, locale
+    createPurchaseInvoice, deletePurchaseInvoice, organization, activeBranchId,
+    currentUser, locale, hasPermission
   } = useERP();
 
   const isAr = locale === "ar";
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
 
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id || "");
+  // New Purchase Form State
+  const [supplierId, setSupplierId] = useState("");
   const [supplierInvoiceRef, setSupplierInvoiceRef] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 30*24*3600*1000).toISOString().split("T")[0]);
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || "");
-  const [items, setItems] = useState([
-    {
-      productId: products[0]?.id || "",
-      productName: products[0]?.nameAr || "",
-      warehouseId: warehouses[0]?.id || "",
-      quantity: 5,
-      unitCost: products[0]?.costPrice || 0,
-      discountAmount: 0,
-      taxRate: organization.defaultVatRate,
-      taxAmount: ((products[0]?.costPrice || 0) * 5 * organization.defaultVatRate) / 100,
-      total: ((products[0]?.costPrice || 0) * 5) * (1 + organization.defaultVatRate / 100),
+  const [warehouseId, setWarehouseId] = useState("");
+  const [items, setItems] = useState<any[]>([]);
+
+  const handleOpenAddModal = () => {
+    const defaultSupp = suppliers[0]?.id || "";
+    const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
+    const defaultProd = products[0];
+
+    setSupplierId(defaultSupp);
+    setWarehouseId(defaultWh);
+    setDate(new Date().toISOString().split("T")[0]);
+    setDueDate(new Date(Date.now() + 30*24*3600*1000).toISOString().split("T")[0]);
+    setSupplierInvoiceRef("");
+
+    if (defaultProd) {
+      setItems([{
+        productId: defaultProd.id,
+        productName: isAr ? defaultProd.nameAr : defaultProd.nameEn,
+        warehouseId: defaultWh,
+        quantity: 5,
+        unitCost: defaultProd.costPrice || 0,
+        discountAmount: 0,
+        taxRate: organization.defaultVatRate,
+        taxAmount: ((defaultProd.costPrice || 0) * 5 * organization.defaultVatRate) / 100,
+        total: ((defaultProd.costPrice || 0) * 5) * (1 + organization.defaultVatRate / 100),
+      }]);
+    } else {
+      setItems([]);
     }
-  ]);
+    setIsAddModalOpen(true);
+  };
 
   const handleAddItem = () => {
     const p = products[0];
     if (!p) return;
+    const currentWh = warehouseId || warehouses[0]?.id || "";
     setItems(prev => [
       ...prev,
       {
         productId: p.id,
-        productName: p.nameAr,
-        warehouseId: warehouses[0]?.id || "",
+        productName: isAr ? p.nameAr : p.nameEn,
+        warehouseId: currentWh,
         quantity: 1,
         unitCost: p.costPrice,
         discountAmount: 0,
@@ -94,14 +114,14 @@ export default function PurchasesPage() {
   const taxTotal = items.reduce((sum, item) => sum + item.taxAmount, 0);
   const grandTotal = subtotal + taxTotal;
 
-  const handleCreatePurchase = (e: React.FormEvent) => {
+  const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    const supp = suppliers.find(s => s.id === supplierId);
+    const supp = suppliers.find(s => s.id === supplierId) || suppliers[0];
     if (!supp || items.length === 0) return;
 
     const invoiceNumber = "PINV-" + new Date().getFullYear() + "-" + (purchaseInvoices.length + 1).toString().padStart(3, "0");
 
-    createPurchaseInvoice({
+    await createPurchaseInvoice({
       organizationId: organization.id,
       branchId: activeBranchId,
       invoiceNumber,
@@ -111,9 +131,9 @@ export default function PurchasesPage() {
       supplierId: supp.id,
       supplierName: supp.nameAr,
       supplierTaxNumber: supp.taxNumber,
-      warehouseId,
+      warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
       status: "unpaid",
-      items: items.map((item, idx) => ({ ...item, id: "pitem_" + idx })),
+      items: items.map(item => ({ ...item, id: generateId() })),
       subtotal,
       discountTotal: 0,
       taxTotal,
@@ -127,6 +147,13 @@ export default function PurchasesPage() {
     setIsAddModalOpen(false);
   };
 
+  const handleDelete = async (id: string) => {
+    if (confirm(isAr ? "هل أنت متأكد من حذف فاتورة المشتريات هذه وتعديل قيودها ومخزونها؟" : "Are you sure you want to delete this purchase invoice?")) {
+      await deletePurchaseInvoice(id);
+      if (selectedInvoice?.id === id) setSelectedInvoice(null);
+    }
+  };
+
   const filteredInvoices = purchaseInvoices.filter(inv => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -134,6 +161,8 @@ export default function PurchasesPage() {
     }
     return true;
   });
+
+  const canManage = hasPermission(["super_admin", "tenant_admin", "accountant", "inventory_manager"]);
 
   return (
     <div className="space-y-6">
@@ -149,12 +178,29 @@ export default function PurchasesPage() {
         </div>
 
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={handleOpenAddModal}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-600 to-blue-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-950/60 transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>{isAr ? "إضافة فاتورة مشتريات" : "New Purchase Invoice"}</span>
         </button>
+      </div>
+
+      {/* Search Bar */}
+      <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+        <div className="relative w-72">
+          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={isAr ? "بحث برقم الفاتورة أو المورد..." : "Search invoice # or supplier..."}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-9 pl-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 font-medium"
+          />
+        </div>
+        <span className="text-xs text-slate-400 font-semibold">
+          {isAr ? `إجمالي الفواتير: ${filteredInvoices.length}` : `Total Invoices: ${filteredInvoices.length}`}
+        </span>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
@@ -170,7 +216,8 @@ export default function PurchasesPage() {
                 <th className="p-3.5 text-center font-mono">{isAr ? "المجموع" : "Subtotal"}</th>
                 <th className="p-3.5 text-center font-mono">{isAr ? "الضريبة" : "VAT"}</th>
                 <th className="p-3.5 text-center font-mono">{isAr ? "الإجمالي المستحق" : "Grand Total"}</th>
-                <th className="p-3.5 rounded-l-lg text-center">{isAr ? "الحالة" : "Status"}</th>
+                <th className="p-3.5 text-center">{isAr ? "الحالة" : "Status"}</th>
+                <th className="p-3.5 rounded-l-lg text-center">{isAr ? "الإجراءات" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -191,15 +238,35 @@ export default function PurchasesPage() {
                     {formatCurrency(inv.grandTotal, organization.currency, locale)}
                   </td>
                   <td className="p-3.5 text-center">
-                    <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-xl text-[10px] font-bold border border-amber-500/20">
-                      {inv.status}
+                    <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 rounded-xl text-[10px] font-bold border border-sky-500/20">
+                      {inv.status === "paid" ? (isAr ? "مدفوعة" : "Paid") : (isAr ? "مستحقة" : "Unpaid")}
                     </span>
+                  </td>
+                  <td className="p-3.5 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => setSelectedInvoice(inv)}
+                        title={isAr ? "معاينة تفاصيل الفاتورة" : "View Details"}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      {canManage && (
+                        <button
+                          onClick={() => handleDelete(inv.id)}
+                          title={isAr ? "حذف الفاتورة" : "Delete"}
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
               {filteredInvoices.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-slate-500">
+                  <td colSpan={10} className="text-center py-12 text-slate-500">
                     <ShoppingBag className="w-8 h-8 mx-auto mb-2 stroke-[1.5] text-slate-700" />
                     <p className="text-sm font-semibold text-slate-400">
                       {isAr ? "لا توجد فواتير مشتريات مسجلة" : "No purchase invoices found"}
@@ -215,6 +282,102 @@ export default function PurchasesPage() {
         </div>
       </div>
 
+      {/* Purchase Invoice Details Modal */}
+      {selectedInvoice && (
+        <Modal
+          isOpen={Boolean(selectedInvoice)}
+          onClose={() => setSelectedInvoice(null)}
+          title={isAr ? `فاتورة مشتريات ${selectedInvoice.invoiceNumber}` : `Purchase Invoice ${selectedInvoice.invoiceNumber}`}
+          maxWidth="4xl"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "المورد:" : "Supplier:"}</span>
+                <span className="text-white font-bold block mt-0.5">{selectedInvoice.supplierName}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "تاريخ الفاتورة:" : "Date:"}</span>
+                <span className="text-white font-mono block mt-0.5">{formatDate(selectedInvoice.date, locale)}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "رقم مرجع المورد:" : "Vendor Ref:"}</span>
+                <span className="text-white font-mono block mt-0.5">{selectedInvoice.supplierInvoiceRef || "---"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "الحالة:" : "Status:"}</span>
+                <span className="text-sky-400 font-bold block mt-0.5">{selectedInvoice.status}</span>
+              </div>
+            </div>
+
+            {/* Line Items Table */}
+            <div className="border border-slate-800 rounded-2xl overflow-hidden">
+              <table className="w-full text-xs text-right">
+                <thead>
+                  <tr className="bg-slate-800 text-slate-400 font-bold">
+                    <th className="p-3">#</th>
+                    <th className="p-3">{isAr ? "اسم الصنف" : "Item"}</th>
+                    <th className="p-3 text-center">{isAr ? "الكمية" : "Qty"}</th>
+                    <th className="p-3 text-center">{isAr ? "سعر التكلفة" : "Unit Cost"}</th>
+                    <th className="p-3 text-center">{isAr ? "الضريبة" : "VAT"}</th>
+                    <th className="p-3 text-left">{isAr ? "الإجمالي" : "Total"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-950/60 font-mono">
+                  {selectedInvoice.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="p-3 text-slate-500">{idx + 1}</td>
+                      <td className="p-3 font-sans font-bold text-white">{item.productName}</td>
+                      <td className="p-3 text-center text-slate-200">{item.quantity}</td>
+                      <td className="p-3 text-center text-slate-300">{formatCurrency(item.unitCost, organization.currency, locale)}</td>
+                      <td className="p-3 text-center text-sky-400">{formatCurrency(item.taxAmount, organization.currency, locale)}</td>
+                      <td className="p-3 text-left font-bold text-white">{formatCurrency(item.total, organization.currency, locale)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Totals Summary */}
+            <div className="flex justify-end">
+              <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
+                  <span className="font-mono font-bold text-white">{formatCurrency(selectedInvoice.subtotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? "ضريبة القيمة المضافة:" : "VAT Total:"}</span>
+                  <span className="font-mono font-bold text-sky-400">{formatCurrency(selectedInvoice.taxTotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
+                  <span>{isAr ? "الإجمالي الكلي:" : "Grand Total:"}</span>
+                  <span className="font-mono text-sky-400">{formatCurrency(selectedInvoice.grandTotal, organization.currency, locale)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span>{isAr ? "طباعة الفاتورة" : "Print"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedInvoice(null)}
+                className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl transition-colors"
+              >
+                {isAr ? "إغلاق" : "Close"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Add Modal */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}

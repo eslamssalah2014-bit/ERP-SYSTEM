@@ -324,7 +324,7 @@ export default function InventoryPage() {
 
                           {/* Kardex Link */}
                           <Link
-                            href={`/inventory/kardex`}
+                            href={`/inventory/kardex?productId=${p.id}`}
                             title={isAr ? "عرض كارت الصنف (Kardex)" : "View Kardex"}
                             className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
                           >

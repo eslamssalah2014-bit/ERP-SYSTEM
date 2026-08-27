@@ -123,6 +123,24 @@ INSERT INTO treasury_accounts (
     TRUE
 ) ON CONFLICT (id) DO NOTHING;
 
+-- 8b. BASELINE DEFAULT WALK-IN CASH CUSTOMER (FOR POS & RETAIL)
+INSERT INTO customers (
+    id, organization_id, code, name_ar, name_en, mobile, address, city, credit_limit, payment_terms_days, current_balance, status
+) VALUES (
+    '00000000-0000-0000-0000-000000000099',
+    '00000000-0000-0000-0000-000000000001',
+    'CUST-POS',
+    'عميل نقدي عام (نقاط البيع)',
+    'Walk-in Cash Customer',
+    '+20 100 0000000',
+    'مبيعات نقدية مباشرة',
+    'القاهرة',
+    0.0000,
+    0,
+    0.0000,
+    'active'
+) ON CONFLICT (id) DO NOTHING;
+
 -- =========================================================================
 -- 9. PERMISSIVE ROW LEVEL SECURITY (RLS) POLICIES FOR ALL ERP TABLES
 -- Ensures client and server operations can perform CRUD without 401/42501 errors

@@ -20,7 +20,7 @@ interface CartItem {
 
 export default function PosTerminal() {
   const {
-    products, categories, customers, createSalesInvoice,
+    products, categories, customers, warehouses, createSalesInvoice,
     organization, activeBranchId, currentUser, locale
   } = useERP();
 
@@ -50,21 +50,28 @@ export default function PosTerminal() {
       const existing = prev.find(item => item.product.id === product.id);
       if (existing) {
         return prev.map(item =>
-          item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.product.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
         );
       }
-      return [...prev, { product, quantity: 1, unitPrice: product.sellingPrice, taxRate: product.taxRate }];
+      return [...prev, {
+        product,
+        quantity: 1,
+        unitPrice: product.sellingPrice,
+        taxRate: product.taxRate || organization.defaultVatRate
+      }];
     });
   };
 
   const updateQuantity = (productId: string, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.product.id === productId) {
-        const newQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: newQty };
+        const newQty = item.quantity + delta;
+        return newQty > 0 ? { ...item, quantity: newQty } : null;
       }
       return item;
-    }));
+    }).filter(Boolean) as CartItem[]);
   };
 
   const removeFromCart = (productId: string) => {
@@ -81,22 +88,24 @@ export default function PosTerminal() {
   const grandTotal = taxableAmount + taxTotal;
 
   // Complete Checkout
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
 
-    const customer = customers.find(c => c.id === selectedCustomerId) || {
-      id: "walk_in_cash",
+    const defaultWarehouseId = warehouses[0]?.id || "00000000-0000-0000-0000-000000000004";
+    const fallbackCustomer = customers.find(c => c.code === "CUST-POS" || c.id === "00000000-0000-0000-0000-000000000099") || customers[0] || {
+      id: "00000000-0000-0000-0000-000000000099",
       nameAr: isAr ? "عميل نقدي عام (نقاط البيع)" : "Walk-in Cash Customer",
       nameEn: "Walk-in Cash Customer",
       taxNumber: "",
     };
+    const customer = customers.find(c => c.id === selectedCustomerId) || fallbackCustomer;
     const invoiceNumber = "POS-" + Date.now().toString().slice(-6);
 
     const invoiceItems = cart.map((item, idx) => ({
       id: "pos_item_" + idx,
       productId: item.product.id,
       productName: item.product.nameAr,
-      warehouseId: "wh_cairo_01",
+      warehouseId: defaultWarehouseId,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       costPrice: item.product.costPrice,
@@ -107,7 +116,7 @@ export default function PosTerminal() {
       total: (item.unitPrice * item.quantity) * (1 + organization.defaultVatRate / 100),
     }));
 
-    const created = createSalesInvoice({
+    const created = await createSalesInvoice({
       organizationId: organization.id,
       branchId: activeBranchId,
       invoiceNumber,
@@ -118,7 +127,7 @@ export default function PosTerminal() {
       customerTaxNumber: customer.taxNumber,
       salesRepId: currentUser.id,
       salesRepName: currentUser.name,
-      warehouseId: "wh_cairo_01",
+      warehouseId: defaultWarehouseId,
       status: paymentMethod === "credit" ? "unpaid" : "paid",
       items: invoiceItems,
       subtotal,

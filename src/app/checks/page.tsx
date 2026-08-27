@@ -7,13 +7,14 @@ import Modal from "@/components/ui/Modal";
 import { CheckRecord, CheckStatus } from "@/types/erp";
 import {
   CheckSquare, Plus, ArrowDownLeft, ArrowUpRight, CheckCircle2,
-  Clock, XCircle, AlertCircle, Building2
+  Clock, XCircle, AlertCircle, Building2, Trash2
 } from "lucide-react";
 
 export default function ChecksPage() {
   const {
-    checks, treasuryAccounts, updateCheckStatus,
-    organization, locale
+    checks, treasuryAccounts, customers, suppliers,
+    addCheck, updateCheckStatus, deleteCheck,
+    organization, activeBranchId, currentUser, locale, hasPermission
   } = useERP();
 
   const isAr = locale === "ar";
@@ -21,6 +22,18 @@ export default function ChecksPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedCheckToCollect, setSelectedCheckToCollect] = useState<CheckRecord | null>(null);
   const [targetTreasuryId, setTargetTreasuryId] = useState<string>(treasuryAccounts[0]?.id || "");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Add Check Form State
+  const [checkNumber, setCheckNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [partyName, setPartyName] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [amount, setAmount] = useState<number>(0);
+  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0]);
+  const [notes, setNotes] = useState("");
 
   const filteredChecks = checks.filter(c => {
     if (c.type !== activeTab) return false;
@@ -28,11 +41,55 @@ export default function ChecksPage() {
     return true;
   });
 
-  const handleConfirmCollect = () => {
+  const handleOpenAddModal = () => {
+    setCheckNumber("CHK-" + Date.now().toString().slice(-6));
+    setBankName(isAr ? "البنك الأهلي المصري" : "National Bank");
+    setPartyName(activeTab === "incoming" ? (customers[0]?.nameAr || "") : (suppliers[0]?.nameAr || ""));
+    setSelectedCustomerId(customers[0]?.id || "");
+    setSelectedSupplierId(suppliers[0]?.id || "");
+    setAmount(10000);
+    setIssueDate(new Date().toISOString().split("T")[0]);
+    setDueDate(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0]);
+    setNotes("");
+    setIsAddModalOpen(true);
+  };
+
+  const handleCreateCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (amount <= 0) return;
+
+    await addCheck({
+      organizationId: organization.id,
+      branchId: activeBranchId,
+      checkNumber,
+      bankName,
+      type: activeTab,
+      partyName: partyName || (activeTab === "incoming" ? "عميل" : "مورد"),
+      customerId: activeTab === "incoming" ? (selectedCustomerId || undefined) : undefined,
+      supplierId: activeTab === "outgoing" ? (selectedSupplierId || undefined) : undefined,
+      amount: Number(amount) || 0,
+      issueDate,
+      dueDate,
+      status: "pending",
+      notes: notes || undefined,
+    });
+
+    setIsAddModalOpen(false);
+  };
+
+  const handleConfirmCollect = async () => {
     if (!selectedCheckToCollect) return;
-    updateCheckStatus(selectedCheckToCollect.id, "collected", targetTreasuryId);
+    await updateCheckStatus(selectedCheckToCollect.id, "collected", targetTreasuryId);
     setSelectedCheckToCollect(null);
   };
+
+  const handleDeleteCheck = async (id: string) => {
+    if (confirm(isAr ? "هل أنت متأكد من حذف هذا الشيك من الحافظة؟" : "Are you sure you want to delete this check?")) {
+      await deleteCheck(id);
+    }
+  };
+
+  const canManage = hasPermission(["super_admin", "tenant_admin", "accountant"]);
 
   return (
     <div className="space-y-6">
@@ -47,6 +104,16 @@ export default function ChecksPage() {
             {isAr ? "دورة حياة الشيكات: تحت التحصيل، تم التحصيل والإيداع، مرتدة، أو ملغاة مع التأثير التلقائي على الحسابات" : "Full check lifecycle: pending, collected, cleared, and bounced"}
           </p>
         </div>
+
+        {canManage && (
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{activeTab === "incoming" ? (isAr ? "إضافة شيك وارد (قبض)" : "Add Incoming Check") : (isAr ? "إضافة شيك صادر (دفع)" : "Add Outgoing Check")}</span>
+          </button>
+        )}
       </div>
 
       {/* Tabs Bar */}
@@ -101,7 +168,7 @@ export default function ChecksPage() {
                 <th className="p-3.5">{isAr ? "تاريخ التحرير" : "Issue Date"}</th>
                 <th className="p-3.5">{isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
                 <th className="p-3.5 text-center">{isAr ? "الحالة" : "Status"}</th>
-                <th className="p-3.5 rounded-l-lg text-center">{isAr ? "إجراءات التحصيل" : "Actions"}</th>
+                <th className="p-3.5 rounded-l-lg text-center">{isAr ? "الإجراءات" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -137,14 +204,25 @@ export default function ChecksPage() {
                       </span>
                     </td>
                     <td className="p-3.5 text-center">
-                      {chk.status === "pending" && (
-                        <button
-                          onClick={() => setSelectedCheckToCollect(chk)}
-                          className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold rounded-xl border border-emerald-500/30 transition-all"
-                        >
-                          {isAr ? "تحصيل وإيداع" : "Collect"}
-                        </button>
-                      )}
+                      <div className="flex items-center justify-center gap-1.5">
+                        {chk.status === "pending" && (
+                          <button
+                            onClick={() => setSelectedCheckToCollect(chk)}
+                            className="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold rounded-xl border border-emerald-500/30 transition-all"
+                          >
+                            {isAr ? "تحصيل وإيداع" : "Collect"}
+                          </button>
+                        )}
+                        {canManage && (
+                          <button
+                            onClick={() => handleDeleteCheck(chk.id)}
+                            title={isAr ? "حذف الشيك" : "Delete"}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -210,6 +288,112 @@ export default function ChecksPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Add Check Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title={activeTab === "incoming" ? (isAr ? "تسجيل شيك وارد جديد (ورقة قبض)" : "Register Incoming Check") : (isAr ? "تسجيل شيك صادر جديد (ورقة دفع)" : "Register Outgoing Check")}
+        maxWidth="lg"
+      >
+        <form onSubmit={handleCreateCheck} className="space-y-4 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم الشيك *" : "Check Number *"}</label>
+              <input
+                type="text"
+                required
+                value={checkNumber}
+                onChange={(e) => setCheckNumber(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم البنك *" : "Bank Name *"}</label>
+              <input
+                type="text"
+                required
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم الطرف / الساحب *" : "Party Name *"}</label>
+              <input
+                type="text"
+                required
+                value={partyName}
+                onChange={(e) => setPartyName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المبلغ *" : "Amount *"}</label>
+              <input
+                type="number"
+                min="0.01"
+                step="any"
+                required
+                value={amount}
+                onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ التحرير *" : "Issue Date *"}</label>
+              <input
+                type="date"
+                required
+                value={issueDate}
+                onChange={(e) => setIssueDate(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ الاستحقاق *" : "Due Date *"}</label>
+              <input
+                type="date"
+                required
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "ملاحظات وبيان الشيك" : "Notes"}</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={isAr ? "شيك ضمان / دفعة مقدمة..." : "Check notes..."}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(false)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+            >
+              {isAr ? "إلغاء" : "Cancel"}
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+            >
+              {isAr ? "حفظ الشيك في الحافظة" : "Save Check"}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

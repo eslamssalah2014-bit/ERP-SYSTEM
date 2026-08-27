@@ -98,8 +98,23 @@ export const initialWarehouses: Warehouse[] = [
 // 7. Products (Clean Production Baseline: 0 items)
 export const initialProducts: Product[] = [];
 
-// 8. Customers (Clean Production Baseline: 0 items)
-export const initialCustomers: Customer[] = [];
+// 8. Customers (Clean Production Baseline with POS Walk-in Customer)
+export const initialCustomers: Customer[] = [
+  {
+    id: "00000000-0000-0000-0000-000000000099",
+    organizationId: "00000000-0000-0000-0000-000000000001",
+    code: "CUST-POS",
+    nameAr: "عميل نقدي عام (نقاط البيع)",
+    nameEn: "Walk-in Cash Customer",
+    mobile: "+20 100 0000000",
+    city: "القاهرة",
+    address: "مبيعات نقدية مباشرة",
+    creditLimit: 0,
+    paymentTermsDays: 0,
+    currentBalance: 0,
+    status: "active",
+  },
+];
 
 // 9. Suppliers (Clean Production Baseline: 0 items)
 export const initialSuppliers: Supplier[] = [];

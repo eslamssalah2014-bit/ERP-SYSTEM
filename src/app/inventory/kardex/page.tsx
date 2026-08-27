@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useERP } from "@/context/erp-context";
 import { computeStockKardex } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -13,6 +14,17 @@ import {
 } from "lucide-react";
 
 export default function KardexPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-400">جاري تحميل سجل حركة الصنف (كاردكس)...</div>}>
+      <KardexContent />
+    </Suspense>
+  );
+}
+
+function KardexContent() {
+  const searchParams = useSearchParams();
+  const urlProductId = searchParams ? searchParams.get("productId") : null;
+
   const {
     products, warehouses, stockMovements, customers, suppliers,
     updateStockMovement, deleteStockMovement, locale, organization,
@@ -21,10 +33,18 @@ export default function KardexPage() {
 
   const isAr = locale === "ar";
 
-  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || "");
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  useEffect(() => {
+    if (urlProductId && products.some(p => p.id === urlProductId)) {
+      setSelectedProductId(urlProductId);
+    } else if (products.length > 0 && (!selectedProductId || !products.some(p => p.id === selectedProductId))) {
+      setSelectedProductId(products[0].id);
+    }
+  }, [urlProductId, products, selectedProductId]);
 
   // Modals state
   const [viewRecord, setViewRecord] = useState<StockCardRecord | null>(null);
