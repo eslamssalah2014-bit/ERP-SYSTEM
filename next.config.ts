@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
+const isStandalone = process.env.OUTPUT_STANDALONE === "true" || process.env.RENDER === "true";
+
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(isStandalone ? { output: "standalone" } : {}),
   serverExternalPackages: ["@supabase/supabase-js"],
 };
 
