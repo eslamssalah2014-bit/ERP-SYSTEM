@@ -2,17 +2,21 @@ import {
   Product, Customer, Supplier, SalesInvoice, PurchaseInvoice,
   Warehouse, CostCenter, CheckRecord, JournalEntry, Account, TreasuryAccount,
   StockMovement, AuditLog, ProductChangeLog, PeriodClosing, ProductCategory,
-  ProductUnit, Organization, Branch, User, CashReceipt, CashPayment
+  ProductUnit, Organization, Branch, User, CashReceipt, CashPayment,
+  CustomerCategory, SalesReturn, PurchaseReturn
 } from "@/types/erp";
 
 export interface HydratedERPData {
   products: Product[];
   categories?: ProductCategory[];
+  customerCategories?: CustomerCategory[];
   units?: ProductUnit[];
   customers: Customer[];
   suppliers: Supplier[];
   salesInvoices: SalesInvoice[];
+  salesReturns?: SalesReturn[];
   purchaseInvoices: PurchaseInvoice[];
+  purchaseReturns?: PurchaseReturn[];
   warehouses: Warehouse[];
   costCenters: CostCenter[];
   accounts: Account[];
@@ -242,6 +246,33 @@ export async function persistCheckStatusDB(checkId: string, newStatus: string, t
 }
 export async function deleteCheckDB(id: string) {
   return mutateERP("delete_check", { id });
+}
+
+// Customer Categories CRUD
+export async function persistCustomerCategoryDB(cat: CustomerCategory | Omit<CustomerCategory, "id">) {
+  return mutateERP<CustomerCategory>("create_customer_category", cat);
+}
+export async function updateCustomerCategoryDB(id: string, cat: Partial<CustomerCategory>) {
+  return mutateERP<CustomerCategory>("update_customer_category", { id, ...cat });
+}
+export async function deleteCustomerCategoryDB(id: string) {
+  return mutateERP("delete_customer_category", { id });
+}
+
+// Sales Returns CRUD
+export async function persistSalesReturnDB(ret: SalesReturn | Omit<SalesReturn, "id">) {
+  return mutateERP<SalesReturn>("create_sales_return", ret);
+}
+export async function deleteSalesReturnDB(id: string) {
+  return mutateERP("delete_sales_return", { id });
+}
+
+// Purchase Returns CRUD
+export async function persistPurchaseReturnDB(ret: PurchaseReturn | Omit<PurchaseReturn, "id">) {
+  return mutateERP<PurchaseReturn>("create_purchase_return", ret);
+}
+export async function deletePurchaseReturnDB(id: string) {
+  return mutateERP("delete_purchase_return", { id });
 }
 
 // Journal Entries CRUD

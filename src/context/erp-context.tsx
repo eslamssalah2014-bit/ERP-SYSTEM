@@ -6,14 +6,16 @@ import {
   Customer, Supplier, Account, TreasuryAccount, CostCenter, CheckRecord,
   SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification,
   AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment,
-  ProductChangeLog, PeriodClosing, UserRole
+  ProductChangeLog, PeriodClosing, UserRole, CustomerCategory, SalesReturn,
+  PurchaseReturn, PartnerStatement, StatementTransaction
 } from "@/types/erp";
 import {
   initialOrganization, initialBranches, initialUsers, initialCategories,
   initialUnits, initialWarehouses, initialProducts, initialCustomers,
   initialSuppliers, initialAccounts, initialTreasuryAccounts, initialCostCenters,
   initialChecks, initialSalesInvoices, initialPurchaseInvoices,
-  initialStockMovements, initialJournalEntries, initialNotifications, initialAuditLogs
+  initialStockMovements, initialJournalEntries, initialNotifications, initialAuditLogs,
+  initialCustomerCategories, initialSalesReturns, initialPurchaseReturns
 } from "@/lib/seed-data";
 import { generateId } from "@/lib/utils";
 import {
@@ -36,6 +38,9 @@ import {
   persistUnitDB,
   updateUnitDB,
   deleteUnitDB,
+  persistCustomerCategoryDB,
+  updateCustomerCategoryDB,
+  deleteCustomerCategoryDB,
   persistCustomerDB,
   updateCustomerDB,
   deleteCustomerDB,
@@ -44,8 +49,12 @@ import {
   deleteSupplierDB,
   persistSalesInvoiceDB,
   deleteSalesInvoiceDB,
+  persistSalesReturnDB,
+  deleteSalesReturnDB,
   persistPurchaseInvoiceDB,
   deletePurchaseInvoiceDB,
+  persistPurchaseReturnDB,
+  deletePurchaseReturnDB,
   persistWarehouseDB,
   updateWarehouseDB,
   deleteWarehouseDB,
@@ -134,20 +143,52 @@ interface ERPContextType {
   // CRM & Partners
   customers: Customer[];
   suppliers: Supplier[];
+  customerCategories: CustomerCategory[];
   addCustomer: (c: Omit<Customer, "id">) => Promise<Customer>;
   updateCustomer: (id: string, c: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
+  addCustomerCategory: (cat: Omit<CustomerCategory, "id">) => Promise<CustomerCategory>;
+  updateCustomerCategory: (id: string, cat: Partial<CustomerCategory>) => Promise<void>;
+  deleteCustomerCategory: (id: string) => Promise<void>;
   addSupplier: (s: Omit<Supplier, "id">) => Promise<Supplier>;
   updateSupplier: (id: string, s: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
 
   // Sales & Purchases
   salesInvoices: SalesInvoice[];
+  salesReturns: SalesReturn[];
   purchaseInvoices: PurchaseInvoice[];
+  purchaseReturns: PurchaseReturn[];
   createSalesInvoice: (inv: Omit<SalesInvoice, "id">) => Promise<SalesInvoice>;
   deleteSalesInvoice: (id: string) => Promise<void>;
+  addSalesReturn: (ret: Omit<SalesReturn, "id">) => Promise<SalesReturn>;
+  deleteSalesReturn: (id: string) => Promise<void>;
   createPurchaseInvoice: (inv: Omit<PurchaseInvoice, "id">) => Promise<PurchaseInvoice>;
   deletePurchaseInvoice: (id: string) => Promise<void>;
+  addPurchaseReturn: (ret: Omit<PurchaseReturn, "id">) => Promise<PurchaseReturn>;
+  deletePurchaseReturn: (id: string) => Promise<void>;
+
+  // Statements & Reports
+  getCustomerStatement: (customerId: string, fromDate?: string, toDate?: string) => PartnerStatement;
+  getSupplierStatement: (supplierId: string, fromDate?: string, toDate?: string) => PartnerStatement;
+  getCustomerBalancesReport: (fromDate?: string, toDate?: string, categoryId?: string) => Array<{
+    customerId: string;
+    customerName: string;
+    categoryName?: string;
+    openingBalance: number;
+    debitMovements: number;
+    creditMovements: number;
+    currentBalance: number;
+  }>;
+  getSupplierBalancesReport: (fromDate?: string, toDate?: string) => Array<{
+    supplierId: string;
+    supplierCode: string;
+    supplierName: string;
+    openingBalance: number;
+    debitMovements: number;
+    creditMovements: number;
+    currentBalance: number;
+  }>;
 
   // Treasury & Checks
   treasuryAccounts: TreasuryAccount[];
@@ -231,6 +272,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   // Master Data State
   const [categories, setCategories] = useState<ProductCategory[]>(initialCategories);
+  const [customerCategories, setCustomerCategories] = useState<CustomerCategory[]>(initialCustomerCategories);
   const [units, setUnits] = useState<ProductUnit[]>(initialUnits);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
   const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -239,7 +281,9 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
   // Transaction State
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(initialSalesInvoices);
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(initialSalesReturns);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>(initialPurchaseInvoices);
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(initialPurchaseReturns);
   const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>(initialTreasuryAccounts);
   const [cashReceipts, setCashReceipts] = useState<CashReceipt[]>([]);
   const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
@@ -277,11 +321,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         }
         if (liveData.products) setProducts(liveData.products);
         if (liveData.categories) setCategories(liveData.categories);
+        if (liveData.customerCategories) setCustomerCategories(liveData.customerCategories);
         if (liveData.units) setUnits(liveData.units);
         if (liveData.customers) setCustomers(liveData.customers);
         if (liveData.suppliers) setSuppliers(liveData.suppliers);
         if (liveData.salesInvoices) setSalesInvoices(liveData.salesInvoices);
+        if (liveData.salesReturns) setSalesReturns(liveData.salesReturns);
         if (liveData.purchaseInvoices) setPurchaseInvoices(liveData.purchaseInvoices);
+        if (liveData.purchaseReturns) setPurchaseReturns(liveData.purchaseReturns);
         if (liveData.warehouses) setWarehouses(liveData.warehouses);
         if (liveData.costCenters) setCostCenters(liveData.costCenters);
         if (liveData.accounts) setAccounts(liveData.accounts);
@@ -813,8 +860,39 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ==========================================
-  // SALES & PURCHASES CRUD
+  // CUSTOMER CATEGORIES CRUD
   // ==========================================
+  const addCustomerCategory = async (cat: Omit<CustomerCategory, "id">): Promise<CustomerCategory> => {
+    const res = await persistCustomerCategoryDB(cat);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ تصنيف العميل في قاعدة البيانات");
+    }
+    const savedCat = res.data;
+    setCustomerCategories(prev => [...prev.filter(x => x.id !== savedCat.id), savedCat]);
+    showToast(locale === "ar" ? `تمت إضافة التصنيف "${savedCat.nameAr}"` : `Category created`, "success");
+    return savedCat;
+  };
+
+  const updateCustomerCategory = async (id: string, cat: Partial<CustomerCategory>) => {
+    const res = await updateCustomerCategoryDB(id, cat);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل تعديل تصنيف العميل في قاعدة البيانات");
+    }
+    const savedCat = res.data;
+    setCustomerCategories(prev => prev.map(c => c.id === id ? { ...c, ...savedCat } : c));
+    showToast(locale === "ar" ? "تم تحديث تصنيف العميل بنجاح" : "Category updated", "success");
+  };
+
+  const deleteCustomerCategory = async (id: string) => {
+    const res = await deleteCustomerCategoryDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف تصنيف العميل من قاعدة البيانات");
+    }
+    setCustomerCategories(prev => prev.filter(c => c.id !== id));
+    showToast(locale === "ar" ? "تم حذف تصنيف العميل بنجاح" : "Category deleted", "success");
+  };
+
+  // Sales & Purchases CRUD
   const createSalesInvoice = async (inv: Omit<SalesInvoice, "id">): Promise<SalesInvoice> => {
     const res = await persistSalesInvoiceDB(inv as any);
     if (!res.success || !res.data) {
@@ -995,279 +1073,566 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     showToast(locale === "ar" ? "تم حذف فاتورة المشتريات بنجاح" : "Purchase invoice deleted successfully", "success");
   };
 
+  // Sales Returns CRUD
+  const addSalesReturn = async (ret: Omit<SalesReturn, "id">): Promise<SalesReturn> => {
+    const res = await persistSalesReturnDB(ret as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ مرتجع المبيعات في قاعدة البيانات");
+    }
+    const savedReturn = res.data;
+    const returnItems = savedReturn.items || [];
+    const movementsToCreate: StockMovement[] = [];
+
+    returnItems.forEach(item => {
+      movementsToCreate.push({
+        id: generateId(),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "sales_return",
+        referenceId: savedReturn.id,
+        referenceNumber: savedReturn.returnNumber,
+        date: savedReturn.date,
+        quantity: Math.abs(item.quantity),
+        unitCost: item.costPrice || item.unitPrice,
+        totalCost: Math.abs((item.costPrice || item.unitPrice) * item.quantity),
+        balanceQuantity: 0,
+        partnerId: savedReturn.customerId,
+        partnerName: savedReturn.customerName,
+        partnerType: "customer",
+        notes: `مرتجع مبيعات إشعار دائن ${savedReturn.returnNumber}`,
+      });
+
+      setProducts(prev => prev.map(p => {
+        if (p.id === item.productId) {
+          const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
+          return {
+            ...p,
+            warehouseStock: {
+              ...p.warehouseStock,
+              [item.warehouseId]: currentWhStock + item.quantity,
+            }
+          };
+        }
+        return p;
+      }));
+    });
+
+    if (movementsToCreate.length > 0) {
+      setStockMovements(prev => [...movementsToCreate, ...prev]);
+    }
+
+    if (savedReturn.refundMethod === "customer_balance" || !savedReturn.refundMethod) {
+      setCustomers(prev => prev.map(c =>
+        c.id === savedReturn.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - savedReturn.grandTotal) } : c
+      ));
+    } else if (savedReturn.refundMethod === "treasury" && savedReturn.treasuryAccountId) {
+      setTreasuryAccounts(prev => prev.map(t =>
+        t.id === savedReturn.treasuryAccountId ? { ...t, balance: t.balance - savedReturn.grandTotal } : t
+      ));
+    }
+
+    setSalesReturns(prev => [savedReturn, ...prev.filter(x => x.id !== savedReturn.id)]);
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "SalesReturn",
+      entityId: savedReturn.id,
+      details: `تسجيل مرتجع مبيعات ${savedReturn.returnNumber} بمبلغ ${savedReturn.grandTotal}`,
+    });
+
+    showToast(locale === "ar" ? `تم تسجيل مرتجع المبيعات (${savedReturn.returnNumber}) وإرجاع المخزون بنجاح` : `Sales return (${savedReturn.returnNumber}) registered`, "success");
+    return savedReturn;
+  };
+
+  const deleteSalesReturn = async (id: string) => {
+    const res = await deleteSalesReturnDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف مرتجع المبيعات");
+    }
+    setSalesReturns(prev => prev.filter(r => r.id !== id));
+    setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    showToast(locale === "ar" ? "تم حذف مرتجع المبيعات بنجاح" : "Sales return deleted", "success");
+  };
+
+  // Purchase Returns CRUD
+  const addPurchaseReturn = async (ret: Omit<PurchaseReturn, "id">): Promise<PurchaseReturn> => {
+    const res = await persistPurchaseReturnDB(ret as any);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل حفظ مرتجع المشتريات في قاعدة البيانات");
+    }
+    const savedReturn = res.data;
+    const returnItems = savedReturn.items || [];
+    const movementsToCreate: StockMovement[] = [];
+
+    returnItems.forEach(item => {
+      movementsToCreate.push({
+        id: generateId(),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "purchase_return",
+        referenceId: savedReturn.id,
+        referenceNumber: savedReturn.returnNumber,
+        date: savedReturn.date,
+        quantity: -Math.abs(item.quantity),
+        unitCost: item.unitCost,
+        totalCost: -Math.abs(item.unitCost * item.quantity),
+        balanceQuantity: 0,
+        partnerId: savedReturn.supplierId,
+        partnerName: savedReturn.supplierName,
+        partnerType: "supplier",
+        notes: `مرتجع مشتريات إشعار مدين ${savedReturn.returnNumber}`,
+      });
+
+      setProducts(prev => prev.map(p => {
+        if (p.id === item.productId) {
+          const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
+          return {
+            ...p,
+            warehouseStock: {
+              ...p.warehouseStock,
+              [item.warehouseId]: Math.max(0, currentWhStock - item.quantity),
+            }
+          };
+        }
+        return p;
+      }));
+    });
+
+    if (movementsToCreate.length > 0) {
+      setStockMovements(prev => [...movementsToCreate, ...prev]);
+    }
+
+    if (savedReturn.refundMethod === "supplier_balance" || !savedReturn.refundMethod) {
+      setSuppliers(prev => prev.map(s =>
+        s.id === savedReturn.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - savedReturn.grandTotal) } : s
+      ));
+    } else if (savedReturn.refundMethod === "treasury" && savedReturn.treasuryAccountId) {
+      setTreasuryAccounts(prev => prev.map(t =>
+        t.id === savedReturn.treasuryAccountId ? { ...t, balance: t.balance + savedReturn.grandTotal } : t
+      ));
+    }
+
+    setPurchaseReturns(prev => [savedReturn, ...prev.filter(x => x.id !== savedReturn.id)]);
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "PurchaseReturn",
+      entityId: savedReturn.id,
+      details: `تسجيل مرتجع مشتريات ${savedReturn.returnNumber} بمبلغ ${savedReturn.grandTotal}`,
+    });
+
+    showToast(locale === "ar" ? `تم تسجيل مرتجع المشتريات (${savedReturn.returnNumber}) بنجاح` : `Purchase return (${savedReturn.returnNumber}) registered`, "success");
+    return savedReturn;
+  };
+
+  const deletePurchaseReturn = async (id: string) => {
+    const res = await deletePurchaseReturnDB(id);
+    if (!res.success) {
+      throw new Error(res.error || "فشل حذف مرتجع المشتريات");
+    }
+    setPurchaseReturns(prev => prev.filter(r => r.id !== id));
+    setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    showToast(locale === "ar" ? "تم حذف مرتجع المشتريات بنجاح" : "Purchase return deleted", "success");
+  };
+
   // ==========================================
-  // TREASURY & CHECKS CRUD
+  // STATEMENTS & BALANCE REPORTS GENERATION
+  // ==========================================
+  const getCustomerStatement = useCallback((customerId: string, fromDate?: string, toDate?: string): PartnerStatement => {
+    const customer = customers.find(c => c.id === customerId);
+    const openingBal = Number(customer?.openingBalance) || 0;
+    const partnerName = customer?.nameAr || customer?.nameEn || "العميل";
+
+    const allTx: StatementTransaction[] = [];
+
+    // 1. Opening Balance Transaction
+    if (openingBal !== 0) {
+      allTx.push({
+        id: `open-${customerId}`,
+        date: "2026-01-01",
+        type: "opening_balance",
+        referenceNumber: "OPENING",
+        description: "رصيد أول المدة",
+        debit: openingBal > 0 ? openingBal : 0,
+        credit: openingBal < 0 ? Math.abs(openingBal) : 0,
+        balance: openingBal,
+      });
+    }
+
+    // 2. Sales Invoices
+    salesInvoices.filter(inv => inv.customerId === customerId && inv.invoiceType !== "quotation").forEach(inv => {
+      allTx.push({
+        id: inv.id,
+        date: inv.date,
+        type: "invoice",
+        referenceNumber: inv.invoiceNumber,
+        description: `فاتورة مبيعات ${inv.invoiceNumber}`,
+        debit: Number(inv.grandTotal) || 0,
+        credit: 0,
+        balance: 0,
+      });
+    });
+
+    // 3. Cash Receipts
+    cashReceipts.filter(rcp => rcp.customerId === customerId).forEach(rcp => {
+      allTx.push({
+        id: rcp.id,
+        date: rcp.date,
+        type: "receipt",
+        referenceNumber: rcp.receiptNumber,
+        description: `سند قبض ${rcp.receiptNumber} (${rcp.notes || ""})`,
+        debit: 0,
+        credit: Number(rcp.amount) || 0,
+        balance: 0,
+      });
+    });
+
+    // 4. Sales Returns
+    salesReturns.filter(ret => ret.customerId === customerId).forEach(ret => {
+      allTx.push({
+        id: ret.id,
+        date: ret.date,
+        type: "return",
+        referenceNumber: ret.returnNumber,
+        description: `مرتجع مبيعات ${ret.returnNumber}`,
+        debit: 0,
+        credit: Number(ret.grandTotal) || 0,
+        balance: 0,
+      });
+    });
+
+    // Sort by Date ascending
+    allTx.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Compute running balance
+    let running = 0;
+    allTx.forEach(tx => {
+      running += (tx.debit - tx.credit);
+      tx.balance = running;
+    });
+
+    // Filter by Date if requested
+    const filteredTx = allTx.filter(tx => {
+      if (fromDate && tx.date < fromDate) return false;
+      if (toDate && tx.date > toDate) return false;
+      return true;
+    });
+
+    const totalDebit = filteredTx.reduce((sum, tx) => sum + tx.debit, 0);
+    const totalCredit = filteredTx.reduce((sum, tx) => sum + tx.credit, 0);
+    const closingBalance = filteredTx.length > 0 ? filteredTx[filteredTx.length - 1].balance : running;
+
+    return {
+      partnerId: customerId,
+      partnerName,
+      openingBalance: openingBal,
+      totalDebit,
+      totalCredit,
+      closingBalance,
+      transactions: filteredTx,
+    };
+  }, [customers, salesInvoices, cashReceipts, salesReturns]);
+
+  const getSupplierStatement = useCallback((supplierId: string, fromDate?: string, toDate?: string): PartnerStatement => {
+    const supplier = suppliers.find(s => s.id === supplierId);
+    const openingBal = Number(supplier?.openingBalance) || 0;
+    const partnerName = supplier?.nameAr || supplier?.nameEn || "المورد";
+
+    const allTx: StatementTransaction[] = [];
+
+    // 1. Opening Balance
+    if (openingBal !== 0) {
+      allTx.push({
+        id: `open-${supplierId}`,
+        date: "2026-01-01",
+        type: "opening_balance",
+        referenceNumber: "OPENING",
+        description: "رصيد أول المدة",
+        debit: openingBal < 0 ? Math.abs(openingBal) : 0,
+        credit: openingBal > 0 ? openingBal : 0,
+        balance: openingBal,
+      });
+    }
+
+    // 2. Purchase Invoices
+    purchaseInvoices.filter(inv => inv.supplierId === supplierId && inv.invoiceType !== "purchase_order").forEach(inv => {
+      allTx.push({
+        id: inv.id,
+        date: inv.date,
+        type: "invoice",
+        referenceNumber: inv.invoiceNumber,
+        description: `فاتورة مشتريات ${inv.invoiceNumber}`,
+        debit: 0,
+        credit: Number(inv.grandTotal) || 0,
+        balance: 0,
+      });
+    });
+
+    // 3. Cash Payments
+    cashPayments.filter(pay => pay.supplierId === supplierId).forEach(pay => {
+      allTx.push({
+        id: pay.id,
+        date: pay.date,
+        type: "payment",
+        referenceNumber: pay.paymentNumber,
+        description: `سند صرف ${pay.paymentNumber} (${pay.notes || ""})`,
+        debit: Number(pay.amount) || 0,
+        credit: 0,
+        balance: 0,
+      });
+    });
+
+    // 4. Purchase Returns
+    purchaseReturns.filter(ret => ret.supplierId === supplierId).forEach(ret => {
+      allTx.push({
+        id: ret.id,
+        date: ret.date,
+        type: "return",
+        referenceNumber: ret.returnNumber,
+        description: `مرتجع مشتريات ${ret.returnNumber}`,
+        debit: Number(ret.grandTotal) || 0,
+        credit: 0,
+        balance: 0,
+      });
+    });
+
+    // Sort by Date ascending
+    allTx.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Compute running balance for supplier (Credit increases balance owed, Debit decreases)
+    let running = 0;
+    allTx.forEach(tx => {
+      running += (tx.credit - tx.debit);
+      tx.balance = running;
+    });
+
+    // Filter by Date
+    const filteredTx = allTx.filter(tx => {
+      if (fromDate && tx.date < fromDate) return false;
+      if (toDate && tx.date > toDate) return false;
+      return true;
+    });
+
+    const totalDebit = filteredTx.reduce((sum, tx) => sum + tx.debit, 0);
+    const totalCredit = filteredTx.reduce((sum, tx) => sum + tx.credit, 0);
+    const closingBalance = filteredTx.length > 0 ? filteredTx[filteredTx.length - 1].balance : running;
+
+    return {
+      partnerId: supplierId,
+      partnerName,
+      openingBalance: openingBal,
+      totalDebit,
+      totalCredit,
+      closingBalance,
+      transactions: filteredTx,
+    };
+  }, [suppliers, purchaseInvoices, cashPayments, purchaseReturns]);
+
+  const getCustomerBalancesReport = useCallback((fromDate?: string, toDate?: string, categoryId?: string) => {
+    let filteredCusts = customers;
+    if (categoryId && categoryId !== "all") {
+      filteredCusts = filteredCusts.filter(c => c.categoryId === categoryId);
+    }
+
+    return filteredCusts.map(c => {
+      const stmt = getCustomerStatement(c.id, fromDate, toDate);
+      return {
+        customerId: c.id,
+        customerName: c.nameAr || c.nameEn,
+        categoryName: c.categoryName,
+        openingBalance: stmt.openingBalance,
+        debitMovements: stmt.totalDebit,
+        creditMovements: stmt.totalCredit,
+        currentBalance: stmt.closingBalance,
+      };
+    });
+  }, [customers, getCustomerStatement]);
+
+  const getSupplierBalancesReport = useCallback((fromDate?: string, toDate?: string) => {
+    return suppliers.map(s => {
+      const stmt = getSupplierStatement(s.id, fromDate, toDate);
+      return {
+        supplierId: s.id,
+        supplierCode: s.code,
+        supplierName: s.nameAr || s.nameEn,
+        openingBalance: stmt.openingBalance,
+        debitMovements: stmt.totalDebit,
+        creditMovements: stmt.totalCredit,
+        currentBalance: stmt.closingBalance,
+      };
+    });
+  }, [suppliers, getSupplierStatement]);
+
+  // ==========================================
+  // TREASURY, CASH, CHECKS, ACCOUNTING CRUD
   // ==========================================
   const addTreasuryAccount = async (t: Omit<TreasuryAccount, "id">): Promise<TreasuryAccount> => {
-    const res = await persistTreasuryAccountDB(t);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ الحساب المالي / الخزينة في قاعدة البيانات");
-    }
-    const savedTreasury = res.data;
-    setTreasuryAccounts(prev => [...prev.filter(x => x.id !== savedTreasury.id), savedTreasury]);
-    showToast(locale === "ar" ? `تمت إضافة الخزينة/الحساب "${savedTreasury.nameAr}"` : `Treasury account created`, "success");
-    return savedTreasury;
+    const res = await persistTreasuryAccountDB(t as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة الخزينة/الحساب البنكي");
+    const saved = res.data;
+    setTreasuryAccounts(prev => [...prev, saved]);
+    showToast(locale === "ar" ? "تمت إضافة الخزينة بنجاح" : "Treasury added", "success");
+    return saved;
   };
+
   const updateTreasuryAccount = async (id: string, t: Partial<TreasuryAccount>) => {
     const res = await updateTreasuryAccountDB(id, t);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل تعديل بيانات الخزينة في قاعدة البيانات");
-    }
-    const savedTreasury = res.data;
-    setTreasuryAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...savedTreasury } : acc));
-    showToast(locale === "ar" ? "تم تحديث بيانات الخزينة بنجاح" : "Treasury account updated", "success");
+    if (!res.success) throw new Error(res.error || "فشل تعديل الخزينة");
+    setTreasuryAccounts(prev => prev.map(item => item.id === id ? { ...item, ...t } : item));
+    showToast(locale === "ar" ? "تم تحديث بيانات الخزينة بنجاح" : "Treasury updated", "success");
   };
+
   const deleteTreasuryAccount = async (id: string) => {
     const res = await deleteTreasuryAccountDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف الخزينة من قاعدة البيانات");
-    }
-    setTreasuryAccounts(prev => prev.filter(acc => acc.id !== id));
-    showToast(locale === "ar" ? "تم حذف الخزينة بنجاح" : "Treasury account deleted", "success");
+    if (!res.success) throw new Error(res.error || "فشل حذف الخزينة");
+    setTreasuryAccounts(prev => prev.filter(item => item.id !== id));
+    showToast(locale === "ar" ? "تم حذف الخزينة بنجاح" : "Treasury deleted", "success");
   };
 
   const createCashReceipt = async (rcp: Omit<CashReceipt, "id">): Promise<CashReceipt> => {
     const res = await persistCashReceiptDB(rcp as any);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ سند القبض في قاعدة البيانات");
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إنشاء سند القبض");
+    const saved = res.data;
+    setCashReceipts(prev => [saved, ...prev]);
+    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: t.balance + saved.amount } : t));
+    if (saved.customerId) {
+      setCustomers(prev => prev.map(c => c.id === saved.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - saved.amount) } : c));
     }
-    const savedReceipt = res.data;
-    setCashReceipts(prev => [savedReceipt, ...prev.filter(x => x.id !== savedReceipt.id)]);
-
-    setTreasuryAccounts(prev => prev.map(t =>
-      t.id === savedReceipt.treasuryAccountId ? { ...t, balance: t.balance + savedReceipt.amount } : t
-    ));
-
-    if (savedReceipt.customerId) {
-      setCustomers(prev => prev.map(c =>
-        c.id === savedReceipt.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - savedReceipt.amount) } : c
-      ));
-    }
-
-    const targetTreasury = treasuryAccounts.find(t => t.id === savedReceipt.treasuryAccountId);
-    const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
-    const journalDraft = generateReceiptJournal(savedReceipt, treasuryGlId, accounts);
-    if (journalDraft) {
-      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-      setJournalEntries(prev => [newJournal, ...prev]);
-      await persistJournalEntryDB(newJournal);
-    }
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "create",
-      entityType: "CashReceipt",
-      entityId: savedReceipt.id,
-      details: `سند قبض نقدية ${savedReceipt.receiptNumber} بمبلغ ${savedReceipt.amount} ${savedReceipt.currency}`,
-    });
-
-    showToast(locale === "ar" ? `تم تحرير سند القبض (${savedReceipt.receiptNumber}) وتحديث الخزينة بنجاح` : `Cash receipt created successfully`, "success");
-    return savedReceipt;
+    showToast(locale === "ar" ? `تم تسجيل سند القبض (${saved.receiptNumber}) بنجاح` : "Cash receipt created", "success");
+    return saved;
   };
 
   const deleteCashReceipt = async (id: string) => {
     const res = await deleteCashReceiptDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف سند القبض من قاعدة البيانات");
-    }
+    if (!res.success) throw new Error(res.error || "فشل حذف سند القبض");
     setCashReceipts(prev => prev.filter(r => r.id !== id));
-    showToast(locale === "ar" ? "تم حذف سند القبض بنجاح" : "Cash receipt deleted", "success");
+    showToast(locale === "ar" ? "تم حذف سند القبض بنجاح" : "Receipt deleted", "success");
   };
 
   const createCashPayment = async (pay: Omit<CashPayment, "id">): Promise<CashPayment> => {
     const res = await persistCashPaymentDB(pay as any);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ سند الصرف في قاعدة البيانات");
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إنشاء سند الصرف");
+    const saved = res.data;
+    setCashPayments(prev => [saved, ...prev]);
+    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: t.balance - saved.amount } : t));
+    if (saved.supplierId) {
+      setSuppliers(prev => prev.map(s => s.id === saved.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - saved.amount) } : s));
     }
-    const savedPayment = res.data;
-    setCashPayments(prev => [savedPayment, ...prev.filter(x => x.id !== savedPayment.id)]);
-
-    setTreasuryAccounts(prev => prev.map(t =>
-      t.id === savedPayment.treasuryAccountId ? { ...t, balance: t.balance - savedPayment.amount } : t
-    ));
-
-    if (savedPayment.supplierId) {
-      setSuppliers(prev => prev.map(s =>
-        s.id === savedPayment.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - savedPayment.amount) } : s
-      ));
-    }
-
-    const targetTreasury = treasuryAccounts.find(t => t.id === savedPayment.treasuryAccountId);
-    const treasuryGlId = targetTreasury?.glAccountId || accounts[0]?.id || "";
-    const journalDraft = generatePaymentJournal(savedPayment, treasuryGlId, accounts);
-    if (journalDraft) {
-      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-      setJournalEntries(prev => [newJournal, ...prev]);
-      await persistJournalEntryDB(newJournal);
-    }
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "create",
-      entityType: "CashPayment",
-      entityId: savedPayment.id,
-      details: `سند صرف نقدية ${savedPayment.paymentNumber} بمبلغ ${savedPayment.amount} ${savedPayment.currency}`,
-    });
-
-    showToast(locale === "ar" ? `تم تحرير سند الصرف (${savedPayment.paymentNumber}) وتحديث الخزينة بنجاح` : `Cash payment created successfully`, "success");
-    return savedPayment;
+    showToast(locale === "ar" ? `تم تسجيل سند الصرف (${saved.paymentNumber}) بنجاح` : "Cash payment created", "success");
+    return saved;
   };
 
   const deleteCashPayment = async (id: string) => {
     const res = await deleteCashPaymentDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف سند الصرف من قاعدة البيانات");
-    }
+    if (!res.success) throw new Error(res.error || "فشل حذف سند الصرف");
     setCashPayments(prev => prev.filter(p => p.id !== id));
-    showToast(locale === "ar" ? "تم حذف سند الصرف بنجاح" : "Cash payment deleted", "success");
+    showToast(locale === "ar" ? "تم حذف سند الصرف بنجاح" : "Payment deleted", "success");
   };
 
   const addCheck = async (chk: Omit<CheckRecord, "id">): Promise<CheckRecord> => {
-    const res = await persistCheckDB(chk);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ الشيك في قاعدة البيانات");
-    }
-    const savedCheck = res.data;
-    setChecks(prev => [savedCheck, ...prev.filter(x => x.id !== savedCheck.id)]);
-
-    addAuditLog({
-      organizationId: organization.id,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      action: "create",
-      entityType: "CheckRecord",
-      entityId: savedCheck.id,
-      details: `إضافة شيك ${savedCheck.checkNumber} بمبلغ ${savedCheck.amount} (${savedCheck.type === "incoming" ? "شيك وارد/قبض" : "شيك صادر/دفع"})`,
-    });
-
-    showToast(locale === "ar" ? `تم تسجيل الشيك (${savedCheck.checkNumber}) بنجاح` : `Check registered successfully`, "success");
-    return savedCheck;
+    const res = await persistCheckDB(chk as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل حفظ الشيك");
+    const saved = res.data;
+    setChecks(prev => [saved, ...prev]);
+    showToast(locale === "ar" ? `تم تسجيل الشيك (${saved.checkNumber}) بنجاح` : "Check added", "success");
+    return saved;
   };
 
   const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
-    const check = checks.find(c => c.id === checkId);
     const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل تحديث حالة الشيك في قاعدة البيانات");
-    }
-    const updatedCheck = res.data;
-
-    setChecks(prev => prev.map(chk => chk.id === checkId ? { ...chk, ...updatedCheck } : chk));
-
-    if (check && newStatus === "collected" && targetTreasuryId) {
-      const delta = check.type === "incoming" ? check.amount : -check.amount;
-      setTreasuryAccounts(prev => prev.map(t =>
-        t.id === targetTreasuryId ? { ...t, balance: t.balance + delta } : t
-      ));
-    }
-
-    showToast(locale === "ar" ? `تم تحديث حالة الشيك إلى "${newStatus === "collected" ? "مُحصل ومودع بالخزينة" : newStatus}"` : `Check status updated`, "success");
+    if (!res.success) throw new Error(res.error || "فشل تحديث حالة الشيك");
+    setChecks(prev => prev.map(c => c.id === checkId ? { ...c, status: newStatus } : c));
+    showToast(locale === "ar" ? "تم تحديث حالة الشيك بنجاح" : "Check status updated", "success");
   };
 
   const deleteCheck = async (id: string) => {
     const res = await deleteCheckDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف الشيك من قاعدة البيانات");
-    }
-    setChecks(prev => prev.filter(chk => chk.id !== id));
+    if (!res.success) throw new Error(res.error || "فشل حذف الشيك");
+    setChecks(prev => prev.filter(c => c.id !== id));
     showToast(locale === "ar" ? "تم حذف الشيك بنجاح" : "Check deleted", "success");
   };
 
-  // ==========================================
-  // ACCOUNTING & COST CENTERS CRUD
-  // ==========================================
   const addAccount = async (acc: Omit<Account, "id">): Promise<Account> => {
-    const res = await persistAccountDB(acc);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ الحساب في شجرة الحسابات");
-    }
-    const savedAccount = res.data;
-    setAccounts(prev => [...prev.filter(x => x.id !== savedAccount.id), savedAccount]);
-    showToast(locale === "ar" ? `تمت إضافة الحساب "${savedAccount.nameAr}" بنجاح` : `Account added successfully`, "success");
-    return savedAccount;
+    const res = await persistAccountDB(acc as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة الحساب");
+    const saved = res.data;
+    setAccounts(prev => [...prev, saved]);
+    showToast(locale === "ar" ? "تمت إضافة الحساب بنجاح" : "Account created", "success");
+    return saved;
   };
 
   const updateAccount = async (id: string, acc: Partial<Account>) => {
     const res = await updateAccountDB(id, acc);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل تعديل الحساب في قاعدة البيانات");
-    }
-    const savedAccount = res.data;
-    setAccounts(prev => prev.map(item => item.id === id ? { ...item, ...savedAccount } : item));
-    showToast(locale === "ar" ? "تم تعديل الحساب بنجاح" : "Account updated successfully", "success");
+    if (!res.success) throw new Error(res.error || "فشل تعديل الحساب");
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...acc } : a));
+    showToast(locale === "ar" ? "تم تحديث الحساب بنجاح" : "Account updated", "success");
   };
 
   const deleteAccount = async (id: string) => {
     const res = await deleteAccountDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف الحساب من شجرة الحسابات");
-    }
-    setAccounts(prev => prev.filter(item => item.id !== id));
+    if (!res.success) throw new Error(res.error || "فشل حذف الحساب");
+    setAccounts(prev => prev.filter(a => a.id !== id));
     showToast(locale === "ar" ? "تم حذف الحساب بنجاح" : "Account deleted", "success");
   };
 
   const addCostCenter = async (cc: Omit<CostCenter, "id">): Promise<CostCenter> => {
-    const res = await persistCostCenterDB(cc);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ مركز التكلفة في قاعدة البيانات");
-    }
-    const savedCc = res.data;
-    setCostCenters(prev => [...prev.filter(x => x.id !== savedCc.id), savedCc]);
-    showToast(locale === "ar" ? `تمت إضافة مركز التكلفة "${savedCc.nameAr}"` : `Cost center created`, "success");
-    return savedCc;
+    const res = await persistCostCenterDB(cc as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة مركز التكلفة");
+    const saved = res.data;
+    setCostCenters(prev => [...prev, saved]);
+    showToast(locale === "ar" ? "تمت إضافة مركز التكلفة بنجاح" : "Cost center created", "success");
+    return saved;
   };
 
   const updateCostCenter = async (id: string, cc: Partial<CostCenter>) => {
     const res = await updateCostCenterDB(id, cc);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل تعديل مركز التكلفة في قاعدة البيانات");
-    }
-    const savedCc = res.data;
-    setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...savedCc } : item));
-    showToast(locale === "ar" ? "تم تعديل مركز التكلفة بنجاح" : "Cost center updated", "success");
+    if (!res.success) throw new Error(res.error || "فشل تعديل مركز التكلفة");
+    setCostCenters(prev => prev.map(c => c.id === id ? { ...c, ...cc } : c));
+    showToast(locale === "ar" ? "تم تحديث مركز التكلفة بنجاح" : "Cost center updated", "success");
   };
 
   const deleteCostCenter = async (id: string) => {
     const res = await deleteCostCenterDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف مركز التكلفة من قاعدة البيانات");
-    }
-    setCostCenters(prev => prev.filter(item => item.id !== id));
+    if (!res.success) throw new Error(res.error || "فشل حذف مركز التكلفة");
+    setCostCenters(prev => prev.filter(c => c.id !== id));
     showToast(locale === "ar" ? "تم حذف مركز التكلفة بنجاح" : "Cost center deleted", "success");
   };
 
   const addJournalEntry = async (entry: Omit<JournalEntry, "id">): Promise<JournalEntry> => {
-    const res = await persistJournalEntryDB(entry);
-    if (!res.success || !res.data) {
-      throw new Error(res.error || "فشل حفظ القيد المحاسبي في دفتر اليومية");
-    }
-    const savedEntry = res.data;
-    setJournalEntries(prev => [savedEntry, ...prev.filter(x => x.id !== savedEntry.id)]);
-    showToast(locale === "ar" ? `تم ترحيل القيد المحاسبي (${savedEntry.entryNumber}) بنجاح` : `Journal entry posted`, "success");
-    return savedEntry;
+    const res = await persistJournalEntryDB(entry as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة القيد اليومي");
+    const saved = res.data;
+    setJournalEntries(prev => [saved, ...prev]);
+    showToast(locale === "ar" ? `تم حفظ القيد اليومي (${saved.entryNumber}) بنجاح` : "Journal entry saved", "success");
+    return saved;
   };
 
   const deleteJournalEntry = async (id: string) => {
     const res = await deleteJournalEntryDB(id);
-    if (!res.success) {
-      throw new Error(res.error || "فشل حذف القيد المحاسبي من قاعدة البيانات");
-    }
-    setJournalEntries(prev => prev.filter(je => je.id !== id));
-    showToast(locale === "ar" ? "تم حذف القيد المحاسبي بنجاح" : "Journal entry deleted", "success");
+    if (!res.success) throw new Error(res.error || "فشل حذف القيد اليومي");
+    setJournalEntries(prev => prev.filter(e => e.id !== id));
+    showToast(locale === "ar" ? "تم حذف القيد اليومي بنجاح" : "Journal entry deleted", "success");
   };
 
   const resetToDemoData = () => {
     setProducts(initialProducts);
     setCategories(initialCategories);
+    setCustomerCategories(initialCustomerCategories);
     setUnits(initialUnits);
     setCustomers(initialCustomers);
     setSuppliers(initialSuppliers);
     setSalesInvoices(initialSalesInvoices);
+    setSalesReturns(initialSalesReturns);
     setPurchaseInvoices(initialPurchaseInvoices);
+    setPurchaseReturns(initialPurchaseReturns);
     setTreasuryAccounts(initialTreasuryAccounts);
     setCashReceipts([]);
     setCashPayments([]);
@@ -1290,17 +1655,20 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         toasts, showToast, dismissToast,
         currentUser, setCurrentUser, organization, setOrganization, updateOrganization,
         branches, activeBranchId, setActiveBranchId, users,
-        products, categories, units, warehouses, stockMovements,
+        products, categories, customerCategories, units, warehouses, stockMovements,
         productChangeLogs, periodClosings,
         addProduct, updateProduct, deleteProduct,
         addCategory, updateCategory, deleteCategory,
+        addCustomerCategory, updateCustomerCategory, deleteCustomerCategory,
         addUnit, updateUnit, deleteUnit,
         addWarehouse, updateWarehouse, deleteWarehouse, addStockMovement,
         updateStockMovement, deleteStockMovement, addProductChangeLog, createPeriodClosing, hasPermission,
         customers, suppliers, addCustomer, updateCustomer, deleteCustomer,
         addSupplier, updateSupplier, deleteSupplier,
-        salesInvoices, purchaseInvoices, createSalesInvoice, deleteSalesInvoice,
-        createPurchaseInvoice, deletePurchaseInvoice,
+        salesInvoices, salesReturns, purchaseInvoices, purchaseReturns,
+        createSalesInvoice, deleteSalesInvoice, addSalesReturn, deleteSalesReturn,
+        createPurchaseInvoice, deletePurchaseInvoice, addPurchaseReturn, deletePurchaseReturn,
+        getCustomerStatement, getSupplierStatement, getCustomerBalancesReport, getSupplierBalancesReport,
         treasuryAccounts, cashReceipts, cashPayments, checks,
         addTreasuryAccount, updateTreasuryAccount, deleteTreasuryAccount,
         createCashReceipt, deleteCashReceipt, createCashPayment, deleteCashPayment,

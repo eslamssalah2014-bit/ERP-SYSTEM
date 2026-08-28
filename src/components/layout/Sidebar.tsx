@@ -59,21 +59,25 @@ export default function Sidebar() {
       href: "/sales",
       icon: ShoppingCart,
       children: [
-        { titleAr: "فواتير المبيعات", titleEn: "Sales Invoices", href: "/sales" },
-        { titleAr: "نقطة البيع (POS)", titleEn: "POS Terminal", href: "/pos" },
-        { titleAr: "عروض الأسعار", titleEn: "Quotations", href: "/sales/quotations" },
-        { titleAr: "سجل العملاء", titleEn: "Customers", href: "/customers" },
+        { titleAr: "فواتير وعروض المبيعات", titleEn: "Sales Invoices & Offers", href: "/sales" },
+        { titleAr: "مرتجعات المبيعات (إشعار دائن)", titleEn: "Sales Returns", href: "/sales/returns" },
+        { titleAr: "نقطة البيع السريعة (POS)", titleEn: "POS Terminal", href: "/pos" },
+        { titleAr: "سجل العملاء", titleEn: "Customers Directory", href: "/customers" },
+        { titleAr: "كشف حساب عميل", titleEn: "Customer Statement", href: "/customers/statement" },
+        { titleAr: "تقرير أرصدة العملاء", titleEn: "Customer Balances Report", href: "/customers/report" },
       ]
     },
     {
       titleAr: "المشتريات والموردين",
-      titleEn: "Purchasing",
+      titleEn: "Purchasing & AP",
       href: "/purchases",
       icon: ShoppingBag,
       children: [
-        { titleAr: "فواتير المشتريات", titleEn: "Purchase Invoices", href: "/purchases" },
-        { titleAr: "أوامر الشراء", titleEn: "Purchase Orders", href: "/purchases/orders" },
-        { titleAr: "سجل الموردين", titleEn: "Suppliers", href: "/suppliers" },
+        { titleAr: "فواتير وأوامر الشراء", titleEn: "Purchase Invoices & Orders", href: "/purchases" },
+        { titleAr: "مرتجعات المشتريات (إشعار مدين)", titleEn: "Purchase Returns", href: "/purchases/returns" },
+        { titleAr: "سجل الموردين", titleEn: "Suppliers Directory", href: "/suppliers" },
+        { titleAr: "كشف حساب مورد", titleEn: "Supplier Statement", href: "/suppliers/statement" },
+        { titleAr: "تقرير أرصدة الموردين", titleEn: "Supplier Balances Report", href: "/suppliers/report" },
       ]
     },
     {

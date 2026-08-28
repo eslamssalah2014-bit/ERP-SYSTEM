@@ -148,6 +148,15 @@ export interface StockCardRecord {
   notes?: string;
 }
 
+export interface CustomerCategory {
+  id: string;
+  organizationId: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  description?: string;
+}
+
 export interface Customer {
   id: string;
   organizationId: string;
@@ -162,7 +171,10 @@ export interface Customer {
   commercialRegister?: string;
   creditLimit: number;
   paymentTermsDays: number;
+  openingBalance?: number;
   currentBalance: number;
+  categoryId?: string;
+  categoryName?: string;
   status: 'active' | 'blocked' | 'inactive';
 }
 
@@ -178,6 +190,7 @@ export interface Supplier {
   taxNumber?: string;
   bankName?: string;
   bankIban?: string;
+  openingBalance?: number;
   currentBalance: number;
   status: 'active' | 'blocked' | 'inactive';
 }
@@ -198,11 +211,14 @@ export interface SalesInvoiceItem {
 }
 
 export type InvoiceStatus = 'draft' | 'paid' | 'partially_paid' | 'unpaid' | 'cancelled' | 'returned';
+export type InvoiceType = 'tax_invoice' | 'quotation';
+export type DiscountType = 'percentage' | 'fixed';
 
 export interface SalesInvoice {
   id: string;
   organizationId: string;
   branchId: string;
+  invoiceType?: InvoiceType;
   invoiceNumber: string;
   date: string;
   dueDate: string;
@@ -215,12 +231,50 @@ export interface SalesInvoice {
   status: InvoiceStatus;
   items: SalesInvoiceItem[];
   subtotal: number;
+  discountType?: DiscountType;
+  discountValue?: number;
   discountTotal: number;
   taxTotal: number;
   grandTotal: number;
   paidAmount: number;
   dueAmount: number;
   qrCodePayload?: string;
+  notes?: string;
+  createdBy: string;
+  createdAt?: string;
+}
+
+export interface SalesReturnItem {
+  id: string;
+  productId: string;
+  productName: string;
+  warehouseId: string;
+  quantity: number;
+  unitPrice: number;
+  costPrice: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface SalesReturn {
+  id: string;
+  organizationId: string;
+  branchId: string;
+  returnNumber: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  date: string;
+  customerId: string;
+  customerName: string;
+  warehouseId: string;
+  items: SalesReturnItem[];
+  subtotal: number;
+  taxTotal: number;
+  grandTotal: number;
+  refundMethod: 'customer_balance' | 'cash' | 'treasury';
+  treasuryAccountId?: string;
+  status: 'completed' | 'draft';
   notes?: string;
   createdBy: string;
   createdAt?: string;
@@ -233,16 +287,20 @@ export interface PurchaseInvoiceItem {
   warehouseId: string;
   quantity: number;
   unitCost: number;
+  discountPercent?: number;
   discountAmount: number;
   taxRate: number;
   taxAmount: number;
   total: number;
 }
 
+export type PurchaseInvoiceType = 'purchase_invoice' | 'purchase_order';
+
 export interface PurchaseInvoice {
   id: string;
   organizationId: string;
   branchId: string;
+  invoiceType?: PurchaseInvoiceType;
   invoiceNumber: string;
   supplierInvoiceRef?: string;
   date: string;
@@ -254,6 +312,8 @@ export interface PurchaseInvoice {
   status: InvoiceStatus;
   items: PurchaseInvoiceItem[];
   subtotal: number;
+  discountType?: DiscountType;
+  discountValue?: number;
   discountTotal: number;
   taxTotal: number;
   grandTotal: number;
@@ -262,6 +322,62 @@ export interface PurchaseInvoice {
   notes?: string;
   createdBy: string;
   createdAt?: string;
+}
+
+export interface PurchaseReturnItem {
+  id: string;
+  productId: string;
+  productName: string;
+  warehouseId: string;
+  quantity: number;
+  unitCost: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  organizationId: string;
+  branchId: string;
+  returnNumber: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  date: string;
+  supplierId: string;
+  supplierName: string;
+  warehouseId: string;
+  items: PurchaseReturnItem[];
+  subtotal: number;
+  taxTotal: number;
+  grandTotal: number;
+  refundMethod: 'supplier_balance' | 'cash' | 'treasury';
+  treasuryAccountId?: string;
+  status: 'completed' | 'draft';
+  notes?: string;
+  createdBy: string;
+  createdAt?: string;
+}
+
+export interface StatementTransaction {
+  id: string;
+  date: string;
+  type: 'opening_balance' | 'invoice' | 'payment' | 'receipt' | 'return';
+  referenceNumber: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface PartnerStatement {
+  partnerId: string;
+  partnerName: string;
+  openingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+  transactions: StatementTransaction[];
 }
 
 export type TreasuryType = 'cash_box' | 'bank_account';

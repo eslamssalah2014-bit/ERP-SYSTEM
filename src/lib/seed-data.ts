@@ -17,7 +17,10 @@ import {
   JournalEntry,
   Notification,
   AuditLog,
-  Warehouse
+  Warehouse,
+  CustomerCategory,
+  SalesReturn,
+  PurchaseReturn
 } from "@/types/erp";
 
 // 1. Production Organization Base Settings (UUID)
@@ -207,3 +210,17 @@ export const initialNotifications: Notification[] = [];
 
 // 19. Audit Logs (Clean: 0 items)
 export const initialAuditLogs: AuditLog[] = [];
+
+// 20. Customer Categories
+export const initialCustomerCategories: CustomerCategory[] = [
+  { id: "00000000-0000-0000-0000-000000000031", organizationId: "00000000-0000-0000-0000-000000000001", code: "CUST-RETAIL", nameAr: "تجزئة / أفراد", nameEn: "Retail", description: "العملاء الأفراد والمبيعات المباشرة" },
+  { id: "00000000-0000-0000-0000-000000000032", organizationId: "00000000-0000-0000-0000-000000000001", code: "CUST-WHOLESALE", nameAr: "جملة وتوزيع", nameEn: "Wholesale", description: "تجار الجملة والموزعون المعتمدون" },
+  { id: "00000000-0000-0000-0000-000000000033", organizationId: "00000000-0000-0000-0000-000000000001", code: "CUST-VIP", nameAr: "عملاء VIP كبار", nameEn: "VIP", description: "كبار العملاء والصفوة" },
+  { id: "00000000-0000-0000-0000-000000000034", organizationId: "00000000-0000-0000-0000-000000000001", code: "CUST-CORP", nameAr: "شركات ومؤسسات", nameEn: "Corporate", description: "الشركات والمؤسسات والجهات الحكومية" },
+];
+
+// 21. Sales Returns
+export const initialSalesReturns: SalesReturn[] = [];
+
+// 22. Purchase Returns
+export const initialPurchaseReturns: PurchaseReturn[] = [];

@@ -114,7 +114,19 @@ export function mapProduct(p: any, stockMap: { [whId: string]: number } = {}) {
   };
 }
 
-export function mapCustomer(c: any) {
+export function mapCustomerCategory(c: any) {
+  if (!c) return null;
+  return {
+    id: c.id,
+    organizationId: c.organization_id,
+    code: c.code,
+    nameAr: c.name_ar,
+    nameEn: c.name_en || c.name_ar,
+    description: c.description || "",
+  };
+}
+
+export function mapCustomer(c: any, categoryName?: string) {
   if (!c) return null;
   return {
     id: c.id,
@@ -130,7 +142,10 @@ export function mapCustomer(c: any) {
     commercialRegister: c.commercial_register || "",
     creditLimit: Number(c.credit_limit) || 0,
     paymentTermsDays: Number(c.payment_terms_days) || 30,
+    openingBalance: Number(c.opening_balance) || 0,
     currentBalance: Number(c.current_balance) || 0,
+    categoryId: c.category_id || undefined,
+    categoryName: categoryName || c.category_name || undefined,
     status: c.status || "active",
   };
 }
@@ -149,6 +164,7 @@ export function mapSupplier(s: any) {
     taxNumber: s.tax_number || "",
     bankName: s.bank_name || "",
     bankIban: s.bank_iban || "",
+    openingBalance: Number(s.opening_balance) || 0,
     currentBalance: Number(s.current_balance) || 0,
     status: s.status || "active",
   };
@@ -317,6 +333,7 @@ export function mapSalesInvoice(inv: any, items: any[] = []) {
     id: inv.id,
     organizationId: inv.organization_id,
     branchId: inv.branch_id,
+    invoiceType: inv.invoice_type || "tax_invoice",
     invoiceNumber: inv.invoice_number,
     date: inv.date,
     dueDate: inv.due_date,
@@ -329,6 +346,8 @@ export function mapSalesInvoice(inv: any, items: any[] = []) {
     status: inv.status,
     items: items,
     subtotal: Number(inv.subtotal) || 0,
+    discountType: inv.discount_type || "percentage",
+    discountValue: Number(inv.discount_value) || 0,
     discountTotal: Number(inv.discount_total) || 0,
     taxTotal: Number(inv.tax_total) || 0,
     grandTotal: Number(inv.grand_total) || 0,
@@ -340,12 +359,39 @@ export function mapSalesInvoice(inv: any, items: any[] = []) {
   };
 }
 
+export function mapSalesReturn(ret: any, items: any[] = []) {
+  if (!ret) return null;
+  return {
+    id: ret.id,
+    organizationId: ret.organization_id,
+    branchId: ret.branch_id,
+    returnNumber: ret.return_number,
+    originalInvoiceId: ret.original_invoice_id || undefined,
+    originalInvoiceNumber: ret.original_invoice_number || undefined,
+    date: ret.date,
+    customerId: ret.customer_id,
+    customerName: ret.customer_name,
+    warehouseId: ret.warehouse_id,
+    items: items,
+    subtotal: Number(ret.subtotal) || 0,
+    taxTotal: Number(ret.tax_total) || 0,
+    grandTotal: Number(ret.grand_total) || 0,
+    refundMethod: ret.refund_method || "customer_balance",
+    treasuryAccountId: ret.treasury_account_id || undefined,
+    status: ret.status || "completed",
+    notes: ret.notes || "",
+    createdBy: ret.created_by || "",
+    createdAt: ret.created_at,
+  };
+}
+
 export function mapPurchaseInvoice(inv: any, items: any[] = []) {
   if (!inv) return null;
   return {
     id: inv.id,
     organizationId: inv.organization_id,
     branchId: inv.branch_id,
+    invoiceType: inv.invoice_type || "purchase_invoice",
     invoiceNumber: inv.invoice_number,
     supplierInvoiceRef: inv.supplier_invoice_ref || "",
     date: inv.date,
@@ -357,6 +403,8 @@ export function mapPurchaseInvoice(inv: any, items: any[] = []) {
     status: inv.status,
     items: items,
     subtotal: Number(inv.subtotal) || 0,
+    discountType: inv.discount_type || "percentage",
+    discountValue: Number(inv.discount_value) || 0,
     discountTotal: Number(inv.discount_total) || 0,
     taxTotal: Number(inv.tax_total) || 0,
     grandTotal: Number(inv.grand_total) || 0,
@@ -365,6 +413,32 @@ export function mapPurchaseInvoice(inv: any, items: any[] = []) {
     notes: inv.notes || "",
     createdBy: inv.created_by || "",
     createdAt: inv.created_at,
+  };
+}
+
+export function mapPurchaseReturn(ret: any, items: any[] = []) {
+  if (!ret) return null;
+  return {
+    id: ret.id,
+    organizationId: ret.organization_id,
+    branchId: ret.branch_id,
+    returnNumber: ret.return_number,
+    originalInvoiceId: ret.original_invoice_id || undefined,
+    originalInvoiceNumber: ret.original_invoice_number || undefined,
+    date: ret.date,
+    supplierId: ret.supplier_id,
+    supplierName: ret.supplier_name,
+    warehouseId: ret.warehouse_id,
+    items: items,
+    subtotal: Number(ret.subtotal) || 0,
+    taxTotal: Number(ret.tax_total) || 0,
+    grandTotal: Number(ret.grand_total) || 0,
+    refundMethod: ret.refund_method || "supplier_balance",
+    treasuryAccountId: ret.treasury_account_id || undefined,
+    status: ret.status || "completed",
+    notes: ret.notes || "",
+    createdBy: ret.created_by || "",
+    createdAt: ret.created_at,
   };
 }
 
@@ -545,7 +619,15 @@ async function ensureBaselineEntities(supabase: any) {
       status: "active",
     }], { onConflict: "id" });
 
-    // 8. Ensure default Main Treasury Account
+    // 8. Ensure default Customer Categories
+    await supabase.from("customer_categories").upsert([
+      { id: "00000000-0000-0000-0000-000000000031", organization_id: DEFAULT_ORG_ID, code: "CUST-RETAIL", name_ar: "تجزئة / أفراد", name_en: "Retail", description: "العملاء الأفراد والمبيعات المباشرة" },
+      { id: "00000000-0000-0000-0000-000000000032", organization_id: DEFAULT_ORG_ID, code: "CUST-WHOLESALE", name_ar: "جملة وتوزيع", name_en: "Wholesale", description: "تجار الجملة والموزعون المعتمدون" },
+      { id: "00000000-0000-0000-0000-000000000033", organization_id: DEFAULT_ORG_ID, code: "CUST-VIP", name_ar: "عملاء VIP كبار", name_en: "VIP", description: "كبار العملاء والصفوة" },
+      { id: "00000000-0000-0000-0000-000000000034", organization_id: DEFAULT_ORG_ID, code: "CUST-CORP", name_ar: "شركات ومؤسسات", name_en: "Corporate", description: "الشركات والمؤسسات والجهات الحكومية" },
+    ], { onConflict: "id" });
+
+    // 9. Ensure default Main Treasury Account
     await supabase.from("treasury_accounts").upsert([{
       id: DEFAULT_TREASURY_ID,
       organization_id: DEFAULT_ORG_ID,
@@ -582,13 +664,18 @@ export async function GET() {
       branchesRes,
       usersRes,
       customersRes,
+      customerCategoriesRes,
       suppliersRes,
       productsRes,
       warehouseStockRes,
       salesInvoicesRes,
       salesItemsRes,
+      salesReturnsRes,
+      salesReturnItemsRes,
       purchaseInvoicesRes,
       purchaseItemsRes,
+      purchaseReturnsRes,
+      purchaseReturnItemsRes,
       warehousesRes,
       costCentersRes,
       accountsRes,
@@ -607,13 +694,18 @@ export async function GET() {
       supabaseAdmin.from("branches").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("users").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("customers").select("*").order("created_at", { ascending: false }),
+      supabaseAdmin.from("customer_categories").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("suppliers").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("products").select("*").order("created_at", { ascending: false }),
       supabaseAdmin.from("product_warehouse_stock").select("*"),
       supabaseAdmin.from("sales_invoices").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("sales_invoice_items").select("*"),
+      supabaseAdmin.from("sales_returns").select("*").order("date", { ascending: false }),
+      supabaseAdmin.from("sales_return_items").select("*"),
       supabaseAdmin.from("purchase_invoices").select("*").order("date", { ascending: false }),
       supabaseAdmin.from("purchase_invoice_items").select("*"),
+      supabaseAdmin.from("purchase_returns").select("*").order("date", { ascending: false }),
+      supabaseAdmin.from("purchase_return_items").select("*"),
       supabaseAdmin.from("warehouses").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("cost_centers").select("*").order("created_at", { ascending: true }),
       supabaseAdmin.from("accounts").select("*").order("code", { ascending: true }),
@@ -648,8 +740,15 @@ export async function GET() {
     // Map Products
     const products = (productsRes.data || []).map((p: any) => mapProduct(p, stockMap[p.id] || {})).filter(Boolean);
 
+    // Map Customer Categories
+    const customerCategories = (customerCategoriesRes.data || []).map(mapCustomerCategory).filter(Boolean);
+    const categoryNameMap: { [catId: string]: string } = {};
+    customerCategories.forEach((cat: any) => {
+      if (cat?.id) categoryNameMap[cat.id] = cat.nameAr;
+    });
+
     // Map Customers
-    const customers = (customersRes.data || []).map(mapCustomer).filter(Boolean);
+    const customers = (customersRes.data || []).map((c: any) => mapCustomer(c, c.category_id ? categoryNameMap[c.category_id] : undefined)).filter(Boolean);
 
     // Map Suppliers
     const suppliers = (suppliersRes.data || []).map(mapSupplier).filter(Boolean);
@@ -678,6 +777,28 @@ export async function GET() {
       mapSalesInvoice(inv, salesItemsMap[inv.id] || [])
     ).filter(Boolean);
 
+    // Map Sales Returns & Line Items
+    const salesReturnItemsMap: { [returnId: string]: any[] } = {};
+    (salesReturnItemsRes.data || []).forEach((item: any) => {
+      if (!salesReturnItemsMap[item.sales_return_id]) salesReturnItemsMap[item.sales_return_id] = [];
+      salesReturnItemsMap[item.sales_return_id].push({
+        id: item.id,
+        productId: item.product_id,
+        productName: item.product_name,
+        warehouseId: item.warehouse_id,
+        quantity: Number(item.quantity) || 1,
+        unitPrice: Number(item.unit_price) || 0,
+        costPrice: Number(item.cost_price) || 0,
+        taxRate: Number(item.tax_rate) || 14,
+        taxAmount: Number(item.tax_amount) || 0,
+        total: Number(item.total) || 0,
+      });
+    });
+
+    const salesReturns = (salesReturnsRes.data || []).map((ret: any) =>
+      mapSalesReturn(ret, salesReturnItemsMap[ret.id] || [])
+    ).filter(Boolean);
+
     // Map Purchase Invoices
     const purchaseItemsMap: { [invoiceId: string]: any[] } = {};
     (purchaseItemsRes.data || []).forEach((item: any) => {
@@ -689,6 +810,7 @@ export async function GET() {
         warehouseId: item.warehouse_id,
         quantity: Number(item.quantity) || 1,
         unitCost: Number(item.unit_cost) || 0,
+        discountPercent: Number(item.discount_percent) || 0,
         discountAmount: Number(item.discount_amount) || 0,
         taxRate: Number(item.tax_rate) || 14,
         taxAmount: Number(item.tax_amount) || 0,
@@ -698,6 +820,27 @@ export async function GET() {
 
     const purchaseInvoices = (purchaseInvoicesRes.data || []).map((inv: any) =>
       mapPurchaseInvoice(inv, purchaseItemsMap[inv.id] || [])
+    ).filter(Boolean);
+
+    // Map Purchase Returns & Line Items
+    const purchaseReturnItemsMap: { [returnId: string]: any[] } = {};
+    (purchaseReturnItemsRes.data || []).forEach((item: any) => {
+      if (!purchaseReturnItemsMap[item.purchase_return_id]) purchaseReturnItemsMap[item.purchase_return_id] = [];
+      purchaseReturnItemsMap[item.purchase_return_id].push({
+        id: item.id,
+        productId: item.product_id,
+        productName: item.product_name,
+        warehouseId: item.warehouse_id,
+        quantity: Number(item.quantity) || 1,
+        unitCost: Number(item.unit_cost) || 0,
+        taxRate: Number(item.tax_rate) || 14,
+        taxAmount: Number(item.tax_amount) || 0,
+        total: Number(item.total) || 0,
+      });
+    });
+
+    const purchaseReturns = (purchaseReturnsRes.data || []).map((ret: any) =>
+      mapPurchaseReturn(ret, purchaseReturnItemsMap[ret.id] || [])
     ).filter(Boolean);
 
     // Map Warehouses
@@ -761,11 +904,14 @@ export async function GET() {
         users,
         products,
         categories,
+        customerCategories,
         units,
         customers,
         suppliers,
         salesInvoices,
+        salesReturns,
         purchaseInvoices,
+        purchaseReturns,
         warehouses,
         costCenters,
         accounts,
@@ -1052,27 +1198,74 @@ export async function POST(request: Request) {
       // CUSTOMERS (CREATE, UPDATE, DELETE)
       // ==========================================
       case "create_customer": {
-        const { id, organizationId, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
+        const { id, organizationId, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, openingBalance, currentBalance, categoryId, status } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const trimmedNameAr = (nameAr || "").trim();
+        const trimmedNameEn = (nameEn || "").trim();
+        const trimmedMobile = (mobile || "").trim();
+        const trimmedTax = (taxNumber || "").trim();
+
+        // 1. Validate Duplicate Customer Name
+        if (trimmedNameAr) {
+          const { data: dupName } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .or(`name_ar.ilike.${trimmedNameAr},name_en.ilike.${trimmedNameAr}`)
+            .limit(1);
+          if (dupName && dupName.length > 0) {
+            return noCacheResponse({ success: false, message: `العميل "${trimmedNameAr}" مسجل بالفعل في النظام` }, 400);
+          }
+        }
+
+        // 2. Validate Duplicate Mobile
+        if (trimmedMobile && trimmedMobile !== "+20 100 0000000") {
+          const { data: dupMobile } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .eq("mobile", trimmedMobile)
+            .limit(1);
+          if (dupMobile && dupMobile.length > 0) {
+            return noCacheResponse({ success: false, message: `رقم الهاتف "${trimmedMobile}" مسجل بالفعل لعميل آخر` }, 400);
+          }
+        }
+
+        // 3. Validate Duplicate Tax Number
+        if (trimmedTax && trimmedTax !== "000000000000000") {
+          const { data: dupTax } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .eq("tax_number", trimmedTax)
+            .limit(1);
+          if (dupTax && dupTax.length > 0) {
+            return noCacheResponse({ success: false, message: `الرقم الضريبي "${trimmedTax}" مسجل بالفعل لعميل آخر` }, 400);
+          }
+        }
 
         let finalCode = (code || "").trim();
         if (!finalCode) finalCode = "CUST-" + Date.now().toString().slice(-4);
 
+        const numOpening = Number(openingBalance) || 0;
+        const numCurr = Number(currentBalance) || 0;
+        const finalBalance = numCurr !== 0 ? numCurr : numOpening;
+
         const insertRow: any = {
           organization_id: validOrgId,
           code: finalCode,
-          name_ar: nameAr || "عميل جديد",
-          name_en: nameEn || nameAr || "New Customer",
-          mobile: mobile || null,
+          name_ar: trimmedNameAr || "عميل جديد",
+          name_en: trimmedNameEn || trimmedNameAr || "New Customer",
+          mobile: trimmedMobile || null,
           email: email || null,
           address: address || null,
           city: city || null,
-          tax_number: taxNumber || null,
+          tax_number: trimmedTax || null,
           commercial_register: commercialRegister || null,
           credit_limit: Number(creditLimit) || 0,
           payment_terms_days: Number(paymentTermsDays) || 30,
-          current_balance: Number(currentBalance) || 0,
+          opening_balance: numOpening,
+          current_balance: finalBalance,
+          category_id: cleanUUID(categoryId, null),
           status: status || "active",
         };
         if (validId) insertRow.id = validId;
@@ -1088,9 +1281,52 @@ export async function POST(request: Request) {
       }
 
       case "update_customer": {
-        const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
+        const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, openingBalance, currentBalance, categoryId, status } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid customer ID is required" }, 400);
+
+        const trimmedNameAr = (nameAr || "").trim();
+        const trimmedMobile = (mobile || "").trim();
+        const trimmedTax = (taxNumber || "").trim();
+
+        // 1. Validate Duplicate Customer Name
+        if (trimmedNameAr) {
+          const { data: dupName } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .neq("id", validId)
+            .or(`name_ar.ilike.${trimmedNameAr},name_en.ilike.${trimmedNameAr}`)
+            .limit(1);
+          if (dupName && dupName.length > 0) {
+            return noCacheResponse({ success: false, message: `العميل "${trimmedNameAr}" مسجل بالفعل لعميل آخر` }, 400);
+          }
+        }
+
+        // 2. Validate Duplicate Mobile
+        if (trimmedMobile && trimmedMobile !== "+20 100 0000000") {
+          const { data: dupMobile } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .neq("id", validId)
+            .eq("mobile", trimmedMobile)
+            .limit(1);
+          if (dupMobile && dupMobile.length > 0) {
+            return noCacheResponse({ success: false, message: `رقم الهاتف "${trimmedMobile}" مسجل بالفعل لعميل آخر` }, 400);
+          }
+        }
+
+        // 3. Validate Duplicate Tax Number
+        if (trimmedTax && trimmedTax !== "000000000000000") {
+          const { data: dupTax } = await supabaseAdmin
+            .from("customers")
+            .select("id")
+            .neq("id", validId)
+            .eq("tax_number", trimmedTax)
+            .limit(1);
+          if (dupTax && dupTax.length > 0) {
+            return noCacheResponse({ success: false, message: `الرقم الضريبي "${trimmedTax}" مسجل بالفعل لعميل آخر` }, 400);
+          }
+        }
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -1104,7 +1340,9 @@ export async function POST(request: Request) {
         if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister;
         if (creditLimit !== undefined) updateRow.credit_limit = Number(creditLimit);
         if (paymentTermsDays !== undefined) updateRow.payment_terms_days = Number(paymentTermsDays);
+        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
+        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, null);
         if (status !== undefined) updateRow.status = status;
 
         const { data: cust, error: custErr } = await supabaseAdmin
@@ -1129,28 +1367,136 @@ export async function POST(request: Request) {
       }
 
       // ==========================================
-      // SUPPLIERS (CREATE, UPDATE, DELETE)
+      // CUSTOMER CATEGORIES (CREATE, UPDATE, DELETE)
       // ==========================================
-      case "create_supplier": {
-        const { id, organizationId, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
+      case "create_customer_category": {
+        const { id, organizationId, code, nameAr, nameEn, description } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
         let finalCode = (code || "").trim();
-        if (!finalCode) finalCode = "SUPP-" + Date.now().toString().slice(-4);
+        if (!finalCode) finalCode = "CCAT-" + Date.now().toString().slice(-4);
 
         const insertRow: any = {
           organization_id: validOrgId,
           code: finalCode,
-          name_ar: nameAr || "مورد جديد",
-          name_en: nameEn || nameAr || "New Supplier",
-          mobile: mobile || null,
+          name_ar: nameAr || "تصنيف عملاء جديد",
+          name_en: nameEn || nameAr || "New Customer Category",
+          description: description || null,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: cat, error: catErr } = await supabaseAdmin
+          .from("customer_categories")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (catErr) throw catErr;
+        return noCacheResponse({ success: true, data: mapCustomerCategory(cat) });
+      }
+
+      case "update_customer_category": {
+        const { id, code, nameAr, nameEn, description } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid customer category ID is required" }, 400);
+
+        const updateRow: any = {};
+        if (code !== undefined) updateRow.code = code;
+        if (nameAr !== undefined) updateRow.name_ar = nameAr;
+        if (nameEn !== undefined) updateRow.name_en = nameEn;
+        if (description !== undefined) updateRow.description = description;
+
+        const { data: cat, error: catErr } = await supabaseAdmin
+          .from("customer_categories")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (catErr) throw catErr;
+        return noCacheResponse({ success: true, data: mapCustomerCategory(cat) });
+      }
+
+      case "delete_customer_category": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid customer category ID is required" }, 400);
+
+        const { error: delErr } = await supabaseAdmin.from("customer_categories").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return noCacheResponse({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // SUPPLIERS (CREATE, UPDATE, DELETE)
+      // ==========================================
+      case "create_supplier": {
+        const { id, organizationId, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, openingBalance, currentBalance, status } = payload;
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+
+        const trimmedNameAr = (nameAr || "").trim();
+        const trimmedNameEn = (nameEn || "").trim();
+        const trimmedMobile = (mobile || "").trim();
+        const trimmedTax = (taxNumber || "").trim();
+
+        // 1. Validate Duplicate Supplier Name
+        if (trimmedNameAr) {
+          const { data: dupName } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .or(`name_ar.ilike.${trimmedNameAr},name_en.ilike.${trimmedNameAr}`)
+            .limit(1);
+          if (dupName && dupName.length > 0) {
+            return noCacheResponse({ success: false, message: `المورد "${trimmedNameAr}" مسجل بالفعل في النظام` }, 400);
+          }
+        }
+
+        // 2. Validate Duplicate Mobile
+        if (trimmedMobile && trimmedMobile !== "+20 100 0000000") {
+          const { data: dupMobile } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .eq("mobile", trimmedMobile)
+            .limit(1);
+          if (dupMobile && dupMobile.length > 0) {
+            return noCacheResponse({ success: false, message: `رقم الهاتف "${trimmedMobile}" مسجل بالفعل لمورد آخر` }, 400);
+          }
+        }
+
+        // 3. Validate Duplicate Tax Number
+        if (trimmedTax && trimmedTax !== "000000000000000") {
+          const { data: dupTax } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .eq("tax_number", trimmedTax)
+            .limit(1);
+          if (dupTax && dupTax.length > 0) {
+            return noCacheResponse({ success: false, message: `الرقم الضريبي "${trimmedTax}" مسجل بالفعل لمورد آخر` }, 400);
+          }
+        }
+
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "SUPP-" + Date.now().toString().slice(-4);
+
+        const numOpening = Number(openingBalance) || 0;
+        const numCurr = Number(currentBalance) || 0;
+        const finalBalance = numCurr !== 0 ? numCurr : numOpening;
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          code: finalCode,
+          name_ar: trimmedNameAr || "مورد جديد",
+          name_en: trimmedNameEn || trimmedNameAr || "New Supplier",
+          mobile: trimmedMobile || null,
           email: email || null,
           address: address || null,
-          tax_number: taxNumber || null,
+          tax_number: trimmedTax || null,
           bank_name: bankName || null,
           bank_iban: bankIban || null,
-          current_balance: Number(currentBalance) || 0,
+          opening_balance: numOpening,
+          current_balance: finalBalance,
           status: status || "active",
         };
         if (validId) insertRow.id = validId;
@@ -1166,9 +1512,52 @@ export async function POST(request: Request) {
       }
 
       case "update_supplier": {
-        const { id, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
+        const { id, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, openingBalance, currentBalance, status } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid supplier ID is required" }, 400);
+
+        const trimmedNameAr = (nameAr || "").trim();
+        const trimmedMobile = (mobile || "").trim();
+        const trimmedTax = (taxNumber || "").trim();
+
+        // 1. Validate Duplicate Supplier Name
+        if (trimmedNameAr) {
+          const { data: dupName } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .neq("id", validId)
+            .or(`name_ar.ilike.${trimmedNameAr},name_en.ilike.${trimmedNameAr}`)
+            .limit(1);
+          if (dupName && dupName.length > 0) {
+            return noCacheResponse({ success: false, message: `المورد "${trimmedNameAr}" مسجل بالفعل لمورد آخر` }, 400);
+          }
+        }
+
+        // 2. Validate Duplicate Mobile
+        if (trimmedMobile && trimmedMobile !== "+20 100 0000000") {
+          const { data: dupMobile } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .neq("id", validId)
+            .eq("mobile", trimmedMobile)
+            .limit(1);
+          if (dupMobile && dupMobile.length > 0) {
+            return noCacheResponse({ success: false, message: `رقم الهاتف "${trimmedMobile}" مسجل بالفعل لمورد آخر` }, 400);
+          }
+        }
+
+        // 3. Validate Duplicate Tax Number
+        if (trimmedTax && trimmedTax !== "000000000000000") {
+          const { data: dupTax } = await supabaseAdmin
+            .from("suppliers")
+            .select("id")
+            .neq("id", validId)
+            .eq("tax_number", trimmedTax)
+            .limit(1);
+          if (dupTax && dupTax.length > 0) {
+            return noCacheResponse({ success: false, message: `الرقم الضريبي "${trimmedTax}" مسجل بالفعل لمورد آخر` }, 400);
+          }
+        }
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -1180,6 +1569,7 @@ export async function POST(request: Request) {
         if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
         if (bankName !== undefined) updateRow.bank_name = bankName;
         if (bankIban !== undefined) updateRow.bank_iban = bankIban;
+        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
         if (status !== undefined) updateRow.status = status;
 
@@ -1346,10 +1736,10 @@ export async function POST(request: Request) {
       // ==========================================
       case "create_sales_invoice": {
         const {
-          id, organizationId, branchId, invoiceNumber, date, dueDate, customerId,
+          id, organizationId, branchId, invoiceType, invoiceNumber, date, dueDate, customerId,
           customerName, customerTaxNumber, salesRepId, salesRepName, warehouseId,
-          status, items, subtotal, discountTotal, taxTotal, grandTotal, paidAmount,
-          dueAmount, notes, createdBy
+          status, items, subtotal, discountType, discountValue, discountTotal, taxTotal,
+          grandTotal, paidAmount, dueAmount, notes, createdBy
         } = payload;
 
         const validId = cleanUUID(id, null);
@@ -1358,11 +1748,13 @@ export async function POST(request: Request) {
         const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
         const validCustId = cleanUUID(customerId, DEFAULT_POS_CUSTOMER_ID);
         const validRepId = cleanUUID(salesRepId, null);
+        const invType = invoiceType || "tax_invoice";
 
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber || ("INV-" + Date.now().toString().slice(-6)),
+          invoice_type: invType,
+          invoice_number: invoiceNumber || (invType === "quotation" ? ("QUOT-" + Date.now().toString().slice(-6)) : ("INV-" + Date.now().toString().slice(-6))),
           date: date || new Date().toISOString().split("T")[0],
           due_date: dueDate || date || new Date().toISOString().split("T")[0],
           customer_id: validCustId,
@@ -1373,6 +1765,8 @@ export async function POST(request: Request) {
           warehouse_id: validWhId,
           status: status || "unpaid",
           subtotal: Number(subtotal) || 0,
+          discount_type: discountType || "percentage",
+          discount_value: Number(discountValue) || 0,
           discount_total: Number(discountTotal) || 0,
           tax_total: Number(taxTotal) || 0,
           grand_total: Number(grandTotal) || 0,
@@ -1394,7 +1788,7 @@ export async function POST(request: Request) {
 
         const mappedItems: any[] = [];
 
-        // Insert Line Items, Update Stock & Create Stock Movements
+        // Insert Line Items, Update Stock & Create Stock Movements (only if not a quotation)
         if (items && items.length > 0 && inv?.id) {
           const itemRows = items.map((it: any) => {
             const rowId = cleanUUID(it.id, generateId());
@@ -1434,8 +1828,8 @@ export async function POST(request: Request) {
               total: it.total,
             });
 
-            // Stock Movement
-            if (it.product_id) {
+            // If actual tax invoice, affect stock
+            if (it.product_id && invType !== "quotation") {
               await supabaseAdmin.from("stock_movements").insert([{
                 organization_id: validOrgId,
                 product_id: it.product_id,
@@ -1475,8 +1869,8 @@ export async function POST(request: Request) {
           }
         }
 
-        // Atomically update customer balance in PostgreSQL
-        if (validCustId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
+        // Atomically update customer balance in PostgreSQL (only for non-quotations)
+        if (invType !== "quotation" && validCustId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
           const { data: currentCust } = await supabaseAdmin
             .from("customers")
             .select("current_balance")
@@ -1509,14 +1903,167 @@ export async function POST(request: Request) {
       }
 
       // ==========================================
+      // SALES RETURNS (CREATE, DELETE)
+      // ==========================================
+      case "create_sales_return": {
+        const {
+          id, organizationId, branchId, returnNumber, originalInvoiceId, originalInvoiceNumber,
+          date, customerId, customerName, warehouseId, items, subtotal, taxTotal, grandTotal,
+          refundMethod, treasuryAccountId, status, notes, createdBy
+        } = payload;
+
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+        const validCustId = cleanUUID(customerId, DEFAULT_POS_CUSTOMER_ID);
+        const numGrandTotal = Number(grandTotal) || 0;
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          return_number: returnNumber || ("SRET-" + Date.now().toString().slice(-6)),
+          original_invoice_id: cleanUUID(originalInvoiceId, null),
+          original_invoice_number: originalInvoiceNumber || null,
+          date: date || new Date().toISOString().split("T")[0],
+          customer_id: validCustId,
+          customer_name: customerName || "عميل",
+          warehouse_id: validWhId,
+          subtotal: Number(subtotal) || 0,
+          tax_total: Number(taxTotal) || 0,
+          grand_total: numGrandTotal,
+          refund_method: refundMethod || "customer_balance",
+          treasury_account_id: cleanUUID(treasuryAccountId, null),
+          status: status || "completed",
+          notes: notes || null,
+          created_by: createdBy || null,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: sret, error: retErr } = await supabaseAdmin
+          .from("sales_returns")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (retErr) throw retErr;
+
+        const mappedItems: any[] = [];
+        if (items && items.length > 0 && sret?.id) {
+          const itemRows = items.map((it: any) => ({
+            id: cleanUUID(it.id, generateId()),
+            sales_return_id: sret.id,
+            product_id: cleanUUID(it.productId, null),
+            product_name: it.productName || "صنف",
+            warehouse_id: cleanUUID(it.warehouseId, validWhId),
+            quantity: Number(it.quantity) || 1,
+            unit_price: Number(it.unitPrice) || 0,
+            cost_price: Number(it.costPrice) || 0,
+            tax_rate: Number(it.taxRate) || 14,
+            tax_amount: Number(it.taxAmount) || 0,
+            total: Number(it.total) || 0,
+          }));
+
+          await supabaseAdmin.from("sales_return_items").insert(itemRows);
+
+          for (const it of itemRows) {
+            mappedItems.push({
+              id: it.id,
+              productId: it.product_id,
+              productName: it.product_name,
+              warehouseId: it.warehouse_id,
+              quantity: it.quantity,
+              unitPrice: it.unit_price,
+              costPrice: it.cost_price,
+              taxRate: it.tax_rate,
+              taxAmount: it.tax_amount,
+              total: it.total,
+            });
+
+            if (it.product_id) {
+              // 1. Stock Movement (Return)
+              await supabaseAdmin.from("stock_movements").insert([{
+                organization_id: validOrgId,
+                product_id: it.product_id,
+                warehouse_id: it.warehouse_id,
+                movement_type: "sales_return",
+                reference_id: sret.id,
+                reference_number: sret.return_number,
+                date: sret.date,
+                quantity: Math.abs(it.quantity),
+                unit_cost: it.cost_price || it.unit_price,
+                total_cost: Math.abs((it.cost_price || it.unit_price) * it.quantity),
+                balance_quantity: 0,
+                partner_id: validCustId,
+                partner_name: customerName,
+                partner_type: "customer",
+                notes: `مرتجع مبيعات إشعار دائن ${sret.return_number}`,
+              }]);
+
+              // 2. Increment Stock
+              const { data: currentStockRow } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              const newStock = (Number(currentStockRow?.quantity) || 0) + it.quantity;
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: newStock,
+                }], { onConflict: "product_id,warehouse_id" });
+            }
+          }
+        }
+
+        // Adjust Customer Balance or Treasury
+        if (validCustId && (refundMethod === "customer_balance" || !refundMethod)) {
+          const { data: c } = await supabaseAdmin.from("customers").select("current_balance").eq("id", validCustId).single();
+          if (c) {
+            await supabaseAdmin.from("customers").update({
+              current_balance: Math.max(0, (Number(c.current_balance) || 0) - numGrandTotal)
+            }).eq("id", validCustId);
+          }
+        } else if (refundMethod === "treasury" && treasuryAccountId) {
+          const validTreasury = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasury).single();
+          if (t) {
+            await supabaseAdmin.from("treasury_accounts").update({
+              balance: (Number(t.balance) || 0) - numGrandTotal
+            }).eq("id", validTreasury);
+          }
+        }
+
+        return noCacheResponse({ success: true, data: mapSalesReturn(sret, mappedItems) });
+      }
+
+      case "delete_sales_return": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid sales return ID is required" }, 400);
+
+        await supabaseAdmin.from("sales_return_items").delete().eq("sales_return_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
+        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+
+        const { error: delErr } = await supabaseAdmin.from("sales_returns").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return noCacheResponse({ success: true, id: validId });
+      }
+
+      // ==========================================
       // PURCHASE INVOICES (CREATE, DELETE)
       // ==========================================
       case "create_purchase_invoice": {
         const {
-          id, organizationId, branchId, invoiceNumber, supplierInvoiceRef, date,
+          id, organizationId, branchId, invoiceType, invoiceNumber, supplierInvoiceRef, date,
           dueDate, supplierId, supplierName, supplierTaxNumber, warehouseId,
-          status, items, subtotal, discountTotal, taxTotal, grandTotal, paidAmount,
-          dueAmount, notes, createdBy
+          status, items, subtotal, discountType, discountValue, discountTotal, taxTotal,
+          grandTotal, paidAmount, dueAmount, notes, createdBy
         } = payload;
 
         const validId = cleanUUID(id, null);
@@ -1524,11 +2071,13 @@ export async function POST(request: Request) {
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
         const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
         const validSuppId = cleanUUID(supplierId, null);
+        const pType = invoiceType || "purchase_invoice";
 
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber || ("PINV-" + Date.now().toString().slice(-6)),
+          invoice_type: pType,
+          invoice_number: invoiceNumber || (pType === "purchase_order" ? ("PO-" + Date.now().toString().slice(-6)) : ("PINV-" + Date.now().toString().slice(-6))),
           supplier_invoice_ref: supplierInvoiceRef || null,
           date: date || new Date().toISOString().split("T")[0],
           due_date: dueDate || date || new Date().toISOString().split("T")[0],
@@ -1538,6 +2087,8 @@ export async function POST(request: Request) {
           warehouse_id: validWhId,
           status: status || "unpaid",
           subtotal: Number(subtotal) || 0,
+          discount_type: discountType || "percentage",
+          discount_value: Number(discountValue) || 0,
           discount_total: Number(discountTotal) || 0,
           tax_total: Number(taxTotal) || 0,
           grand_total: Number(grandTotal) || 0,
@@ -1570,6 +2121,7 @@ export async function POST(request: Request) {
               warehouse_id: cleanUUID(it.warehouseId, validWhId),
               quantity: Number(it.quantity) || 1,
               unit_cost: Number(it.unitCost) || 0,
+              discount_percent: Number(it.discountPercent) || 0,
               discount_amount: Number(it.discountAmount) || 0,
               tax_rate: Number(it.taxRate) || 14,
               tax_amount: Number(it.taxAmount) || 0,
@@ -1587,13 +2139,15 @@ export async function POST(request: Request) {
               warehouseId: it.warehouse_id,
               quantity: it.quantity,
               unitCost: it.unit_cost,
+              discountPercent: it.discountPercent,
               discountAmount: it.discount_amount,
               taxRate: it.tax_rate,
               taxAmount: it.tax_amount,
               total: it.total,
             });
 
-            if (it.product_id) {
+            // If actual purchase invoice, increment stock
+            if (it.product_id && pType !== "purchase_order") {
               await supabaseAdmin.from("stock_movements").insert([{
                 organization_id: validOrgId,
                 product_id: it.product_id,
@@ -1632,8 +2186,8 @@ export async function POST(request: Request) {
           }
         }
 
-        // Atomically update supplier balance in PostgreSQL
-        if (validSuppId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
+        // Atomically update supplier balance in PostgreSQL (only for non-purchase-orders)
+        if (pType !== "purchase_order" && validSuppId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
           const { data: currentSupp } = await supabaseAdmin
             .from("suppliers")
             .select("current_balance")
@@ -1660,6 +2214,157 @@ export async function POST(request: Request) {
         await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
 
         const { error: delErr } = await supabaseAdmin.from("purchase_invoices").delete().eq("id", validId);
+        if (delErr) throw delErr;
+
+        return noCacheResponse({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // PURCHASE RETURNS (CREATE, DELETE)
+      // ==========================================
+      case "create_purchase_return": {
+        const {
+          id, organizationId, branchId, returnNumber, originalInvoiceId, originalInvoiceNumber,
+          date, supplierId, supplierName, warehouseId, items, subtotal, taxTotal, grandTotal,
+          refundMethod, treasuryAccountId, status, notes, createdBy
+        } = payload;
+
+        const validId = cleanUUID(id, null);
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+        const validSuppId = cleanUUID(supplierId, null);
+        const numGrandTotal = Number(grandTotal) || 0;
+
+        const insertRow: any = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          return_number: returnNumber || ("PRET-" + Date.now().toString().slice(-6)),
+          original_invoice_id: cleanUUID(originalInvoiceId, null),
+          original_invoice_number: originalInvoiceNumber || null,
+          date: date || new Date().toISOString().split("T")[0],
+          supplier_id: validSuppId,
+          supplier_name: supplierName || "مورد",
+          warehouse_id: validWhId,
+          subtotal: Number(subtotal) || 0,
+          tax_total: Number(taxTotal) || 0,
+          grand_total: numGrandTotal,
+          refund_method: refundMethod || "supplier_balance",
+          treasury_account_id: cleanUUID(treasuryAccountId, null),
+          status: status || "completed",
+          notes: notes || null,
+          created_by: createdBy || null,
+        };
+        if (validId) insertRow.id = validId;
+
+        const { data: pret, error: retErr } = await supabaseAdmin
+          .from("purchase_returns")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (retErr) throw retErr;
+
+        const mappedItems: any[] = [];
+        if (items && items.length > 0 && pret?.id) {
+          const itemRows = items.map((it: any) => ({
+            id: cleanUUID(it.id, generateId()),
+            purchase_return_id: pret.id,
+            product_id: cleanUUID(it.productId, null),
+            product_name: it.productName || "صنف",
+            warehouse_id: cleanUUID(it.warehouseId, validWhId),
+            quantity: Number(it.quantity) || 1,
+            unit_cost: Number(it.unitCost) || 0,
+            tax_rate: Number(it.taxRate) || 14,
+            tax_amount: Number(it.taxAmount) || 0,
+            total: Number(it.total) || 0,
+          }));
+
+          await supabaseAdmin.from("purchase_return_items").insert(itemRows);
+
+          for (const it of itemRows) {
+            mappedItems.push({
+              id: it.id,
+              productId: it.product_id,
+              productName: it.product_name,
+              warehouseId: it.warehouse_id,
+              quantity: it.quantity,
+              unitCost: it.unit_cost,
+              taxRate: it.tax_rate,
+              taxAmount: it.tax_amount,
+              total: it.total,
+            });
+
+            if (it.product_id) {
+              // 1. Stock Movement (Return)
+              await supabaseAdmin.from("stock_movements").insert([{
+                organization_id: validOrgId,
+                product_id: it.product_id,
+                warehouse_id: it.warehouse_id,
+                movement_type: "purchase_return",
+                reference_id: pret.id,
+                reference_number: pret.return_number,
+                date: pret.date,
+                quantity: -Math.abs(it.quantity),
+                unit_cost: it.unit_cost,
+                total_cost: -Math.abs(it.unit_cost * it.quantity),
+                balance_quantity: 0,
+                partner_id: validSuppId,
+                partner_name: supplierName,
+                partner_type: "supplier",
+                notes: `مرتجع مشتريات إشعار مدين ${pret.return_number}`,
+              }]);
+
+              // 2. Decrement Stock
+              const { data: currentStockRow } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              const newStock = Math.max(0, (Number(currentStockRow?.quantity) || 0) - it.quantity);
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: newStock,
+                }], { onConflict: "product_id,warehouse_id" });
+            }
+          }
+        }
+
+        // Adjust Supplier Balance or Treasury
+        if (validSuppId && (refundMethod === "supplier_balance" || !refundMethod)) {
+          const { data: s } = await supabaseAdmin.from("suppliers").select("current_balance").eq("id", validSuppId).single();
+          if (s) {
+            await supabaseAdmin.from("suppliers").update({
+              current_balance: Math.max(0, (Number(s.current_balance) || 0) - numGrandTotal)
+            }).eq("id", validSuppId);
+          }
+        } else if (refundMethod === "treasury" && treasuryAccountId) {
+          const validTreasury = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasury).single();
+          if (t) {
+            await supabaseAdmin.from("treasury_accounts").update({
+              balance: (Number(t.balance) || 0) + numGrandTotal
+            }).eq("id", validTreasury);
+          }
+        }
+
+        return noCacheResponse({ success: true, data: mapPurchaseReturn(pret, mappedItems) });
+      }
+
+      case "delete_purchase_return": {
+        const validId = cleanUUID(payload?.id || payload, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid purchase return ID is required" }, 400);
+
+        await supabaseAdmin.from("purchase_return_items").delete().eq("purchase_return_id", validId);
+        await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
+        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+
+        const { error: delErr } = await supabaseAdmin.from("purchase_returns").delete().eq("id", validId);
         if (delErr) throw delErr;
 
         return noCacheResponse({ success: true, id: validId });
