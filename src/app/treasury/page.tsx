@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import {
   Wallet, Plus, ArrowDownLeft, ArrowUpRight, Building2,
-  CreditCard, CheckCircle2, History, Banknote, Trash2
+  CreditCard, CheckCircle2, History, Banknote, Trash2, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function TreasuryPage() {
@@ -14,12 +14,14 @@ export default function TreasuryPage() {
     treasuryAccounts, cashReceipts, cashPayments,
     customers, suppliers, accounts, createCashReceipt, deleteCashReceipt,
     createCashPayment, deleteCashPayment, organization, activeBranchId,
-    currentUser, locale, hasPermission
+    currentUser, locale, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const canManage = hasPermission(["super_admin", "tenant_admin", "accountant"]);
 
@@ -40,6 +42,7 @@ export default function TreasuryPage() {
   const [payNotes, setPayNotes] = useState("");
 
   const handleOpenReceiptModal = () => {
+    setFormError(null);
     setRcpTreasuryId(treasuryAccounts[0]?.id || "");
     setRcpCreditAccId(accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "");
     setRcpAmount(0);
@@ -50,6 +53,7 @@ export default function TreasuryPage() {
   };
 
   const handleOpenPaymentModal = () => {
+    setFormError(null);
     setPayTreasuryId(treasuryAccounts[0]?.id || "");
     setPayDebitAccId(accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "");
     setPayAmount(0);
@@ -61,58 +65,86 @@ export default function TreasuryPage() {
 
   const handleCreateReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (rcpAmount <= 0) return;
+    setFormError(null);
+    if (rcpAmount <= 0) {
+      setFormError(isAr ? "يرجى تحديد مبلغ صحيح للسند" : "Please enter a valid amount");
+      return;
+    }
 
-    const receiptNumber = "RCP-" + Date.now().toString().slice(-6);
-    const targetTreasury = rcpTreasuryId || treasuryAccounts[0]?.id || "";
-    const targetCreditAcc = rcpCreditAccId || accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "";
+    setIsSubmitting(true);
+    try {
+      const receiptNumber = "RCP-" + Date.now().toString().slice(-6);
+      const targetTreasury = rcpTreasuryId || treasuryAccounts[0]?.id || "";
+      const targetCreditAcc = rcpCreditAccId || accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "";
 
-    await createCashReceipt({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      receiptNumber,
-      date: new Date().toISOString().split("T")[0],
-      treasuryAccountId: targetTreasury,
-      amount: rcpAmount,
-      currency: organization.currency,
-      receivedFrom: rcpReceivedFrom || (customers.find(c => c.id === rcpCustomerId)?.nameAr || "عميل"),
-      customerId: rcpCustomerId || undefined,
-      creditAccountId: targetCreditAcc,
-      notes: rcpNotes,
-      createdBy: currentUser.name,
-    });
+      await createCashReceipt({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        receiptNumber,
+        date: new Date().toISOString().split("T")[0],
+        treasuryAccountId: targetTreasury,
+        amount: rcpAmount,
+        currency: organization.currency,
+        receivedFrom: rcpReceivedFrom || (customers.find(c => c.id === rcpCustomerId)?.nameAr || (isAr ? "عميل" : "Customer")),
+        customerId: rcpCustomerId || undefined,
+        creditAccountId: targetCreditAcc,
+        notes: rcpNotes,
+        createdBy: currentUser.name,
+      });
 
-    setIsReceiptModalOpen(false);
-    setRcpAmount(0);
-    setRcpNotes("");
+      setIsReceiptModalOpen(false);
+      setRcpAmount(0);
+      setRcpNotes("");
+    } catch (err: any) {
+      console.error("Failed to create cash receipt:", err);
+      const errMsg = err?.message || (isAr ? "فشل إنشاء سند القبض" : "Failed to create receipt");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCreatePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (payAmount <= 0) return;
+    setFormError(null);
+    if (payAmount <= 0) {
+      setFormError(isAr ? "يرجى تحديد مبلغ صحيح للسند" : "Please enter a valid amount");
+      return;
+    }
 
-    const paymentNumber = "PAY-" + Date.now().toString().slice(-6);
-    const targetTreasury = payTreasuryId || treasuryAccounts[0]?.id || "";
-    const targetDebitAcc = payDebitAccId || accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "";
+    setIsSubmitting(true);
+    try {
+      const paymentNumber = "PAY-" + Date.now().toString().slice(-6);
+      const targetTreasury = payTreasuryId || treasuryAccounts[0]?.id || "";
+      const targetDebitAcc = payDebitAccId || accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "";
 
-    await createCashPayment({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      paymentNumber,
-      date: new Date().toISOString().split("T")[0],
-      treasuryAccountId: targetTreasury,
-      amount: payAmount,
-      currency: organization.currency,
-      paidTo: payPaidTo || (suppliers.find(s => s.id === paySupplierId)?.nameAr || "مورد / مصروف"),
-      supplierId: paySupplierId || undefined,
-      debitAccountId: targetDebitAcc,
-      notes: payNotes,
-      createdBy: currentUser.name,
-    });
+      await createCashPayment({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        paymentNumber,
+        date: new Date().toISOString().split("T")[0],
+        treasuryAccountId: targetTreasury,
+        amount: payAmount,
+        currency: organization.currency,
+        paidTo: payPaidTo || (suppliers.find(s => s.id === paySupplierId)?.nameAr || (isAr ? "مورد / مصروف" : "Supplier")),
+        supplierId: paySupplierId || undefined,
+        debitAccountId: targetDebitAcc,
+        notes: payNotes,
+        createdBy: currentUser.name,
+      });
 
-    setIsPaymentModalOpen(false);
-    setPayAmount(0);
-    setPayNotes("");
+      setIsPaymentModalOpen(false);
+      setPayAmount(0);
+      setPayNotes("");
+    } catch (err: any) {
+      console.error("Failed to create cash payment:", err);
+      const errMsg = err?.message || (isAr ? "فشل إنشاء سند الصرف" : "Failed to create payment");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const totalLiquidCash = treasuryAccounts.reduce((sum, t) => sum + t.balance, 0);
@@ -289,10 +321,16 @@ export default function TreasuryPage() {
       {/* Cash Receipt Modal */}
       <Modal
         isOpen={isReceiptModalOpen}
-        onClose={() => setIsReceiptModalOpen(false)}
+        onClose={() => !isSubmitting && setIsReceiptModalOpen(false)}
         title={isAr ? "تحرير سند قبض نقدية / بنكي" : "Issue Cash Receipt"}
       >
         <form onSubmit={handleCreateReceipt} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الخزينة / الحساب البنكي المودع به *" : "Target Account *"}</label>
             <select
@@ -359,16 +397,25 @@ export default function TreasuryPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsReceiptModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "اعتماد سند القبض والقيد" : "Confirm Receipt & Post"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الاعتماد..." : "Posting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "اعتماد سند القبض والقيد" : "Confirm Receipt & Post"}</span>
+              )}
             </button>
           </div>
         </form>
@@ -377,10 +424,16 @@ export default function TreasuryPage() {
       {/* Cash Payment Modal */}
       <Modal
         isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
+        onClose={() => !isSubmitting && setIsPaymentModalOpen(false)}
         title={isAr ? "تحرير سند صرف نقدية / بنكي" : "Issue Cash Payment"}
       >
         <form onSubmit={handleCreatePayment} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الخزينة / الحساب البنكي المصروف منه *" : "Source Account *"}</label>
             <select
@@ -447,16 +500,25 @@ export default function TreasuryPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsPaymentModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "اعتماد سند الصرف والقيد" : "Confirm Payment & Post"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الاعتماد..." : "Posting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "اعتماد سند الصرف والقيد" : "Confirm Payment & Post"}</span>
+              )}
             </button>
           </div>
         </form>

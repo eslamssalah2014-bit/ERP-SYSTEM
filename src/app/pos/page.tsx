@@ -7,7 +7,7 @@ import { Product } from "@/types/erp";
 import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, CreditCard,
-  Banknote, CheckCircle2, User, ArrowRight, Printer, Sparkles
+  Banknote, CheckCircle2, User, ArrowRight, Printer, Sparkles, Loader2
 } from "lucide-react";
 import confetti from "canvas-confetti";
 
@@ -21,7 +21,7 @@ interface CartItem {
 export default function PosTerminal() {
   const {
     products, categories, customers, warehouses, createSalesInvoice,
-    organization, activeBranchId, currentUser, locale
+    organization, activeBranchId, currentUser, locale, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -33,13 +33,14 @@ export default function PosTerminal() {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "credit">("cash");
   const [lastIssuedInvoice, setLastIssuedInvoice] = useState<any>(null);
   const [showZatcaModal, setShowZatcaModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filter products
   const filteredProducts = products.filter(p => {
     if (selectedCategory !== "all" && p.categoryId !== selectedCategory) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return p.nameAr.includes(q) || p.nameEn.toLowerCase().includes(q) || p.barcode.includes(q) || p.sku.toLowerCase().includes(q);
+      return (p.nameAr || "").includes(q) || (p.nameEn || "").toLowerCase().includes(q) || (p.barcode || "").includes(q) || (p.sku || "").toLowerCase().includes(q);
     }
     return true;
   });
@@ -59,7 +60,7 @@ export default function PosTerminal() {
         product,
         quantity: 1,
         unitPrice: product.sellingPrice,
-        taxRate: product.taxRate || organization.defaultVatRate
+        taxRate: product.taxRate || organization.defaultVatRate,
       }];
     });
   };
@@ -80,7 +81,7 @@ export default function PosTerminal() {
 
   const clearCart = () => setCart([]);
 
-  // Cart Totals
+  // Calculations
   const subtotal = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
   const discountTotal = (subtotal * discountPercent) / 100;
   const taxableAmount = subtotal - discountTotal;
@@ -89,61 +90,69 @@ export default function PosTerminal() {
 
   // Complete Checkout
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || isSubmitting) return;
 
-    const defaultWarehouseId = warehouses[0]?.id || "00000000-0000-0000-0000-000000000004";
-    const fallbackCustomer = customers.find(c => c.code === "CUST-POS" || c.id === "00000000-0000-0000-0000-000000000099") || customers[0] || {
-      id: "00000000-0000-0000-0000-000000000099",
-      nameAr: isAr ? "عميل نقدي عام (نقاط البيع)" : "Walk-in Cash Customer",
-      nameEn: "Walk-in Cash Customer",
-      taxNumber: "",
-    };
-    const customer = customers.find(c => c.id === selectedCustomerId) || fallbackCustomer;
-    const invoiceNumber = "POS-" + Date.now().toString().slice(-6);
+    setIsSubmitting(true);
+    try {
+      const defaultWarehouseId = warehouses[0]?.id || "00000000-0000-0000-0000-000000000004";
+      const fallbackCustomer = customers.find(c => c.code === "CUST-POS-CASH" || c.id === "00000000-0000-0000-0000-000000000099") || customers[0] || {
+        id: "00000000-0000-0000-0000-000000000099",
+        nameAr: isAr ? "عميل نقدي عام (نقاط البيع)" : "Walk-in Cash Customer",
+        nameEn: "Walk-in Cash Customer",
+        taxNumber: "",
+      };
+      const customer = customers.find(c => c.id === selectedCustomerId) || fallbackCustomer;
+      const invoiceNumber = "POS-" + Date.now().toString().slice(-6);
 
-    const invoiceItems = cart.map((item, idx) => ({
-      id: "pos_item_" + idx,
-      productId: item.product.id,
-      productName: item.product.nameAr,
-      warehouseId: defaultWarehouseId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      costPrice: item.product.costPrice,
-      discountPercent: 0,
-      discountAmount: 0,
-      taxRate: organization.defaultVatRate,
-      taxAmount: (item.unitPrice * item.quantity * organization.defaultVatRate) / 100,
-      total: (item.unitPrice * item.quantity) * (1 + organization.defaultVatRate / 100),
-    }));
+      const invoiceItems = cart.map((item, idx) => ({
+        id: "pos_item_" + idx,
+        productId: item.product.id,
+        productName: item.product.nameAr,
+        warehouseId: defaultWarehouseId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        costPrice: item.product.costPrice,
+        discountPercent: 0,
+        discountAmount: 0,
+        taxRate: organization.defaultVatRate,
+        taxAmount: (item.unitPrice * item.quantity * organization.defaultVatRate) / 100,
+        total: (item.unitPrice * item.quantity) * (1 + organization.defaultVatRate / 100),
+      }));
 
-    const created = await createSalesInvoice({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      invoiceNumber,
-      date: new Date().toISOString().split("T")[0],
-      dueDate: new Date().toISOString().split("T")[0],
-      customerId: customer.id,
-      customerName: customer.nameAr,
-      customerTaxNumber: customer.taxNumber,
-      salesRepId: currentUser.id,
-      salesRepName: currentUser.name,
-      warehouseId: defaultWarehouseId,
-      status: paymentMethod === "credit" ? "unpaid" : "paid",
-      items: invoiceItems,
-      subtotal,
-      discountTotal,
-      taxTotal,
-      grandTotal,
-      paidAmount: paymentMethod === "credit" ? 0 : grandTotal,
-      dueAmount: paymentMethod === "credit" ? grandTotal : 0,
-      notes: "نقطة بيع كاشير سريعة (POS)",
-      createdBy: currentUser.name,
-    });
+      const created = await createSalesInvoice({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        invoiceNumber,
+        date: new Date().toISOString().split("T")[0],
+        dueDate: new Date().toISOString().split("T")[0],
+        customerId: customer.id,
+        customerName: customer.nameAr,
+        customerTaxNumber: customer.taxNumber,
+        salesRepId: currentUser.id,
+        salesRepName: currentUser.name,
+        warehouseId: defaultWarehouseId,
+        status: paymentMethod === "credit" ? "unpaid" : "paid",
+        items: invoiceItems,
+        subtotal,
+        discountTotal,
+        taxTotal,
+        grandTotal,
+        paidAmount: paymentMethod === "credit" ? 0 : grandTotal,
+        dueAmount: paymentMethod === "credit" ? grandTotal : 0,
+        notes: "نقطة بيع كاشير سريعة (POS)",
+        createdBy: currentUser.name,
+      });
 
-    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-    setLastIssuedInvoice(created);
-    setShowZatcaModal(true);
-    clearCart();
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      setLastIssuedInvoice(created);
+      setShowZatcaModal(true);
+      clearCart();
+    } catch (err: any) {
+      console.error("POS Checkout error:", err);
+      showToast(err?.message || (isAr ? "فشل إتمام عملية البيع" : "Checkout failed"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -388,12 +397,21 @@ export default function PosTerminal() {
 
           {/* Checkout Button */}
           <button
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || isSubmitting}
             onClick={handleCheckout}
-            className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-2xl shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 transition-all active:scale-98"
+            className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-2xl shadow-xl shadow-emerald-950/60 flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer"
           >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>{isAr ? "إتمام البيع وطباعة الفاتورة" : "Complete Sale & Print"}</span>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{isAr ? "جاري معالجة الفاتورة..." : "Processing Sale..."}</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-5 h-5" />
+                <span>{isAr ? "إتمام البيع وطباعة الفاتورة" : "Complete Sale & Print"}</span>
+              </>
+            )}
           </button>
         </div>
       </div>

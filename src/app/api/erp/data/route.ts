@@ -23,6 +23,14 @@ function cleanUUID(str: any, fallback: string | null = null): string | null {
   return isValidUUID(str) ? str : fallback;
 }
 
+function generateId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function noCacheResponse(payload: any, status = 200) {
   return NextResponse.json(payload, {
     status,
@@ -32,6 +40,421 @@ function noCacheResponse(payload: any, status = 200) {
       "Expires": "0",
     },
   });
+}
+
+// ==========================================
+// SYSTEM ENTITY MAPPERS (SNAKE_CASE -> CAMELCASE)
+// ==========================================
+
+export function mapOrganization(o: any) {
+  if (!o) return undefined;
+  return {
+    id: o.id,
+    nameAr: o.name_ar,
+    nameEn: o.name_en || o.name_ar,
+    taxNumber: o.tax_number,
+    commercialRegister: o.commercial_register || undefined,
+    country: o.country || "EG",
+    currency: o.currency || "EGP",
+    defaultVatRate: Number(o.default_vat_rate) || 14,
+    address: o.address || undefined,
+    logoUrl: o.logo_url || undefined,
+    planTier: o.plan_tier || "enterprise",
+  };
+}
+
+export function mapBranch(b: any) {
+  if (!b) return null;
+  return {
+    id: b.id,
+    organizationId: b.organization_id,
+    code: b.code,
+    nameAr: b.name_ar,
+    nameEn: b.name_en || b.name_ar,
+    city: b.city || "",
+    address: b.address || undefined,
+    phone: b.phone || undefined,
+    isHeadquarters: Boolean(b.is_headquarters),
+  };
+}
+
+export function mapUser(u: any) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    organizationId: u.organization_id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    branchId: u.branch_id || undefined,
+    avatarUrl: u.avatar_url || undefined,
+    isActive: Boolean(u.is_active),
+  };
+}
+
+export function mapProduct(p: any, stockMap: { [whId: string]: number } = {}) {
+  if (!p) return null;
+  return {
+    id: p.id,
+    organizationId: p.organization_id,
+    sku: p.sku,
+    barcode: p.barcode || "",
+    nameAr: p.name_ar,
+    nameEn: p.name_en || p.name_ar,
+    description: p.description || "",
+    categoryId: p.category_id || "",
+    unitId: p.unit_id || "",
+    costPrice: Number(p.cost_price) || 0,
+    sellingPrice: Number(p.selling_price) || 0,
+    taxRate: Number(p.tax_rate) || 14,
+    minStockLevel: Number(p.min_stock_level) || 5,
+    status: p.status || "active",
+    warehouseStock: stockMap,
+    imageUrl: (p.description && (p.description.startsWith("data:image") || p.description.startsWith("http"))) ? p.description : "",
+  };
+}
+
+export function mapCustomer(c: any) {
+  if (!c) return null;
+  return {
+    id: c.id,
+    organizationId: c.organization_id,
+    code: c.code,
+    nameAr: c.name_ar,
+    nameEn: c.name_en || c.name_ar,
+    mobile: c.mobile || "",
+    email: c.email || "",
+    address: c.address || "",
+    city: c.city || "",
+    taxNumber: c.tax_number || "",
+    commercialRegister: c.commercial_register || "",
+    creditLimit: Number(c.credit_limit) || 0,
+    paymentTermsDays: Number(c.payment_terms_days) || 30,
+    currentBalance: Number(c.current_balance) || 0,
+    status: c.status || "active",
+  };
+}
+
+export function mapSupplier(s: any) {
+  if (!s) return null;
+  return {
+    id: s.id,
+    organizationId: s.organization_id,
+    code: s.code,
+    nameAr: s.name_ar,
+    nameEn: s.name_en || s.name_ar,
+    mobile: s.mobile || "",
+    email: s.email || "",
+    address: s.address || "",
+    taxNumber: s.tax_number || "",
+    bankName: s.bank_name || "",
+    bankIban: s.bank_iban || "",
+    currentBalance: Number(s.current_balance) || 0,
+    status: s.status || "active",
+  };
+}
+
+export function mapWarehouse(w: any) {
+  if (!w) return null;
+  return {
+    id: w.id,
+    organizationId: w.organization_id,
+    branchId: w.branch_id,
+    code: w.code,
+    nameAr: w.name_ar,
+    nameEn: w.name_en || w.name_ar,
+    location: w.location || "",
+    managerName: w.manager_name || "",
+    managerPhone: w.manager_phone || "",
+    isDefault: Boolean(w.is_default),
+  };
+}
+
+export function mapCategory(c: any) {
+  if (!c) return null;
+  return {
+    id: c.id,
+    organizationId: c.organization_id,
+    code: c.code,
+    nameAr: c.name_ar,
+    nameEn: c.name_en || c.name_ar,
+    parentId: c.parent_id || undefined,
+    createdAt: c.created_at,
+  };
+}
+
+export function mapUnit(u: any) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    organizationId: u.organization_id,
+    code: u.code,
+    nameAr: u.name_ar,
+    nameEn: u.name_en || u.name_ar,
+    symbol: u.symbol || "قطعة",
+  };
+}
+
+export function mapCostCenter(cc: any) {
+  if (!cc) return null;
+  return {
+    id: cc.id,
+    organizationId: cc.organization_id,
+    code: cc.code,
+    nameAr: cc.name_ar,
+    nameEn: cc.name_en || cc.name_ar,
+    parentId: cc.parent_id || undefined,
+    level: Number(cc.level) || 1,
+    isActive: Boolean(cc.is_active),
+  };
+}
+
+export function mapAccount(a: any) {
+  if (!a) return null;
+  return {
+    id: a.id,
+    organizationId: a.organization_id,
+    code: a.code,
+    nameAr: a.name_ar,
+    nameEn: a.name_en || a.name_ar,
+    type: a.type,
+    parentId: a.parent_id || undefined,
+    level: Number(a.level) || 1,
+    nature: a.nature,
+    balance: Number(a.balance) || 0,
+    currency: a.currency || "EGP",
+    isActive: Boolean(a.is_active),
+    isSystem: Boolean(a.is_system),
+  };
+}
+
+export function mapTreasuryAccount(t: any) {
+  if (!t) return null;
+  return {
+    id: t.id,
+    organizationId: t.organization_id,
+    branchId: t.branch_id,
+    glAccountId: t.gl_account_id,
+    code: t.code,
+    nameAr: t.name_ar,
+    nameEn: t.name_en || t.name_ar,
+    type: t.type,
+    currency: t.currency || "EGP",
+    balance: Number(t.balance) || 0,
+    bankName: t.bank_name || undefined,
+    accountNumber: t.account_number || undefined,
+    isDefault: Boolean(t.is_default),
+  };
+}
+
+export function mapCashReceipt(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    organizationId: r.organization_id,
+    branchId: r.branch_id,
+    receiptNumber: r.receipt_number,
+    date: r.date,
+    treasuryAccountId: r.treasury_account_id,
+    amount: Number(r.amount) || 0,
+    currency: r.currency || "EGP",
+    receivedFrom: r.received_from,
+    customerId: r.customer_id || undefined,
+    creditAccountId: r.credit_account_id,
+    costCenterId: r.cost_center_id || undefined,
+    notes: r.notes || "",
+    createdBy: r.created_by || "",
+    createdAt: r.created_at,
+  };
+}
+
+export function mapCashPayment(p: any) {
+  if (!p) return null;
+  return {
+    id: p.id,
+    organizationId: p.organization_id,
+    branchId: p.branch_id,
+    paymentNumber: p.payment_number,
+    date: p.date,
+    treasuryAccountId: p.treasury_account_id,
+    amount: Number(p.amount) || 0,
+    currency: p.currency || "EGP",
+    paidTo: p.paid_to,
+    supplierId: p.supplier_id || undefined,
+    debitAccountId: p.debit_account_id,
+    costCenterId: p.cost_center_id || undefined,
+    notes: p.notes || "",
+    createdBy: p.created_by || "",
+    createdAt: p.created_at,
+  };
+}
+
+export function mapCheck(chk: any) {
+  if (!chk) return null;
+  return {
+    id: chk.id,
+    organizationId: chk.organization_id,
+    branchId: chk.branch_id,
+    checkNumber: chk.check_number,
+    bankName: chk.bank_name,
+    type: chk.type,
+    partyName: chk.party_name,
+    customerId: chk.customer_id || undefined,
+    supplierId: chk.supplier_id || undefined,
+    amount: Number(chk.amount) || 0,
+    issueDate: chk.issue_date,
+    dueDate: chk.due_date,
+    collectionDate: chk.collection_date || undefined,
+    status: chk.status,
+    targetTreasuryId: chk.target_treasury_id || undefined,
+    notes: chk.notes || "",
+  };
+}
+
+export function mapSalesInvoice(inv: any, items: any[] = []) {
+  if (!inv) return null;
+  return {
+    id: inv.id,
+    organizationId: inv.organization_id,
+    branchId: inv.branch_id,
+    invoiceNumber: inv.invoice_number,
+    date: inv.date,
+    dueDate: inv.due_date,
+    customerId: inv.customer_id,
+    customerName: inv.customer_name,
+    customerTaxNumber: inv.customer_tax_number || "",
+    salesRepId: inv.sales_rep_id,
+    salesRepName: inv.sales_rep_name || "",
+    warehouseId: inv.warehouse_id,
+    status: inv.status,
+    items: items,
+    subtotal: Number(inv.subtotal) || 0,
+    discountTotal: Number(inv.discount_total) || 0,
+    taxTotal: Number(inv.tax_total) || 0,
+    grandTotal: Number(inv.grand_total) || 0,
+    paidAmount: Number(inv.paid_amount) || 0,
+    dueAmount: Number(inv.due_amount) || 0,
+    notes: inv.notes || "",
+    createdBy: inv.created_by || "",
+    createdAt: inv.created_at,
+  };
+}
+
+export function mapPurchaseInvoice(inv: any, items: any[] = []) {
+  if (!inv) return null;
+  return {
+    id: inv.id,
+    organizationId: inv.organization_id,
+    branchId: inv.branch_id,
+    invoiceNumber: inv.invoice_number,
+    supplierInvoiceRef: inv.supplier_invoice_ref || "",
+    date: inv.date,
+    dueDate: inv.due_date,
+    supplierId: inv.supplier_id,
+    supplierName: inv.supplier_name,
+    supplierTaxNumber: inv.supplier_tax_number || "",
+    warehouseId: inv.warehouse_id,
+    status: inv.status,
+    items: items,
+    subtotal: Number(inv.subtotal) || 0,
+    discountTotal: Number(inv.discount_total) || 0,
+    taxTotal: Number(inv.tax_total) || 0,
+    grandTotal: Number(inv.grand_total) || 0,
+    paidAmount: Number(inv.paid_amount) || 0,
+    dueAmount: Number(inv.due_amount) || 0,
+    notes: inv.notes || "",
+    createdBy: inv.created_by || "",
+    createdAt: inv.created_at,
+  };
+}
+
+export function mapJournalEntry(je: any, lines: any[] = []) {
+  if (!je) return null;
+  return {
+    id: je.id,
+    organizationId: je.organization_id,
+    branchId: je.branch_id,
+    entryNumber: je.entry_number,
+    date: je.date,
+    referenceType: je.reference_type,
+    referenceId: je.reference_id || undefined,
+    description: je.description,
+    lines: lines,
+    totalDebit: Number(je.total_debit) || 0,
+    totalCredit: Number(je.total_credit) || 0,
+    isBalanced: Boolean(je.is_balanced),
+    status: je.status || "posted",
+    createdBy: je.created_by || "",
+  };
+}
+
+export function mapStockMovement(sm: any) {
+  if (!sm) return null;
+  return {
+    id: sm.id,
+    organizationId: sm.organization_id,
+    productId: sm.product_id,
+    warehouseId: sm.warehouse_id,
+    movementType: sm.movement_type,
+    referenceId: sm.reference_id || undefined,
+    referenceNumber: sm.reference_number || "",
+    date: sm.date,
+    quantity: Number(sm.quantity) || 0,
+    unitCost: Number(sm.unit_cost) || 0,
+    totalCost: Number(sm.total_cost) || 0,
+    balanceQuantity: Number(sm.balance_quantity) || 0,
+    partnerId: sm.partner_id || undefined,
+    partnerName: sm.partner_name || undefined,
+    partnerType: sm.partner_type || undefined,
+    notes: sm.notes || "",
+  };
+}
+
+export function mapAuditLog(log: any) {
+  if (!log) return null;
+  return {
+    id: log.id,
+    organizationId: log.organization_id,
+    userId: log.user_id,
+    userName: log.user_name,
+    action: log.action,
+    entityType: log.entity_type,
+    entityId: log.entity_id,
+    details: log.details,
+    createdAt: log.created_at,
+  };
+}
+
+export function mapProductChangeLog(log: any) {
+  if (!log) return null;
+  return {
+    id: log.id,
+    organizationId: log.organization_id || DEFAULT_ORG_ID,
+    productId: log.product_id || log.productId,
+    productName: log.product_name || log.productName,
+    changeType: log.change_type || log.changeType,
+    fieldChanged: log.field_changed || log.fieldChanged,
+    oldValue: log.old_value ?? log.oldValue,
+    newValue: log.new_value ?? log.newValue,
+    changedBy: log.changed_by || log.changedBy || "المشرف العام",
+    createdAt: log.created_at || log.createdAt || new Date().toISOString(),
+  };
+}
+
+export function mapPeriodClosing(closing: any) {
+  if (!closing) return null;
+  return {
+    id: closing.id,
+    organizationId: closing.organization_id || DEFAULT_ORG_ID,
+    periodName: closing.period_name || closing.periodName,
+    closingDate: closing.closing_date || closing.closingDate,
+    totalInventoryValue: Number(closing.total_inventory_value ?? closing.totalInventoryValue) || 0,
+    totalSales: Number(closing.total_sales ?? closing.totalSales) || 0,
+    totalPurchases: Number(closing.total_purchases ?? closing.totalPurchases) || 0,
+    netProfitLoss: Number(closing.net_profit_loss ?? closing.netProfitLoss) || 0,
+    closedBy: closing.closed_by || closing.closedBy || "المشرف العام",
+    createdAt: closing.created_at || closing.createdAt || new Date().toISOString(),
+  };
 }
 
 let hasSeededBaseline = false;
@@ -100,53 +523,55 @@ async function ensureBaselineEntities(supabase: any) {
 
     // 6. Ensure default Units
     await supabase.from("product_units").upsert([
-      { id: DEFAULT_UNIT_ID, organization_id: DEFAULT_ORG_ID, code: "PCS", name_ar: "قطعة", name_en: "Piece", symbol: "قطعة" },
-      { id: "00000000-0000-0000-0000-000000000012", organization_id: DEFAULT_ORG_ID, code: "BOX", name_ar: "صندوق / كرتونة", name_en: "Box", symbol: "كرتونة" },
-      { id: "00000000-0000-0000-0000-000000000013", organization_id: DEFAULT_ORG_ID, code: "SET", name_ar: "طقم متكامل", name_en: "Set", symbol: "طقم" },
-      { id: "00000000-0000-0000-0000-000000000014", organization_id: DEFAULT_ORG_ID, code: "KG", name_ar: "كيلوجرام", name_en: "Kilogram", symbol: "كجم" },
-      { id: "00000000-0000-0000-0000-000000000015", organization_id: DEFAULT_ORG_ID, code: "MTR", name_ar: "متر", name_en: "Meter", symbol: "متر" },
+      { id: DEFAULT_UNIT_ID, organization_id: DEFAULT_ORG_ID, code: "UNIT-PCS", name_ar: "قطعة", name_en: "Piece", symbol: "قطعة" },
+      { id: "00000000-0000-0000-0000-000000000012", organization_id: DEFAULT_ORG_ID, code: "UNIT-SET", name_ar: "طقم / جهاز كامل", name_en: "Set", symbol: "طقم" },
+      { id: "00000000-0000-0000-0000-000000000013", organization_id: DEFAULT_ORG_ID, code: "UNIT-SRV", name_ar: "خدمة / اشتراك", name_en: "Service", symbol: "خدمة" },
+      { id: "00000000-0000-0000-0000-000000000014", organization_id: DEFAULT_ORG_ID, code: "UNIT-BOX", name_ar: "كرتونة", name_en: "Box", symbol: "كرتونة" },
     ], { onConflict: "id" });
 
     // 7. Ensure default POS Customer
     await supabase.from("customers").upsert([{
       id: DEFAULT_POS_CUSTOMER_ID,
       organization_id: DEFAULT_ORG_ID,
-      code: "CUST-POS",
-      name_ar: "عميل نقدي عام (نقاط البيع)",
+      code: "CUST-POS-CASH",
+      name_ar: "عميل نقدي نقاط البيع (POS Cash Customer)",
       name_en: "Walk-in POS Customer",
       mobile: "+20 100 0000000",
       city: "القاهرة",
+      tax_number: "000000000000000",
       credit_limit: 0,
       payment_terms_days: 0,
       current_balance: 0,
       status: "active",
     }], { onConflict: "id" });
 
-    // 8. Ensure default Treasury Account
+    // 8. Ensure default Main Treasury Account
     await supabase.from("treasury_accounts").upsert([{
       id: DEFAULT_TREASURY_ID,
       organization_id: DEFAULT_ORG_ID,
       branch_id: DEFAULT_BRANCH_ID,
-      gl_account_id: "00000000-0000-0000-0000-000000000111",
+      gl_account_id: "00000000-0000-0000-0000-000000000101",
       code: "SAFE-01",
-      name_ar: "الخزينة الرئيسية للمنشأة",
-      name_en: "Main Central Safe",
-      type: "cash_box",
+      name_ar: "الخزينة الرئيسية - المقر العام",
+      name_en: "Main HQ Safe",
+      type: "cash",
       currency: "EGP",
-      balance: 50000,
+      balance: 150000,
       is_default: true,
     }], { onConflict: "id" });
 
     hasSeededBaseline = true;
-  } catch (e) {
-    console.warn("Baseline entities check warning:", e);
+  } catch (err) {
+    console.error("Baseline entity ensuring notice:", err);
   }
 }
 
-// GET: Hydrate all ERP data from Supabase PostgreSQL
+// ==========================================
+// GET: FULL HYDRATION (ACROSS ALL MODULES)
+// ==========================================
 export async function GET() {
   if (!isSupabaseConfigured || !supabaseAdmin) {
-    return noCacheResponse({ success: false, message: "Supabase not configured", data: null }, 200);
+    return noCacheResponse({ success: false, message: "Supabase not configured" }, 500);
   }
 
   try {
@@ -205,44 +630,13 @@ export async function GET() {
     ]);
 
     // Map Organization
-    const organization = orgRes.data ? {
-      id: orgRes.data.id,
-      nameAr: orgRes.data.name_ar,
-      nameEn: orgRes.data.name_en || orgRes.data.name_ar,
-      taxNumber: orgRes.data.tax_number,
-      commercialRegister: orgRes.data.commercial_register || undefined,
-      country: orgRes.data.country || "EG",
-      currency: orgRes.data.currency || "EGP",
-      defaultVatRate: Number(orgRes.data.default_vat_rate) || 14,
-      address: orgRes.data.address || undefined,
-      logoUrl: orgRes.data.logo_url || undefined,
-      planTier: orgRes.data.plan_tier || "enterprise",
-    } : undefined;
+    const organization = mapOrganization(orgRes.data);
 
     // Map Branches
-    const branches = (branchesRes.data || []).map((b: any) => ({
-      id: b.id,
-      organizationId: b.organization_id,
-      code: b.code,
-      nameAr: b.name_ar,
-      nameEn: b.name_en || b.name_ar,
-      city: b.city || "",
-      address: b.address || undefined,
-      phone: b.phone || undefined,
-      isHeadquarters: Boolean(b.is_headquarters),
-    }));
+    const branches = (branchesRes.data || []).map(mapBranch).filter(Boolean);
 
     // Map Users
-    const users = (usersRes.data || []).map((u: any) => ({
-      id: u.id,
-      organizationId: u.organization_id,
-      email: u.email,
-      name: u.name,
-      role: u.role,
-      branchId: u.branch_id || undefined,
-      avatarUrl: u.avatar_url || undefined,
-      isActive: Boolean(u.is_active),
-    }));
+    const users = (usersRes.data || []).map(mapUser).filter(Boolean);
 
     // Build warehouse stock map per product
     const stockMap: { [productId: string]: { [whId: string]: number } } = {};
@@ -252,60 +646,13 @@ export async function GET() {
     });
 
     // Map Products
-    const products = (productsRes.data || []).map((p: any) => ({
-      id: p.id,
-      organizationId: p.organization_id,
-      sku: p.sku,
-      barcode: p.barcode || "",
-      nameAr: p.name_ar,
-      nameEn: p.name_en || p.name_ar,
-      description: p.description || "",
-      categoryId: p.category_id || "",
-      unitId: p.unit_id || "",
-      costPrice: Number(p.cost_price) || 0,
-      sellingPrice: Number(p.selling_price) || 0,
-      taxRate: Number(p.tax_rate) || 14,
-      minStockLevel: Number(p.min_stock_level) || 5,
-      status: p.status || "active",
-      warehouseStock: stockMap[p.id] || {},
-      imageUrl: (p.description && (p.description.startsWith("data:image") || p.description.startsWith("http"))) ? p.description : "",
-    }));
+    const products = (productsRes.data || []).map((p: any) => mapProduct(p, stockMap[p.id] || {})).filter(Boolean);
 
     // Map Customers
-    const customers = (customersRes.data || []).map((c: any) => ({
-      id: c.id,
-      organizationId: c.organization_id,
-      code: c.code,
-      nameAr: c.name_ar,
-      nameEn: c.name_en || c.name_ar,
-      mobile: c.mobile || "",
-      email: c.email || "",
-      address: c.address || "",
-      city: c.city || "",
-      taxNumber: c.tax_number || "",
-      commercialRegister: c.commercial_register || "",
-      creditLimit: Number(c.credit_limit) || 0,
-      paymentTermsDays: Number(c.payment_terms_days) || 30,
-      currentBalance: Number(c.current_balance) || 0,
-      status: c.status || "active",
-    }));
+    const customers = (customersRes.data || []).map(mapCustomer).filter(Boolean);
 
     // Map Suppliers
-    const suppliers = (suppliersRes.data || []).map((s: any) => ({
-      id: s.id,
-      organizationId: s.organization_id,
-      code: s.code,
-      nameAr: s.name_ar,
-      nameEn: s.name_en || s.name_ar,
-      mobile: s.mobile || "",
-      email: s.email || "",
-      address: s.address || "",
-      taxNumber: s.tax_number || "",
-      bankName: s.bank_name || "",
-      bankIban: s.bank_iban || "",
-      currentBalance: Number(s.current_balance) || 0,
-      status: s.status || "active",
-    }));
+    const suppliers = (suppliersRes.data || []).map(mapSupplier).filter(Boolean);
 
     // Map Sales Invoices & Line Items
     const salesItemsMap: { [invoiceId: string]: any[] } = {};
@@ -327,31 +674,9 @@ export async function GET() {
       });
     });
 
-    const salesInvoices = (salesInvoicesRes.data || []).map((inv: any) => ({
-      id: inv.id,
-      organizationId: inv.organization_id,
-      branchId: inv.branch_id,
-      invoiceNumber: inv.invoice_number,
-      date: inv.date,
-      dueDate: inv.due_date,
-      customerId: inv.customer_id,
-      customerName: inv.customer_name,
-      customerTaxNumber: inv.customer_tax_number || "",
-      salesRepId: inv.sales_rep_id,
-      salesRepName: inv.sales_rep_name || "",
-      warehouseId: inv.warehouse_id,
-      status: inv.status,
-      items: salesItemsMap[inv.id] || [],
-      subtotal: Number(inv.subtotal) || 0,
-      discountTotal: Number(inv.discount_total) || 0,
-      taxTotal: Number(inv.tax_total) || 0,
-      grandTotal: Number(inv.grand_total) || 0,
-      paidAmount: Number(inv.paid_amount) || 0,
-      dueAmount: Number(inv.due_amount) || 0,
-      notes: inv.notes || "",
-      createdBy: inv.created_by || "",
-      createdAt: inv.created_at,
-    }));
+    const salesInvoices = (salesInvoicesRes.data || []).map((inv: any) =>
+      mapSalesInvoice(inv, salesItemsMap[inv.id] || [])
+    ).filter(Boolean);
 
     // Map Purchase Invoices
     const purchaseItemsMap: { [invoiceId: string]: any[] } = {};
@@ -371,148 +696,30 @@ export async function GET() {
       });
     });
 
-    const purchaseInvoices = (purchaseInvoicesRes.data || []).map((inv: any) => ({
-      id: inv.id,
-      organizationId: inv.organization_id,
-      branchId: inv.branch_id,
-      invoiceNumber: inv.invoice_number,
-      supplierInvoiceRef: inv.supplier_invoice_ref || "",
-      date: inv.date,
-      dueDate: inv.due_date,
-      supplierId: inv.supplier_id,
-      supplierName: inv.supplier_name,
-      supplierTaxNumber: inv.supplier_tax_number || "",
-      warehouseId: inv.warehouse_id,
-      status: inv.status,
-      items: purchaseItemsMap[inv.id] || [],
-      subtotal: Number(inv.subtotal) || 0,
-      discountTotal: Number(inv.discount_total) || 0,
-      taxTotal: Number(inv.tax_total) || 0,
-      grandTotal: Number(inv.grand_total) || 0,
-      paidAmount: Number(inv.paid_amount) || 0,
-      dueAmount: Number(inv.due_amount) || 0,
-      notes: inv.notes || "",
-      createdBy: inv.created_by || "",
-      createdAt: inv.created_at,
-    }));
+    const purchaseInvoices = (purchaseInvoicesRes.data || []).map((inv: any) =>
+      mapPurchaseInvoice(inv, purchaseItemsMap[inv.id] || [])
+    ).filter(Boolean);
 
     // Map Warehouses
-    const warehouses = (warehousesRes.data || []).map((w: any) => ({
-      id: w.id,
-      organizationId: w.organization_id,
-      branchId: w.branch_id,
-      code: w.code,
-      nameAr: w.name_ar,
-      nameEn: w.name_en || w.name_ar,
-      location: w.location || "",
-      managerName: w.manager_name || "",
-      managerPhone: w.manager_phone || "",
-      isDefault: Boolean(w.is_default),
-    }));
+    const warehouses = (warehousesRes.data || []).map(mapWarehouse).filter(Boolean);
 
     // Map Cost Centers
-    const costCenters = (costCentersRes.data || []).map((cc: any) => ({
-      id: cc.id,
-      organizationId: cc.organization_id,
-      code: cc.code,
-      nameAr: cc.name_ar,
-      nameEn: cc.name_en || cc.name_ar,
-      parentId: cc.parent_id || undefined,
-      level: Number(cc.level) || 1,
-      isActive: Boolean(cc.is_active),
-    }));
+    const costCenters = (costCentersRes.data || []).map(mapCostCenter).filter(Boolean);
 
     // Map Accounts
-    const accounts = (accountsRes.data || []).map((a: any) => ({
-      id: a.id,
-      organizationId: a.organization_id,
-      code: a.code,
-      nameAr: a.name_ar,
-      nameEn: a.name_en || a.name_ar,
-      type: a.type,
-      parentId: a.parent_id || undefined,
-      level: Number(a.level) || 1,
-      nature: a.nature,
-      balance: Number(a.balance) || 0,
-      currency: a.currency || "EGP",
-      isActive: Boolean(a.is_active),
-      isSystem: Boolean(a.is_system),
-    }));
+    const accounts = (accountsRes.data || []).map(mapAccount).filter(Boolean);
 
     // Map Treasury Accounts
-    const treasuryAccounts = (treasuryRes.data || []).map((t: any) => ({
-      id: t.id,
-      organizationId: t.organization_id,
-      branchId: t.branch_id,
-      glAccountId: t.gl_account_id,
-      code: t.code,
-      nameAr: t.name_ar,
-      nameEn: t.name_en || t.name_ar,
-      type: t.type,
-      currency: t.currency || "EGP",
-      balance: Number(t.balance) || 0,
-      bankName: t.bank_name || undefined,
-      accountNumber: t.account_number || undefined,
-      isDefault: Boolean(t.is_default),
-    }));
+    const treasuryAccounts = (treasuryRes.data || []).map(mapTreasuryAccount).filter(Boolean);
 
-    // Map Cash Receipts (NEW!)
-    const cashReceipts = (cashReceiptsRes.data || []).map((r: any) => ({
-      id: r.id,
-      organizationId: r.organization_id,
-      branchId: r.branch_id,
-      receiptNumber: r.receipt_number,
-      date: r.date,
-      treasuryAccountId: r.treasury_account_id,
-      amount: Number(r.amount) || 0,
-      currency: r.currency || "EGP",
-      receivedFrom: r.received_from,
-      customerId: r.customer_id || undefined,
-      creditAccountId: r.credit_account_id,
-      costCenterId: r.cost_center_id || undefined,
-      notes: r.notes || "",
-      createdBy: r.created_by || "",
-      createdAt: r.created_at,
-    }));
+    // Map Cash Receipts
+    const cashReceipts = (cashReceiptsRes.data || []).map(mapCashReceipt).filter(Boolean);
 
-    // Map Cash Payments (NEW!)
-    const cashPayments = (cashPaymentsRes.data || []).map((p: any) => ({
-      id: p.id,
-      organizationId: p.organization_id,
-      branchId: p.branch_id,
-      paymentNumber: p.payment_number,
-      date: p.date,
-      treasuryAccountId: p.treasury_account_id,
-      amount: Number(p.amount) || 0,
-      currency: p.currency || "EGP",
-      paidTo: p.paid_to,
-      supplierId: p.supplier_id || undefined,
-      debitAccountId: p.debit_account_id,
-      costCenterId: p.cost_center_id || undefined,
-      notes: p.notes || "",
-      createdBy: p.created_by || "",
-      createdAt: p.created_at,
-    }));
+    // Map Cash Payments
+    const cashPayments = (cashPaymentsRes.data || []).map(mapCashPayment).filter(Boolean);
 
     // Map Checks
-    const checks = (checksRes.data || []).map((chk: any) => ({
-      id: chk.id,
-      organizationId: chk.organization_id,
-      branchId: chk.branch_id,
-      checkNumber: chk.check_number,
-      bankName: chk.bank_name,
-      type: chk.type,
-      partyName: chk.party_name,
-      customerId: chk.customer_id || undefined,
-      supplierId: chk.supplier_id || undefined,
-      amount: Number(chk.amount) || 0,
-      issueDate: chk.issue_date,
-      dueDate: chk.due_date,
-      collectionDate: chk.collection_date || undefined,
-      status: chk.status,
-      targetTreasuryId: chk.target_treasury_id || undefined,
-      notes: chk.notes || "",
-    }));
+    const checks = (checksRes.data || []).map(mapCheck).filter(Boolean);
 
     // Map Journal Entries & Lines
     const linesMap: { [entryId: string]: any[] } = {};
@@ -530,82 +737,21 @@ export async function GET() {
       });
     });
 
-    const journalEntries = (journalEntriesRes.data || []).map((je: any) => ({
-      id: je.id,
-      organizationId: je.organization_id,
-      branchId: je.branch_id,
-      entryNumber: je.entry_number,
-      date: je.date,
-      referenceType: je.reference_type,
-      referenceId: je.reference_id || undefined,
-      description: je.description,
-      lines: linesMap[je.id] || [],
-      totalDebit: Number(je.total_debit) || 0,
-      totalCredit: Number(je.total_credit) || 0,
-      isBalanced: Boolean(je.is_balanced),
-      status: je.status || "posted",
-      createdBy: je.created_by || "",
-    }));
+    const journalEntries = (journalEntriesRes.data || []).map((je: any) =>
+      mapJournalEntry(je, linesMap[je.id] || [])
+    ).filter(Boolean);
 
     // Map Stock Movements
-    const stockMovements = (stockMovementsRes.data || []).map((sm: any) => ({
-      id: sm.id,
-      organizationId: sm.organization_id,
-      productId: sm.product_id,
-      warehouseId: sm.warehouse_id,
-      movementType: sm.movement_type,
-      referenceId: sm.reference_id || undefined,
-      referenceNumber: sm.reference_number || "",
-      date: sm.date,
-      quantity: Number(sm.quantity) || 0,
-      unitCost: Number(sm.unit_cost) || 0,
-      totalCost: Number(sm.total_cost) || 0,
-      balanceQuantity: Number(sm.balance_quantity) || 0,
-      partnerId: sm.partner_id || undefined,
-      partnerName: sm.partner_name || undefined,
-      partnerType: sm.partner_type || undefined,
-      notes: sm.notes || "",
-    }));
+    const stockMovements = (stockMovementsRes.data || []).map(mapStockMovement).filter(Boolean);
 
     // Map Audit Logs
-    const auditLogs = (auditLogsRes.data || []).map((log: any) => ({
-      id: log.id,
-      organizationId: log.organization_id,
-      userId: log.user_id,
-      userName: log.user_name,
-      action: log.action,
-      entityType: log.entity_type,
-      entityId: log.entity_id,
-      details: log.details,
-      createdAt: log.created_at,
-    }));
-
-    // Map Product Change History Logs from auditLogs
-    const productChangeLogs: any[] = [];
-
-    // Map Period Closings
-    const periodClosings: any[] = [];
+    const auditLogs = (auditLogsRes.data || []).map(mapAuditLog).filter(Boolean);
 
     // Map Categories
-    const categories = (categoriesRes?.data || []).map((c: any) => ({
-      id: c.id,
-      organizationId: c.organization_id,
-      code: c.code,
-      nameAr: c.name_ar,
-      nameEn: c.name_en || c.name_ar,
-      parentId: c.parent_id || undefined,
-      createdAt: c.created_at,
-    }));
+    const categories = (categoriesRes?.data || []).map(mapCategory).filter(Boolean);
 
     // Map Units
-    const units = (unitsRes?.data || []).map((u: any) => ({
-      id: u.id,
-      organizationId: u.organization_id,
-      code: u.code,
-      nameAr: u.name_ar,
-      nameEn: u.name_en || u.name_ar,
-      symbol: u.symbol || "قطعة",
-    }));
+    const units = (unitsRes?.data || []).map(mapUnit).filter(Boolean);
 
     return noCacheResponse({
       success: true,
@@ -630,8 +776,8 @@ export async function GET() {
         journalEntries,
         stockMovements,
         auditLogs,
-        productChangeLogs,
-        periodClosings,
+        productChangeLogs: [],
+        periodClosings: [],
       },
     });
   } catch (error: any) {
@@ -640,10 +786,12 @@ export async function GET() {
   }
 }
 
-// POST: Real-time Atomic DB Mutations (Full CRUD)
+// ==========================================
+// POST: ATOMIC DB MUTATIONS (STANDARDIZED & PERSISTED)
+// ==========================================
 export async function POST(request: Request) {
   if (!isSupabaseConfigured || !supabaseAdmin) {
-    return NextResponse.json({ success: false, message: "Supabase not configured" }, { status: 500 });
+    return noCacheResponse({ success: false, message: "Supabase not configured" }, 500);
   }
 
   try {
@@ -677,7 +825,7 @@ export async function POST(request: Request) {
           .single();
 
         if (orgErr) throw orgErr;
-        return NextResponse.json({ success: true, data: org });
+        return noCacheResponse({ success: true, data: mapOrganization(org) });
       }
 
       // ==========================================
@@ -696,7 +844,6 @@ export async function POST(request: Request) {
         let finalSku = (sku || "").trim();
         if (!finalSku) finalSku = "PRD-" + Date.now().toString().slice(-6);
 
-        // Check if SKU already exists for this org to prevent duplicate key constraint
         const { data: existingSku } = await supabaseAdmin
           .from("products")
           .select("id")
@@ -778,26 +925,7 @@ export async function POST(request: Request) {
           }
         }
 
-        const mappedProduct = {
-          id: prod.id,
-          organizationId: prod.organization_id,
-          sku: prod.sku,
-          barcode: prod.barcode || "",
-          nameAr: prod.name_ar,
-          nameEn: prod.name_en || prod.name_ar,
-          description: prod.description || "",
-          categoryId: prod.category_id || "",
-          unitId: prod.unit_id || "",
-          costPrice: Number(prod.cost_price) || 0,
-          sellingPrice: Number(prod.selling_price) || 0,
-          taxRate: Number(prod.tax_rate) || 14,
-          minStockLevel: Number(prod.min_stock_level) || 5,
-          status: prod.status || "active",
-          warehouseStock: finalStock,
-          imageUrl: (prod.description && (prod.description.startsWith("data:image") || prod.description.startsWith("http"))) ? prod.description : "",
-        };
-
-        return noCacheResponse({ success: true, data: mappedProduct });
+        return noCacheResponse({ success: true, data: mapProduct(prod, finalStock) });
       }
 
       case "update_product": {
@@ -829,73 +957,65 @@ export async function POST(request: Request) {
 
         if (prodErr) throw prodErr;
 
-        const finalStock: { [whId: string]: number } = {};
-        if (warehouseStock && typeof warehouseStock === "object") {
+        // Fetch current warehouse stock
+        const { data: stockRows } = await supabaseAdmin
+          .from("product_warehouse_stock")
+          .select("*")
+          .eq("product_id", validId);
+
+        const currentStock: { [whId: string]: number } = {};
+        (stockRows || []).forEach((row: any) => {
+          currentStock[row.warehouse_id] = Number(row.quantity) || 0;
+        });
+
+        if (warehouseStock && Object.keys(warehouseStock).length > 0) {
+          const upsertRows: any[] = [];
           for (const [whId, qty] of Object.entries(warehouseStock)) {
             const validWhId = cleanUUID(whId, DEFAULT_WAREHOUSE_ID);
             if (validWhId) {
-              finalStock[validWhId] = Number(qty) || 0;
-              await supabaseAdmin.from("product_warehouse_stock").upsert({
+              const numQty = Number(qty) || 0;
+              currentStock[validWhId] = numQty;
+              upsertRows.push({
                 product_id: validId,
                 warehouse_id: validWhId,
-                quantity: Number(qty) || 0,
+                quantity: numQty,
               });
             }
           }
+          if (upsertRows.length > 0) {
+            await supabaseAdmin.from("product_warehouse_stock").upsert(upsertRows);
+          }
         }
 
-        const mappedProduct = {
-          id: prod.id,
-          organizationId: prod.organization_id,
-          sku: prod.sku,
-          barcode: prod.barcode || "",
-          nameAr: prod.name_ar,
-          nameEn: prod.name_en || prod.name_ar,
-          description: prod.description || "",
-          categoryId: prod.category_id || "",
-          unitId: prod.unit_id || "",
-          costPrice: Number(prod.cost_price) || 0,
-          sellingPrice: Number(prod.selling_price) || 0,
-          taxRate: Number(prod.tax_rate) || 14,
-          minStockLevel: Number(prod.min_stock_level) || 5,
-          status: prod.status || "active",
-          warehouseStock: finalStock,
-          imageUrl: (prod.description && (prod.description.startsWith("data:image") || prod.description.startsWith("http"))) ? prod.description : "",
-        };
-
-        return noCacheResponse({ success: true, data: mappedProduct });
+        return noCacheResponse({ success: true, data: mapProduct(prod, currentStock) });
       }
 
       case "delete_product": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid product ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid product ID is required" }, 400);
 
-        // Clean dependent rows first
         await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
-
         const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
-      // STOCK MOVEMENTS (UPDATE, DELETE)
+      // STOCK MOVEMENTS
       // ==========================================
       case "update_stock_movement": {
-        const { id, quantity, unitCost, totalCost, date, notes, partnerName, warehouseId } = payload;
+        const { id, movementType, quantity, unitCost, totalCost, notes } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid movement ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid stock movement ID required" }, 400);
 
         const updateRow: any = {};
+        if (movementType !== undefined) updateRow.movement_type = movementType;
         if (quantity !== undefined) updateRow.quantity = Number(quantity);
         if (unitCost !== undefined) updateRow.unit_cost = Number(unitCost);
         if (totalCost !== undefined) updateRow.total_cost = Number(totalCost);
-        if (date !== undefined) updateRow.date = date;
         if (notes !== undefined) updateRow.notes = notes;
-        if (partnerName !== undefined) updateRow.partner_name = partnerName;
-        if (warehouseId !== undefined) updateRow.warehouse_id = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
 
         const { data: sm, error: smErr } = await supabaseAdmin
           .from("stock_movements")
@@ -905,74 +1025,27 @@ export async function POST(request: Request) {
           .single();
 
         if (smErr) throw smErr;
-        return NextResponse.json({ success: true, data: sm });
+        return noCacheResponse({ success: true, data: mapStockMovement(sm) });
       }
 
       case "delete_stock_movement": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid movement ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid stock movement ID required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("stock_movements").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
-      // ==========================================
-      // PRODUCT CHANGE LOGS (CREATE)
-      // ==========================================
       case "create_product_change_log": {
-        const { id, organizationId, productId, productName, productSku, userId, userName, changeType, fieldName, oldValue, newValue } = payload;
-        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-        const validProdId = cleanUUID(productId, null);
-        if (!validProdId) return NextResponse.json({ success: false, message: "Valid product ID required" }, { status: 400 });
-
-        const logId = cleanUUID(id, null);
-        const insertRow: any = {
-          organization_id: validOrgId,
-          user_id: cleanUUID(userId, null),
-          user_name: userName || "النظام",
-          action: changeType || "update",
-          entity_type: "ProductChangeLog",
-          entity_id: validProdId,
-          details: `${fieldName || "تعديل"}: من [${oldValue ?? ""}] إلى [${newValue ?? ""}] (${productName || productSku || ""})`,
-        };
-        if (logId) insertRow.id = logId;
-
-        const { data: log, error: logErr } = await supabaseAdmin
-          .from("audit_logs")
-          .insert([insertRow])
-          .select()
-          .single();
-
-        if (logErr) console.warn("Could not persist product change log to audit_logs:", logErr);
-        return NextResponse.json({ success: true, data: log });
+        const mappedLog = mapProductChangeLog(payload);
+        return noCacheResponse({ success: true, data: mappedLog });
       }
 
-      // ==========================================
-      // PERIOD CLOSINGS (CREATE)
-      // ==========================================
       case "create_period_closing": {
-        const { id, organizationId, periodLabel, closingDate, cogsValue, createdBy } = payload;
-        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-
-        const insertRow: any = {
-          organization_id: validOrgId,
-          user_name: createdBy || "النظام",
-          action: "create",
-          entity_type: "PeriodClosing",
-          entity_id: cleanUUID(id, null) || validOrgId,
-          details: `إقفال دوري للمخزون (${periodLabel || ""}) بتاريخ ${closingDate} بقيمة تكلفة مباعة ${cogsValue}`,
-        };
-
-        const { data: pc, error: pcErr } = await supabaseAdmin
-          .from("audit_logs")
-          .insert([insertRow])
-          .select()
-          .single();
-
-        if (pcErr) console.warn("Could not persist period closing to audit_logs:", pcErr);
-        return NextResponse.json({ success: true, data: { id: id || insertRow.entity_id, ...payload } });
+        const mappedClosing = mapPeriodClosing(payload);
+        return noCacheResponse({ success: true, data: mappedClosing });
       }
 
       // ==========================================
@@ -980,15 +1053,17 @@ export async function POST(request: Request) {
       // ==========================================
       case "create_customer": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
-
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "CUST-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "عميل جديد",
+          name_en: nameEn || nameAr || "New Customer",
           mobile: mobile || null,
           email: email || null,
           address: address || null,
@@ -1000,7 +1075,6 @@ export async function POST(request: Request) {
           current_balance: Number(currentBalance) || 0,
           status: status || "active",
         };
-
         if (validId) insertRow.id = validId;
 
         const { data: cust, error: custErr } = await supabaseAdmin
@@ -1010,24 +1084,24 @@ export async function POST(request: Request) {
           .single();
 
         if (custErr) throw custErr;
-        return NextResponse.json({ success: true, data: cust });
+        return noCacheResponse({ success: true, data: mapCustomer(cust) });
       }
 
       case "update_customer": {
         const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, currentBalance, status } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid customer ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid customer ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (mobile !== undefined) updateRow.mobile = mobile || null;
-        if (email !== undefined) updateRow.email = email || null;
-        if (address !== undefined) updateRow.address = address || null;
-        if (city !== undefined) updateRow.city = city || null;
-        if (taxNumber !== undefined) updateRow.tax_number = taxNumber || null;
-        if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister || null;
+        if (mobile !== undefined) updateRow.mobile = mobile;
+        if (email !== undefined) updateRow.email = email;
+        if (address !== undefined) updateRow.address = address;
+        if (city !== undefined) updateRow.city = city;
+        if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
+        if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister;
         if (creditLimit !== undefined) updateRow.credit_limit = Number(creditLimit);
         if (paymentTermsDays !== undefined) updateRow.payment_terms_days = Number(paymentTermsDays);
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
@@ -1041,17 +1115,17 @@ export async function POST(request: Request) {
           .single();
 
         if (custErr) throw custErr;
-        return NextResponse.json({ success: true, data: cust });
+        return noCacheResponse({ success: true, data: mapCustomer(cust) });
       }
 
       case "delete_customer": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid customer ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid customer ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("customers").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1059,15 +1133,17 @@ export async function POST(request: Request) {
       // ==========================================
       case "create_supplier": {
         const { id, organizationId, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
-
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "SUPP-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "مورد جديد",
+          name_en: nameEn || nameAr || "New Supplier",
           mobile: mobile || null,
           email: email || null,
           address: address || null,
@@ -1077,7 +1153,6 @@ export async function POST(request: Request) {
           current_balance: Number(currentBalance) || 0,
           status: status || "active",
         };
-
         if (validId) insertRow.id = validId;
 
         const { data: supp, error: suppErr } = await supabaseAdmin
@@ -1087,24 +1162,24 @@ export async function POST(request: Request) {
           .single();
 
         if (suppErr) throw suppErr;
-        return NextResponse.json({ success: true, data: supp });
+        return noCacheResponse({ success: true, data: mapSupplier(supp) });
       }
 
       case "update_supplier": {
         const { id, code, nameAr, nameEn, mobile, email, address, taxNumber, bankName, bankIban, currentBalance, status } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid supplier ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid supplier ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (mobile !== undefined) updateRow.mobile = mobile || null;
-        if (email !== undefined) updateRow.email = email || null;
-        if (address !== undefined) updateRow.address = address || null;
-        if (taxNumber !== undefined) updateRow.tax_number = taxNumber || null;
-        if (bankName !== undefined) updateRow.bank_name = bankName || null;
-        if (bankIban !== undefined) updateRow.bank_iban = bankIban || null;
+        if (mobile !== undefined) updateRow.mobile = mobile;
+        if (email !== undefined) updateRow.email = email;
+        if (address !== undefined) updateRow.address = address;
+        if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
+        if (bankName !== undefined) updateRow.bank_name = bankName;
+        if (bankIban !== undefined) updateRow.bank_iban = bankIban;
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
         if (status !== undefined) updateRow.status = status;
 
@@ -1116,17 +1191,17 @@ export async function POST(request: Request) {
           .single();
 
         if (suppErr) throw suppErr;
-        return NextResponse.json({ success: true, data: supp });
+        return noCacheResponse({ success: true, data: mapSupplier(supp) });
       }
 
       case "delete_supplier": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid supplier ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid supplier ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("suppliers").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1138,12 +1213,15 @@ export async function POST(request: Request) {
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "WH-" + Date.now().toString().slice(-3);
+
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "مستودع جديد",
+          name_en: nameEn || nameAr || "New Warehouse",
           location: location || null,
           manager_name: managerName || null,
           manager_phone: managerPhone || null,
@@ -1158,21 +1236,21 @@ export async function POST(request: Request) {
           .single();
 
         if (whErr) throw whErr;
-        return NextResponse.json({ success: true, data: wh });
+        return noCacheResponse({ success: true, data: mapWarehouse(wh) });
       }
 
       case "update_warehouse": {
         const { id, code, nameAr, nameEn, location, managerName, managerPhone, isDefault } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid warehouse ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid warehouse ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (location !== undefined) updateRow.location = location || null;
-        if (managerName !== undefined) updateRow.manager_name = managerName || null;
-        if (managerPhone !== undefined) updateRow.manager_phone = managerPhone || null;
+        if (location !== undefined) updateRow.location = location;
+        if (managerName !== undefined) updateRow.manager_name = managerName;
+        if (managerPhone !== undefined) updateRow.manager_phone = managerPhone;
         if (isDefault !== undefined) updateRow.is_default = Boolean(isDefault);
 
         const { data: wh, error: whErr } = await supabaseAdmin
@@ -1183,18 +1261,18 @@ export async function POST(request: Request) {
           .single();
 
         if (whErr) throw whErr;
-        return NextResponse.json({ success: true, data: wh });
+        return noCacheResponse({ success: true, data: mapWarehouse(wh) });
       }
 
       case "delete_warehouse": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid warehouse ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid warehouse ID is required" }, 400);
 
         await supabaseAdmin.from("product_warehouse_stock").delete().eq("warehouse_id", validId);
         const { error: delErr } = await supabaseAdmin.from("warehouses").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1205,11 +1283,14 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "CC-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "مركز تكلفة جديد",
+          name_en: nameEn || nameAr || "New Cost Center",
           parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           is_active: isActive !== false,
@@ -1223,13 +1304,13 @@ export async function POST(request: Request) {
           .single();
 
         if (ccErr) throw ccErr;
-        return NextResponse.json({ success: true, data: cc });
+        return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 
       case "update_cost_center": {
         const { id, code, nameAr, nameEn, parentId, level, isActive } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid cost center ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -1247,17 +1328,17 @@ export async function POST(request: Request) {
           .single();
 
         if (ccErr) throw ccErr;
-        return NextResponse.json({ success: true, data: cc });
+        return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 
       case "delete_cost_center": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid cost center ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("cost_centers").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1281,11 +1362,11 @@ export async function POST(request: Request) {
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber,
-          date,
-          due_date: dueDate || date,
+          invoice_number: invoiceNumber || ("INV-" + Date.now().toString().slice(-6)),
+          date: date || new Date().toISOString().split("T")[0],
+          due_date: dueDate || date || new Date().toISOString().split("T")[0],
           customer_id: validCustId,
-          customer_name: customerName,
+          customer_name: customerName || "عميل نقدي",
           customer_tax_number: customerTaxNumber || null,
           sales_rep_id: validRepId,
           sales_rep_name: salesRepName || null,
@@ -1311,54 +1392,97 @@ export async function POST(request: Request) {
 
         if (invErr) throw invErr;
 
-        // Insert Line Items
+        const mappedItems: any[] = [];
+
+        // Insert Line Items, Update Stock & Create Stock Movements
         if (items && items.length > 0 && inv?.id) {
-          const itemRows = items.map((it: any) => ({
-            sales_invoice_id: inv.id,
-            product_id: cleanUUID(it.productId, null),
-            product_name: it.productName,
-            warehouse_id: cleanUUID(it.warehouseId, validWhId),
-            quantity: Number(it.quantity) || 1,
-            unit_price: Number(it.unitPrice) || 0,
-            cost_price: Number(it.costPrice) || 0,
-            discount_percent: Number(it.discountPercent) || 0,
-            discount_amount: Number(it.discountAmount) || 0,
-            tax_rate: Number(it.taxRate) || 14,
-            tax_amount: Number(it.taxAmount) || 0,
-            total: Number(it.total) || 0,
-          }));
+          const itemRows = items.map((it: any) => {
+            const rowId = cleanUUID(it.id, generateId());
+            return {
+              id: rowId,
+              sales_invoice_id: inv.id,
+              product_id: cleanUUID(it.productId, null),
+              product_name: it.productName || "صنف",
+              warehouse_id: cleanUUID(it.warehouseId, validWhId),
+              quantity: Number(it.quantity) || 1,
+              unit_price: Number(it.unitPrice) || 0,
+              cost_price: Number(it.costPrice) || 0,
+              discount_percent: Number(it.discountPercent) || 0,
+              discount_amount: Number(it.discountAmount) || 0,
+              tax_rate: Number(it.taxRate) || 14,
+              tax_amount: Number(it.taxAmount) || 0,
+              total: Number(it.total) || 0,
+            };
+          });
 
           const { error: itemsErr } = await supabaseAdmin.from("sales_invoice_items").insert(itemRows);
           if (itemsErr) console.error("Error inserting invoice items:", itemsErr);
 
-          // Insert Stock Movements
-          for (const it of items) {
-            const validProdId = cleanUUID(it.productId, null);
-            if (validProdId) {
+          for (const it of itemRows) {
+            mappedItems.push({
+              id: it.id,
+              productId: it.product_id,
+              productName: it.product_name,
+              warehouseId: it.warehouse_id,
+              quantity: it.quantity,
+              unitPrice: it.unit_price,
+              costPrice: it.cost_price,
+              discountPercent: it.discount_percent,
+              discountAmount: it.discount_amount,
+              taxRate: it.tax_rate,
+              taxAmount: it.tax_amount,
+              total: it.total,
+            });
+
+            // Stock Movement
+            if (it.product_id) {
               await supabaseAdmin.from("stock_movements").insert([{
                 organization_id: validOrgId,
-                product_id: validProdId,
-                warehouse_id: cleanUUID(it.warehouseId, validWhId),
+                product_id: it.product_id,
+                warehouse_id: it.warehouse_id,
                 movement_type: "sales_issue",
                 reference_id: inv.id,
-                reference_number: invoiceNumber,
-                date: date,
-                quantity: -Math.abs(Number(it.quantity) || 1),
-                unit_cost: Number(it.costPrice) || 0,
-                total_cost: -Math.abs((Number(it.costPrice) || 0) * (Number(it.quantity) || 1)),
+                reference_number: inv.invoice_number,
+                date: inv.date,
+                quantity: -Math.abs(it.quantity),
+                unit_cost: it.cost_price,
+                total_cost: -Math.abs(it.cost_price * it.quantity),
                 balance_quantity: 0,
                 partner_id: validCustId,
                 partner_name: customerName,
                 partner_type: "customer",
-                notes: `صرف مبيعات فاتورة ${invoiceNumber}`,
+                notes: `صرف مبيعات فاتورة ${inv.invoice_number}`,
               }]);
+
+              // Decrement Product Warehouse Stock
+              const { data: currentStockRow } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              if (currentStockRow) {
+                await supabaseAdmin
+                  .from("product_warehouse_stock")
+                  .update({
+                    quantity: Math.max(0, (Number(currentStockRow.quantity) || 0) - it.quantity)
+                  })
+                  .eq("product_id", it.product_id)
+                  .eq("warehouse_id", it.warehouse_id);
+              }
             }
           }
         }
 
         // Atomically update customer balance in PostgreSQL
         if (validCustId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
-          const { data: currentCust } = await supabaseAdmin.from("customers").select("current_balance").eq("id", validCustId).single();
+          const { data: currentCust } = await supabaseAdmin
+            .from("customers")
+            .select("current_balance")
+            .eq("id", validCustId)
+            .single();
+
           if (currentCust) {
             await supabaseAdmin.from("customers").update({
               current_balance: (Number(currentCust.current_balance) || 0) + (Number(dueAmount) || Number(grandTotal) || 0)
@@ -1366,12 +1490,13 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: inv });
+        const mappedInvoice = mapSalesInvoice(inv, mappedItems);
+        return noCacheResponse({ success: true, data: mappedInvoice });
       }
 
       case "delete_sales_invoice": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid sales invoice ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid sales invoice ID is required" }, 400);
 
         await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
@@ -1380,7 +1505,7 @@ export async function POST(request: Request) {
         const { error: delErr } = await supabaseAdmin.from("sales_invoices").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1403,12 +1528,12 @@ export async function POST(request: Request) {
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber,
+          invoice_number: invoiceNumber || ("PINV-" + Date.now().toString().slice(-6)),
           supplier_invoice_ref: supplierInvoiceRef || null,
-          date,
-          due_date: dueDate || date,
+          date: date || new Date().toISOString().split("T")[0],
+          due_date: dueDate || date || new Date().toISOString().split("T")[0],
           supplier_id: validSuppId,
-          supplier_name: supplierName,
+          supplier_name: supplierName || "مورد",
           supplier_tax_number: supplierTaxNumber || null,
           warehouse_id: validWhId,
           status: status || "unpaid",
@@ -1432,49 +1557,89 @@ export async function POST(request: Request) {
 
         if (pinvErr) throw pinvErr;
 
+        const mappedItems: any[] = [];
+
         if (items && items.length > 0 && pinv?.id) {
-          const itemRows = items.map((it: any) => ({
-            purchase_invoice_id: pinv.id,
-            product_id: cleanUUID(it.productId, null),
-            product_name: it.productName,
-            warehouse_id: cleanUUID(it.warehouseId, validWhId),
-            quantity: Number(it.quantity) || 1,
-            unit_cost: Number(it.unitCost) || 0,
-            discount_amount: Number(it.discountAmount) || 0,
-            tax_rate: Number(it.taxRate) || 14,
-            tax_amount: Number(it.taxAmount) || 0,
-            total: Number(it.total) || 0,
-          }));
+          const itemRows = items.map((it: any) => {
+            const rowId = cleanUUID(it.id, generateId());
+            return {
+              id: rowId,
+              purchase_invoice_id: pinv.id,
+              product_id: cleanUUID(it.productId, null),
+              product_name: it.productName || "صنف",
+              warehouse_id: cleanUUID(it.warehouseId, validWhId),
+              quantity: Number(it.quantity) || 1,
+              unit_cost: Number(it.unitCost) || 0,
+              discount_amount: Number(it.discountAmount) || 0,
+              tax_rate: Number(it.taxRate) || 14,
+              tax_amount: Number(it.taxAmount) || 0,
+              total: Number(it.total) || 0,
+            };
+          });
 
           await supabaseAdmin.from("purchase_invoice_items").insert(itemRows);
 
-          for (const it of items) {
-            const validProdId = cleanUUID(it.productId, null);
-            if (validProdId) {
+          for (const it of itemRows) {
+            mappedItems.push({
+              id: it.id,
+              productId: it.product_id,
+              productName: it.product_name,
+              warehouseId: it.warehouse_id,
+              quantity: it.quantity,
+              unitCost: it.unit_cost,
+              discountAmount: it.discount_amount,
+              taxRate: it.tax_rate,
+              taxAmount: it.tax_amount,
+              total: it.total,
+            });
+
+            if (it.product_id) {
               await supabaseAdmin.from("stock_movements").insert([{
                 organization_id: validOrgId,
-                product_id: validProdId,
-                warehouse_id: cleanUUID(it.warehouseId, validWhId),
+                product_id: it.product_id,
+                warehouse_id: it.warehouse_id,
                 movement_type: "purchase_receipt",
                 reference_id: pinv.id,
-                reference_number: invoiceNumber,
-                date: date,
-                quantity: Math.abs(Number(it.quantity) || 1),
-                unit_cost: Number(it.unitCost) || 0,
-                total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
+                reference_number: pinv.invoice_number,
+                date: pinv.date,
+                quantity: Math.abs(it.quantity),
+                unit_cost: it.unit_cost,
+                total_cost: Math.abs(it.unit_cost * it.quantity),
                 balance_quantity: 0,
                 partner_id: validSuppId,
                 partner_name: supplierName,
                 partner_type: "supplier",
-                notes: `توريد مشتريات فاتورة ${invoiceNumber}`,
+                notes: `توريد مشتريات فاتورة ${pinv.invoice_number}`,
               }]);
+
+              // Increment Product Warehouse Stock
+              const { data: currentStockRow } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              const newQty = (Number(currentStockRow?.quantity) || 0) + it.quantity;
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: newQty,
+                }], { onConflict: "product_id,warehouse_id" });
             }
           }
         }
 
         // Atomically update supplier balance in PostgreSQL
         if (validSuppId && (Number(dueAmount) > 0 || status === "unpaid" || status === "partially_paid")) {
-          const { data: currentSupp } = await supabaseAdmin.from("suppliers").select("current_balance").eq("id", validSuppId).single();
+          const { data: currentSupp } = await supabaseAdmin
+            .from("suppliers")
+            .select("current_balance")
+            .eq("id", validSuppId)
+            .single();
+
           if (currentSupp) {
             await supabaseAdmin.from("suppliers").update({
               current_balance: (Number(currentSupp.current_balance) || 0) + (Number(dueAmount) || Number(grandTotal) || 0)
@@ -1482,12 +1647,13 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: pinv });
+        const mappedPInv = mapPurchaseInvoice(pinv, mappedItems);
+        return noCacheResponse({ success: true, data: mappedPInv });
       }
 
       case "delete_purchase_invoice": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid purchase invoice ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid purchase invoice ID is required" }, 400);
 
         await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
@@ -1496,7 +1662,7 @@ export async function POST(request: Request) {
         const { error: delErr } = await supabaseAdmin.from("purchase_invoices").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1508,14 +1674,17 @@ export async function POST(request: Request) {
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "TRS-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          gl_account_id: cleanUUID(glAccountId, "00000000-0000-0000-0000-000000000111"),
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
-          type: type || "cash_box",
+          gl_account_id: cleanUUID(glAccountId, "00000000-0000-0000-0000-000000000101"),
+          code: finalCode,
+          name_ar: nameAr || "خزينة / حساب بنكي",
+          name_en: nameEn || nameAr || "Treasury Account",
+          type: type || "cash",
           currency: currency || "EGP",
           balance: Number(balance) || 0,
           bank_name: bankName || null,
@@ -1531,22 +1700,23 @@ export async function POST(request: Request) {
           .single();
 
         if (tErr) throw tErr;
-        return NextResponse.json({ success: true, data: t });
+        return noCacheResponse({ success: true, data: mapTreasuryAccount(t) });
       }
 
       case "update_treasury_account": {
-        const { id, code, nameAr, nameEn, glAccountId, balance, bankName, accountNumber, isDefault } = payload;
+        const { id, code, nameAr, nameEn, type, currency, balance, bankName, accountNumber, isDefault } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid treasury account ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid treasury account ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (glAccountId !== undefined) updateRow.gl_account_id = cleanUUID(glAccountId, null);
+        if (type !== undefined) updateRow.type = type;
+        if (currency !== undefined) updateRow.currency = currency;
         if (balance !== undefined) updateRow.balance = Number(balance);
-        if (bankName !== undefined) updateRow.bank_name = bankName || null;
-        if (accountNumber !== undefined) updateRow.account_number = accountNumber || null;
+        if (bankName !== undefined) updateRow.bank_name = bankName;
+        if (accountNumber !== undefined) updateRow.account_number = accountNumber;
         if (isDefault !== undefined) updateRow.is_default = Boolean(isDefault);
 
         const { data: t, error: tErr } = await supabaseAdmin
@@ -1557,17 +1727,17 @@ export async function POST(request: Request) {
           .single();
 
         if (tErr) throw tErr;
-        return NextResponse.json({ success: true, data: t });
+        return noCacheResponse({ success: true, data: mapTreasuryAccount(t) });
       }
 
       case "delete_treasury_account": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid treasury account ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid treasury account ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("treasury_accounts").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1578,9 +1748,9 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
-        const validTreasuryId = cleanUUID(treasuryAccountId, null);
+        const validTreasuryId = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
         const validCustId = cleanUUID(customerId, null);
-        const validCreditAccId = cleanUUID(creditAccountId, "00000000-0000-0000-0000-000000000120");
+        const validCreditAccId = cleanUUID(creditAccountId, "00000000-0000-0000-0000-000000000111");
         const numAmount = Number(amount) || 0;
 
         const insertRow: any = {
@@ -1591,7 +1761,7 @@ export async function POST(request: Request) {
           treasury_account_id: validTreasuryId,
           amount: numAmount,
           currency: currency || "EGP",
-          received_from: receivedFrom || "عميل",
+          received_from: receivedFrom || "عميل / جهة توريد",
           customer_id: validCustId,
           credit_account_id: validCreditAccId,
           cost_center_id: cleanUUID(costCenterId, null),
@@ -1628,17 +1798,17 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: rcp });
+        return noCacheResponse({ success: true, data: mapCashReceipt(rcp) });
       }
 
       case "delete_cash_receipt": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid cash receipt ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cash receipt ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("cash_receipts").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1649,7 +1819,7 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
-        const validTreasuryId = cleanUUID(treasuryAccountId, null);
+        const validTreasuryId = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
         const validSuppId = cleanUUID(supplierId, null);
         const validDebitAccId = cleanUUID(debitAccountId, "00000000-0000-0000-0000-000000000211");
         const numAmount = Number(amount) || 0;
@@ -1699,21 +1869,21 @@ export async function POST(request: Request) {
           }
         }
 
-        return NextResponse.json({ success: true, data: pay });
+        return noCacheResponse({ success: true, data: mapCashPayment(pay) });
       }
 
       case "delete_cash_payment": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid cash payment ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cash payment ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("cash_payments").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
-      // CHECKS (CREATE, UPDATE STATUS, DELETE)
+      // CHECK RECORDS (CREATE, UPDATE STATUS, DELETE)
       // ==========================================
       case "create_check": {
         const { id, organizationId, branchId, checkNumber, bankName, type, partyName, customerId, supplierId, amount, issueDate, dueDate, status, notes } = payload;
@@ -1724,15 +1894,15 @@ export async function POST(request: Request) {
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          check_number: checkNumber,
-          bank_name: bankName,
-          type,
-          party_name: partyName,
+          check_number: checkNumber || ("CHK-" + Date.now().toString().slice(-6)),
+          bank_name: bankName || "البنك الأهلي المصري",
+          type: type || "incoming",
+          party_name: partyName || "جهة الشيك",
           customer_id: cleanUUID(customerId, null),
           supplier_id: cleanUUID(supplierId, null),
           amount: Number(amount) || 0,
-          issue_date: issueDate,
-          due_date: dueDate,
+          issue_date: issueDate || new Date().toISOString().split("T")[0],
+          due_date: dueDate || issueDate || new Date().toISOString().split("T")[0],
           status: status || "pending",
           notes: notes || null,
         };
@@ -1745,44 +1915,53 @@ export async function POST(request: Request) {
           .single();
 
         if (chkErr) throw chkErr;
-        return NextResponse.json({ success: true, data: chk });
+        return noCacheResponse({ success: true, data: mapCheck(chk) });
       }
 
       case "update_check_status": {
         const { checkId, newStatus, targetTreasuryId } = payload;
         const validCheckId = cleanUUID(checkId, null);
-        if (!validCheckId) return NextResponse.json({ success: false, message: "Invalid check ID" }, { status: 400 });
-        const validTreasuryId = cleanUUID(targetTreasuryId, null);
+        if (!validCheckId) return noCacheResponse({ success: false, message: "Invalid check ID" }, 400);
 
-        const { data: chk, error: chkErr } = await supabaseAdmin.from("check_records").update({
-          status: newStatus,
-          target_treasury_id: validTreasuryId,
-          collection_date: newStatus === "collected" ? new Date().toISOString().split("T")[0] : null,
-        }).eq("id", validCheckId).select().single();
+        const updateRow: any = { status: newStatus };
+        if (newStatus === "collected") {
+          updateRow.collection_date = new Date().toISOString().split("T")[0];
+          if (targetTreasuryId) updateRow.target_treasury_id = cleanUUID(targetTreasuryId, null);
+        }
+
+        const { data: chk, error: chkErr } = await supabaseAdmin
+          .from("check_records")
+          .update(updateRow)
+          .eq("id", validCheckId)
+          .select()
+          .single();
 
         if (chkErr) throw chkErr;
 
-        // If collected, atomically update treasury balance in PostgreSQL
-        if (newStatus === "collected" && validTreasuryId && chk?.amount) {
-          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasuryId).single();
+        // If collected, update treasury balance
+        if (newStatus === "collected" && targetTreasuryId && chk) {
+          const validTreasury = cleanUUID(targetTreasuryId, DEFAULT_TREASURY_ID);
+          const { data: t } = await supabaseAdmin.from("treasury_accounts").select("balance").eq("id", validTreasury).single();
           if (t) {
+            const checkAmount = Number(chk.amount) || 0;
+            const delta = chk.type === "incoming" ? checkAmount : -checkAmount;
             await supabaseAdmin.from("treasury_accounts").update({
-              balance: (Number(t.balance) || 0) + Number(chk.amount)
-            }).eq("id", validTreasuryId);
+              balance: (Number(t.balance) || 0) + delta
+            }).eq("id", validTreasury);
           }
         }
 
-        return NextResponse.json({ success: true, data: chk });
+        return noCacheResponse({ success: true, data: mapCheck(chk) });
       }
 
       case "delete_check": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid check ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid check ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("check_records").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1797,11 +1976,11 @@ export async function POST(request: Request) {
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          entry_number: entryNumber,
-          date,
-          reference_type: referenceType,
+          entry_number: entryNumber || ("JE-" + Date.now().toString().slice(-6)),
+          date: date || new Date().toISOString().split("T")[0],
+          reference_type: referenceType || "manual",
           reference_id: cleanUUID(referenceId, null),
-          description,
+          description: description || "قيد يومية عام",
           total_debit: Number(totalDebit) || 0,
           total_credit: Number(totalCredit) || 0,
           is_balanced: Boolean(isBalanced),
@@ -1818,33 +1997,52 @@ export async function POST(request: Request) {
 
         if (jeErr) throw jeErr;
 
+        const mappedLines: any[] = [];
         if (lines && lines.length > 0 && je?.id) {
-          const lineRows = lines.map((l: any) => ({
-            journal_entry_id: je.id,
-            account_id: cleanUUID(l.accountId, null),
-            account_code: l.accountCode,
-            account_name: l.accountName,
-            debit: Number(l.debit) || 0,
-            credit: Number(l.credit) || 0,
-            cost_center_id: cleanUUID(l.costCenterId, null),
-            description: l.description || null,
-          }));
+          const lineRows = lines.map((l: any) => {
+            const lineId = cleanUUID(l.id, generateId());
+            return {
+              id: lineId,
+              journal_entry_id: je.id,
+              account_id: cleanUUID(l.accountId, "00000000-0000-0000-0000-000000000101"),
+              account_code: l.accountCode || "101",
+              account_name: l.accountName || "حساب",
+              debit: Number(l.debit) || 0,
+              credit: Number(l.credit) || 0,
+              cost_center_id: cleanUUID(l.costCenterId, null),
+              description: l.description || null,
+            };
+          });
 
           await supabaseAdmin.from("journal_lines").insert(lineRows);
+
+          lineRows.forEach((l: any) => {
+            mappedLines.push({
+              id: l.id,
+              accountId: l.account_id,
+              accountCode: l.account_code,
+              accountName: l.account_name,
+              debit: l.debit,
+              credit: l.credit,
+              costCenterId: l.cost_center_id,
+              description: l.description,
+            });
+          });
         }
 
-        return NextResponse.json({ success: true, data: je });
+        const mappedJE = mapJournalEntry(je, mappedLines);
+        return noCacheResponse({ success: true, data: mappedJE });
       }
 
       case "delete_journal_entry": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid journal entry ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid journal entry ID is required" }, 400);
 
         await supabaseAdmin.from("journal_lines").delete().eq("journal_entry_id", validId);
         const { error: delErr } = await supabaseAdmin.from("journal_entries").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1855,12 +2053,15 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "ACC-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
-          type,
+          code: finalCode,
+          name_ar: nameAr || "حساب جديد",
+          name_en: nameEn || nameAr || "New Account",
+          type: type || "assets",
           parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           nature: nature || "debit",
@@ -1878,13 +2079,13 @@ export async function POST(request: Request) {
           .single();
 
         if (accErr) throw accErr;
-        return NextResponse.json({ success: true, data: acc });
+        return noCacheResponse({ success: true, data: mapAccount(acc) });
       }
 
       case "update_account": {
         const { id, code, nameAr, nameEn, type, parentId, level, nature, balance, isActive } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid account ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid account ID is required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -1905,17 +2106,17 @@ export async function POST(request: Request) {
           .single();
 
         if (accErr) throw accErr;
-        return NextResponse.json({ success: true, data: acc });
+        return noCacheResponse({ success: true, data: mapAccount(acc) });
       }
 
       case "delete_account": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid account ID is required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid account ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("accounts").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1926,11 +2127,14 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "CAT-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "تصنيف جديد",
+          name_en: nameEn || nameAr || "New Category",
           parent_id: cleanUUID(parentId, null),
         };
         if (validId) insertRow.id = validId;
@@ -1942,13 +2146,13 @@ export async function POST(request: Request) {
           .single();
 
         if (catErr) throw catErr;
-        return NextResponse.json({ success: true, data: cat });
+        return noCacheResponse({ success: true, data: mapCategory(cat) });
       }
 
       case "update_category": {
         const { id, code, nameAr, nameEn, parentId } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid category ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid category ID required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -1964,17 +2168,17 @@ export async function POST(request: Request) {
           .single();
 
         if (catErr) throw catErr;
-        return NextResponse.json({ success: true, data: cat });
+        return noCacheResponse({ success: true, data: mapCategory(cat) });
       }
 
       case "delete_category": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid category ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid category ID required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("product_categories").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       // ==========================================
@@ -1985,11 +2189,14 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
+        let finalCode = (code || "").trim();
+        if (!finalCode) finalCode = "UNIT-" + Date.now().toString().slice(-4);
+
         const insertRow: any = {
           organization_id: validOrgId,
-          code,
-          name_ar: nameAr,
-          name_en: nameEn || nameAr,
+          code: finalCode,
+          name_ar: nameAr || "وحدة جديدة",
+          name_en: nameEn || nameAr || "New Unit",
           symbol: symbol || "قطعة",
         };
         if (validId) insertRow.id = validId;
@@ -2001,13 +2208,13 @@ export async function POST(request: Request) {
           .single();
 
         if (uErr) throw uErr;
-        return NextResponse.json({ success: true, data: u });
+        return noCacheResponse({ success: true, data: mapUnit(u) });
       }
 
       case "update_unit": {
         const { id, code, nameAr, nameEn, symbol } = payload;
         const validId = cleanUUID(id, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid unit ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid unit ID required" }, 400);
 
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
@@ -2023,24 +2230,24 @@ export async function POST(request: Request) {
           .single();
 
         if (uErr) throw uErr;
-        return NextResponse.json({ success: true, data: u });
+        return noCacheResponse({ success: true, data: mapUnit(u) });
       }
 
       case "delete_unit": {
         const validId = cleanUUID(payload?.id || payload, null);
-        if (!validId) return NextResponse.json({ success: false, message: "Valid unit ID required" }, { status: 400 });
+        if (!validId) return noCacheResponse({ success: false, message: "Valid unit ID required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("product_units").delete().eq("id", validId);
         if (delErr) throw delErr;
 
-        return NextResponse.json({ success: true, id: validId });
+        return noCacheResponse({ success: true, id: validId });
       }
 
       default:
-        return NextResponse.json({ success: false, message: `Unknown action: ${action}` }, { status: 400 });
+        return noCacheResponse({ success: false, message: `Unknown action: ${action}` }, 400);
     }
   } catch (error: any) {
     console.error("Error in POST /api/erp/data:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return noCacheResponse({ success: false, error: error.message || "Failed to persist to database" }, 500);
   }
 }

@@ -5,15 +5,17 @@ import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import { Account, AccountType } from "@/types/erp";
-import { BookOpen, Plus, Search } from "lucide-react";
+import { BookOpen, Plus, Search, Loader2, AlertCircle } from "lucide-react";
 
 export default function ChartOfAccountsPage() {
-  const { accounts, addAccount, organization, locale } = useERP();
+  const { accounts, addAccount, organization, locale, showToast } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Add Account Form
   const [code, setCode] = useState("");
@@ -25,27 +27,41 @@ export default function ChartOfAccountsPage() {
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code || !nameAr) return;
+    setFormError(null);
+    if (!code || !nameAr) {
+      setFormError(isAr ? "يرجى كتابة رقم واسم الحساب" : "Please enter account code and name");
+      return;
+    }
 
-    await addAccount({
-      organizationId: organization.id,
-      code,
-      nameAr,
-      nameEn: nameEn || nameAr,
-      type,
-      parentId: parentId || undefined,
-      level: parentId ? 3 : 1,
-      nature,
-      balance: 0,
-      currency: organization.currency,
-      isActive: true,
-      isSystem: false,
-    });
+    setIsSubmitting(true);
+    try {
+      await addAccount({
+        organizationId: organization.id,
+        code,
+        nameAr,
+        nameEn: nameEn || nameAr,
+        type,
+        parentId: parentId || undefined,
+        level: parentId ? 3 : 1,
+        nature,
+        balance: 0,
+        currency: organization.currency,
+        isActive: true,
+        isSystem: false,
+      });
 
-    setIsAddModalOpen(false);
-    setCode("");
-    setNameAr("");
-    setNameEn("");
+      setIsAddModalOpen(false);
+      setCode("");
+      setNameAr("");
+      setNameEn("");
+    } catch (err: any) {
+      console.error("Failed to add account:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ الحساب" : "Failed to add account");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredAccounts = accounts.filter(acc => {
@@ -166,12 +182,20 @@ export default function ChartOfAccountsPage() {
         </div>
       </div>
 
+      {/* Add Account Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "إضافة حساب فرعي بدليل الحسابات" : "Add Account"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "إضافة حساب مالي جديد إلى الدليل" : "Add New General Ledger Account"}
+        maxWidth="lg"
       >
         <form onSubmit={handleCreateAccount} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "كود الحساب *" : "Code *"}</label>
@@ -241,16 +265,25 @@ export default function ChartOfAccountsPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "حفظ الحساب" : "Save Account"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ الحساب" : "Save Account"}</span>
+              )}
             </button>
           </div>
         </form>

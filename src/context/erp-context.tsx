@@ -73,6 +73,7 @@ import {
   persistPeriodClosingDB,
   updateOrganizationDB
 } from "@/lib/erp-service";
+import { ToastContainer, ToastMessage } from "@/components/ui/Toast";
 
 interface ERPContextType {
   // Localization & Theme
@@ -86,6 +87,11 @@ interface ERPContextType {
   isDbConnected: boolean;
   isLoadingData: boolean;
   refreshData: () => Promise<void>;
+
+  // Toast Notifications
+  toasts: ToastMessage[];
+  showToast: (toast: Omit<ToastMessage, "id"> | string, type?: "success" | "error" | "info" | "loading") => string;
+  dismissToast: (id: string) => void;
 
   // Active Context
   currentUser: User;
@@ -192,6 +198,30 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
+  // Toast Notifications State
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((toast: Omit<ToastMessage, "id"> | string, type: "success" | "error" | "info" | "loading" = "success"): string => {
+    const id = generateId();
+    const newToast: ToastMessage = typeof toast === "string"
+      ? { id, message: toast, type }
+      : { ...toast, id, type: toast.type || type };
+
+    setToasts(prev => [...prev.slice(-4), newToast]); // keep at most 5 toasts
+
+    if (newToast.type !== "loading") {
+      const duration = newToast.duration || (newToast.type === "error" ? 6000 : 4000);
+      setTimeout(() => {
+        dismissToast(id);
+      }, duration);
+    }
+    return id;
+  }, [dismissToast]);
+
   // Core Multi-Tenant State
   const [organization, setOrganization] = useState<Organization>(initialOrganization);
   const [branches, setBranches] = useState<Branch[]>(initialBranches);
@@ -199,104 +229,79 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<User[]>(initialUsers);
   const [currentUser, setCurrentUser] = useState<User>(initialUsers[0]);
 
-  // Inventory State
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [units, setUnits] = useState<ProductUnit[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  // Master Data State
+  const [categories, setCategories] = useState<ProductCategory[]>(initialCategories);
+  const [units, setUnits] = useState<ProductUnit[]>(initialUnits);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
+
+  // Transaction State
+  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(initialSalesInvoices);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>(initialPurchaseInvoices);
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>(initialTreasuryAccounts);
+  const [cashReceipts, setCashReceipts] = useState<CashReceipt[]>([]);
+  const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
+  const [checks, setChecks] = useState<CheckRecord[]>(initialChecks);
+  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialCostCenters);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>(initialStockMovements);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(initialJournalEntries);
+  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
   const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
   const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
 
-  // CRM State
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-
-  // Invoices State
-  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
-
-  // Treasury State
-  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>([]);
-  const [cashReceipts, setCashReceipts] = useState<CashReceipt[]>([]);
-  const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
-  const [checks, setChecks] = useState<CheckRecord[]>([]);
-
-  // Accounting State
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
-
-  // Audit & Notifications
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-
-  // Sync HTML dir and lang
-  useEffect(() => {
-    document.documentElement.dir = direction;
-    document.documentElement.lang = locale;
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [direction, locale, theme]);
-
-  // Hydrate Data from Supabase Database on Mount & Refresh
+  // ==========================================
+  // HYDRATE FROM SUPABASE
+  // ==========================================
   const loadDatabaseData = useCallback(async () => {
-    setIsLoadingData(true);
     try {
+      setIsLoadingData(true);
       const liveData = await fetchFullERPData();
+
       if (liveData) {
         setIsDbConnected(true);
         if (liveData.organization) setOrganization(liveData.organization);
-        if (Array.isArray(liveData.branches) && liveData.branches.length > 0) setBranches(liveData.branches);
-        if (Array.isArray(liveData.users) && liveData.users.length > 0) setUsers(liveData.users);
-        if (Array.isArray(liveData.products)) setProducts(liveData.products);
-        if (Array.isArray(liveData.categories)) setCategories(liveData.categories);
-        if (Array.isArray(liveData.units)) setUnits(liveData.units);
-        if (Array.isArray(liveData.customers)) setCustomers(liveData.customers);
-        if (Array.isArray(liveData.suppliers)) setSuppliers(liveData.suppliers);
-        if (Array.isArray(liveData.salesInvoices)) setSalesInvoices(liveData.salesInvoices);
-        if (Array.isArray(liveData.purchaseInvoices)) setPurchaseInvoices(liveData.purchaseInvoices);
-        if (Array.isArray(liveData.warehouses)) setWarehouses(liveData.warehouses);
-        if (Array.isArray(liveData.costCenters)) setCostCenters(liveData.costCenters);
-        if (Array.isArray(liveData.accounts)) setAccounts(liveData.accounts);
-        if (Array.isArray(liveData.treasuryAccounts)) setTreasuryAccounts(liveData.treasuryAccounts);
-        if (Array.isArray(liveData.cashReceipts)) setCashReceipts(liveData.cashReceipts);
-        if (Array.isArray(liveData.cashPayments)) setCashPayments(liveData.cashPayments);
-        if (Array.isArray(liveData.checks)) setChecks(liveData.checks);
-        if (Array.isArray(liveData.journalEntries)) setJournalEntries(liveData.journalEntries);
-        if (Array.isArray(liveData.stockMovements)) setStockMovements(liveData.stockMovements);
-        if (Array.isArray(liveData.auditLogs)) setAuditLogs(liveData.auditLogs);
-        if (Array.isArray(liveData.productChangeLogs)) setProductChangeLogs(liveData.productChangeLogs);
-        if (Array.isArray(liveData.periodClosings)) setPeriodClosings(liveData.periodClosings);
+        if (liveData.branches && liveData.branches.length > 0) {
+          setBranches(liveData.branches);
+          if (!liveData.branches.some(b => b.id === activeBranchId)) {
+            setActiveBranchId(liveData.branches[0].id);
+          }
+        }
+        if (liveData.users && liveData.users.length > 0) {
+          setUsers(liveData.users);
+          const admin = liveData.users.find(u => u.role === "super_admin") || liveData.users[0];
+          setCurrentUser(admin);
+        }
+        if (liveData.products) setProducts(liveData.products);
+        if (liveData.categories) setCategories(liveData.categories);
+        if (liveData.units) setUnits(liveData.units);
+        if (liveData.customers) setCustomers(liveData.customers);
+        if (liveData.suppliers) setSuppliers(liveData.suppliers);
+        if (liveData.salesInvoices) setSalesInvoices(liveData.salesInvoices);
+        if (liveData.purchaseInvoices) setPurchaseInvoices(liveData.purchaseInvoices);
+        if (liveData.warehouses) setWarehouses(liveData.warehouses);
+        if (liveData.costCenters) setCostCenters(liveData.costCenters);
+        if (liveData.accounts) setAccounts(liveData.accounts);
+        if (liveData.treasuryAccounts) setTreasuryAccounts(liveData.treasuryAccounts);
+        if (liveData.cashReceipts) setCashReceipts(liveData.cashReceipts);
+        if (liveData.cashPayments) setCashPayments(liveData.cashPayments);
+        if (liveData.checks) setChecks(liveData.checks);
+        if (liveData.journalEntries) setJournalEntries(liveData.journalEntries);
+        if (liveData.stockMovements) setStockMovements(liveData.stockMovements);
+        if (liveData.auditLogs) setAuditLogs(liveData.auditLogs);
       } else {
-        // Fallback to Demo Seed Data if DB is offline
         setIsDbConnected(false);
-        setProducts(initialProducts);
-        setCategories(initialCategories);
-        setUnits(initialUnits);
-        setWarehouses(initialWarehouses);
-        setCustomers(initialCustomers);
-        setSuppliers(initialSuppliers);
-        setAccounts(initialAccounts);
-        setTreasuryAccounts(initialTreasuryAccounts);
-        setCostCenters(initialCostCenters);
-        setChecks(initialChecks);
-        setSalesInvoices(initialSalesInvoices);
-        setPurchaseInvoices(initialPurchaseInvoices);
-        setStockMovements(initialStockMovements);
-        setJournalEntries(initialJournalEntries);
-        setAuditLogs(initialAuditLogs);
       }
-    } catch (e) {
-      console.error("Failed to load initial data from DB:", e);
+    } catch (err) {
+      console.warn("Could not hydrate ERP from database:", err);
       setIsDbConnected(false);
     } finally {
       setIsLoadingData(false);
     }
-  }, []);
+  }, [activeBranchId]);
 
   useEffect(() => {
     loadDatabaseData();
@@ -334,8 +339,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   // Organization Settings
   const updateOrganization = async (org: Partial<Organization>) => {
     const updated = { ...organization, ...org };
-    setOrganization(updated);
-    await updateOrganizationDB(updated);
+    const res = await updateOrganizationDB(updated);
+    if (!res.success) {
+      throw new Error(res.error || "فشل تحديث إعدادات المنشأة في قاعدة البيانات");
+    }
+    if (res.data) setOrganization(res.data);
+    else setOrganization(updated);
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -345,6 +355,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: organization.id,
       details: `تحديث إعدادات المنشأة: ${updated.nameAr}`,
     });
+    showToast(locale === "ar" ? "تم حفظ إعدادات المنشأة بنجاح" : "Organization settings saved successfully", "success");
   };
 
   // ==========================================
@@ -357,7 +368,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedProduct = res.data;
 
-    // 1. Check opening stock allocations
+    // Opening stock allocations
     const openingMovements: StockMovement[] = [];
     let totalOpeningQty = 0;
 
@@ -386,7 +397,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // 2. Generate Opening Stock Journal Entry
     if (totalOpeningQty > 0 && savedProduct.costPrice > 0) {
       const journalDraft = generateOpeningStockJournal(
         organization.id,
@@ -411,19 +421,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
     setProducts(prev => [savedProduct, ...prev.filter(x => x.id !== savedProduct.id)]);
 
-    await addProductChangeLog({
-      organizationId: organization.id,
-      productId: savedProduct.id,
-      productName: savedProduct.nameAr,
-      productSku: savedProduct.sku,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      changeType: "created",
-      fieldName: "إنشاء صنف جديد",
-      oldValue: "---",
-      newValue: `${savedProduct.nameAr} (سعر البيع: ${savedProduct.sellingPrice}, التكلفة: ${savedProduct.costPrice})`,
-    });
-
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -434,6 +431,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `إضافة منتج جديد: ${savedProduct.nameAr} (${savedProduct.sku})`,
     });
 
+    showToast(locale === "ar" ? `تمت إضافة المنتج "${savedProduct.nameAr}" بنجاح` : `Product "${savedProduct.nameAr}" created`, "success");
     return savedProduct;
   };
 
@@ -447,52 +445,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const updatedProduct = res.data;
 
-    if (p.nameAr && p.nameAr !== existing.nameAr) {
-      await addProductChangeLog({
-        organizationId: organization.id,
-        productId: id,
-        productName: p.nameAr,
-        productSku: existing.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "name",
-        fieldName: "اسم الصنف بالعربية",
-        oldValue: existing.nameAr,
-        newValue: p.nameAr,
-      });
-    }
-
-    if (p.sellingPrice !== undefined && p.sellingPrice !== existing.sellingPrice) {
-      await addProductChangeLog({
-        organizationId: organization.id,
-        productId: id,
-        productName: existing.nameAr,
-        productSku: existing.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "price",
-        fieldName: "سعر البيع",
-        oldValue: `${existing.sellingPrice}`,
-        newValue: `${p.sellingPrice}`,
-      });
-    }
-
-    if (p.costPrice !== undefined && p.costPrice !== existing.costPrice) {
-      await addProductChangeLog({
-        organizationId: organization.id,
-        productId: id,
-        productName: existing.nameAr,
-        productSku: existing.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "price",
-        fieldName: "سعر التكلفة",
-        oldValue: `${existing.costPrice}`,
-        newValue: `${p.costPrice}`,
-      });
-    }
-
-    // Handle Stock Adjustment Difference
     if (p.warehouseStock) {
       for (const [whId, newQty] of Object.entries(p.warehouseStock)) {
         const oldQty = existing.warehouseStock[whId] || 0;
@@ -534,19 +486,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
             setJournalEntries(prev => [newJournal, ...prev]);
             await persistJournalEntryDB(newJournal);
           }
-
-          await addProductChangeLog({
-            organizationId: organization.id,
-            productId: id,
-            productName: existing.nameAr,
-            productSku: existing.sku,
-            userId: currentUser.id,
-            userName: currentUser.name,
-            changeType: "stock_adjustment",
-            fieldName: "رصيد المستودع (تسوية جردية)",
-            oldValue: `${oldQty}`,
-            newValue: `${newQty} (${diff > 0 ? `+${diff}` : diff})`,
-          });
         }
       }
     }
@@ -562,6 +501,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: id,
       details: `تعديل بيانات المنتج: ${existing.nameAr}`,
     });
+
+    showToast(locale === "ar" ? `تم تحديث المنتج "${updatedProduct.nameAr}" بنجاح` : `Product updated successfully`, "success");
   };
 
   const deleteProduct = async (id: string) => {
@@ -574,21 +515,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setProducts(prev => prev.filter(p => p.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.productId !== id));
 
-    if (prod) {
-      await addProductChangeLog({
-        organizationId: organization.id,
-        productId: id,
-        productName: prod.nameAr,
-        productSku: prod.sku,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        changeType: "deleted",
-        fieldName: "حذف الصنف",
-        oldValue: `${prod.nameAr} (${prod.sku})`,
-        newValue: "تم الحذف نهائياً",
-      });
-    }
-
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -598,6 +524,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: id,
       details: `حذف المنتج: ${prod?.nameAr || id}`,
     });
+
+    showToast(locale === "ar" ? "تم حذف المنتج بنجاح" : "Product deleted successfully", "success");
   };
 
   // Categories CRUD
@@ -608,14 +536,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedCat = res.data;
     setCategories(prev => [...prev.filter(x => x.id !== savedCat.id), savedCat]);
+    showToast(locale === "ar" ? `تمت إضافة التصنيف "${savedCat.nameAr}"` : `Category created`, "success");
     return savedCat;
   };
   const updateCategory = async (id: string, c: Partial<ProductCategory>) => {
     const res = await updateCategoryDB(id, c);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل التصنيف في قاعدة البيانات");
     }
-    setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...c } : cat));
+    const savedCat = res.data;
+    setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...savedCat } : cat));
+    showToast(locale === "ar" ? "تم تحديث التصنيف بنجاح" : "Category updated", "success");
   };
   const deleteCategory = async (id: string) => {
     const res = await deleteCategoryDB(id);
@@ -623,6 +554,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف التصنيف من قاعدة البيانات");
     }
     setCategories(prev => prev.filter(cat => cat.id !== id));
+    showToast(locale === "ar" ? "تم حذف التصنيف بنجاح" : "Category deleted", "success");
   };
 
   // Units CRUD
@@ -633,14 +565,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedUnit = res.data;
     setUnits(prev => [...prev.filter(x => x.id !== savedUnit.id), savedUnit]);
+    showToast(locale === "ar" ? `تمت إضافة وحدة القياس "${savedUnit.nameAr}"` : `Unit created`, "success");
     return savedUnit;
   };
   const updateUnit = async (id: string, u: Partial<ProductUnit>) => {
     const res = await updateUnitDB(id, u);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل وحدة القياس في قاعدة البيانات");
     }
-    setUnits(prev => prev.map(unit => unit.id === id ? { ...unit, ...u } : unit));
+    const savedUnit = res.data;
+    setUnits(prev => prev.map(unit => unit.id === id ? { ...unit, ...savedUnit } : unit));
+    showToast(locale === "ar" ? "تم تحديث وحدة القياس بنجاح" : "Unit updated", "success");
   };
   const deleteUnit = async (id: string) => {
     const res = await deleteUnitDB(id);
@@ -648,6 +583,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف وحدة القياس من قاعدة البيانات");
     }
     setUnits(prev => prev.filter(unit => unit.id !== id));
+    showToast(locale === "ar" ? "تم حذف وحدة القياس بنجاح" : "Unit deleted", "success");
   };
 
   // Warehouses CRUD
@@ -658,14 +594,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedWarehouse = res.data;
     setWarehouses(prev => [...prev.filter(x => x.id !== savedWarehouse.id), savedWarehouse]);
+    showToast(locale === "ar" ? `تم إنشاء المستودع "${savedWarehouse.nameAr}" بنجاح` : `Warehouse created`, "success");
     return savedWarehouse;
   };
   const updateWarehouse = async (id: string, w: Partial<Warehouse>) => {
     const res = await updateWarehouseDB(id, w);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل بيانات المستودع في قاعدة البيانات");
     }
-    setWarehouses(prev => prev.map(wh => wh.id === id ? { ...wh, ...w } : wh));
+    const savedWarehouse = res.data;
+    setWarehouses(prev => prev.map(wh => wh.id === id ? { ...wh, ...savedWarehouse } : wh));
+    showToast(locale === "ar" ? "تم تحديث بيانات المستودع بنجاح" : "Warehouse updated", "success");
   };
   const deleteWarehouse = async (id: string) => {
     const res = await deleteWarehouseDB(id);
@@ -673,6 +612,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف المستودع من قاعدة البيانات");
     }
     setWarehouses(prev => prev.filter(wh => wh.id !== id));
+    showToast(locale === "ar" ? "تم حذف المستودع بنجاح" : "Warehouse deleted", "success");
   };
 
   // Stock Movements CRUD
@@ -682,10 +622,12 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
   const updateStockMovement = async (id: string, sm: Partial<StockMovement>) => {
     const res = await updateStockMovementDB(id, sm);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل حركة المخزون");
     }
-    setStockMovements(prev => prev.map(item => item.id === id ? { ...item, ...sm } : item));
+    const updatedSm = res.data;
+    setStockMovements(prev => prev.map(item => item.id === id ? { ...item, ...updatedSm } : item));
+    showToast(locale === "ar" ? "تم تعديل حركة المخزون بنجاح" : "Stock movement updated", "success");
   };
   const deleteStockMovement = async (id: string) => {
     const res = await deleteStockMovementDB(id);
@@ -693,11 +635,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف حركة المخزون");
     }
     setStockMovements(prev => prev.filter(item => item.id !== id));
+    showToast(locale === "ar" ? "تم حذف حركة المخزون بنجاح" : "Stock movement deleted", "success");
   };
 
   // Period Closings CRUD
   const createPeriodClosing = async (closing: Omit<PeriodClosing, "id" | "createdAt">): Promise<PeriodClosing> => {
-    // Generate Accounting Journal Entry for COGS Closing
     const journalDraft = generatePeriodClosingJournal(
       closing.organizationId,
       closing.branchId || activeBranchId,
@@ -737,6 +679,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `إجراء إقفال دوري للمخزون (${savedClosing.periodLabel}) بقيمة تكلفة مباعة ${savedClosing.cogsValue}`,
     });
 
+    showToast(locale === "ar" ? `تم تنفيذ إقفال الفترة "${savedClosing.periodLabel}" بنجاح` : `Period closed successfully`, "success");
     return savedClosing;
   };
 
@@ -760,15 +703,19 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: savedCust.id,
       details: `إضافة عميل جديد: ${savedCust.nameAr}`,
     });
+
+    showToast(locale === "ar" ? `تمت إضافة العميل "${savedCust.nameAr}" بنجاح` : `Customer created successfully`, "success");
     return savedCust;
   };
 
   const updateCustomer = async (id: string, c: Partial<Customer>) => {
     const res = await updateCustomerDB(id, c);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل بيانات العميل في قاعدة البيانات");
     }
-    setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...c } : item));
+    const savedCust = res.data;
+    setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...savedCust } : item));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -776,8 +723,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "update",
       entityType: "Customer",
       entityId: id,
-      details: `تحديث بيانات العميل: ${c.nameAr || id}`,
+      details: `تحديث بيانات العميل: ${savedCust.nameAr || id}`,
     });
+
+    showToast(locale === "ar" ? "تم تحديث بيانات العميل بنجاح" : "Customer updated successfully", "success");
   };
 
   const deleteCustomer = async (id: string) => {
@@ -786,6 +735,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف العميل من قاعدة البيانات");
     }
     setCustomers(prev => prev.filter(item => item.id !== id));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -795,6 +745,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: id,
       details: `حذف العميل: ${id}`,
     });
+
+    showToast(locale === "ar" ? "تم حذف العميل بنجاح" : "Customer deleted successfully", "success");
   };
 
   const addSupplier = async (s: Omit<Supplier, "id">): Promise<Supplier> => {
@@ -814,15 +766,19 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: savedSupp.id,
       details: `إضافة مورد جديد: ${savedSupp.nameAr}`,
     });
+
+    showToast(locale === "ar" ? `تمت إضافة المورد "${savedSupp.nameAr}" بنجاح` : `Supplier created successfully`, "success");
     return savedSupp;
   };
 
   const updateSupplier = async (id: string, s: Partial<Supplier>) => {
     const res = await updateSupplierDB(id, s);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل بيانات المورد في قاعدة البيانات");
     }
-    setSuppliers(prev => prev.map(item => item.id === id ? { ...item, ...s } : item));
+    const savedSupp = res.data;
+    setSuppliers(prev => prev.map(item => item.id === id ? { ...item, ...savedSupp } : item));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -830,8 +786,10 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "update",
       entityType: "Supplier",
       entityId: id,
-      details: `تحديث بيانات المورد: ${s.nameAr || id}`,
+      details: `تحديث بيانات المورد: ${savedSupp.nameAr || id}`,
     });
+
+    showToast(locale === "ar" ? "تم تحديث بيانات المورد بنجاح" : "Supplier updated successfully", "success");
   };
 
   const deleteSupplier = async (id: string) => {
@@ -840,6 +798,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف المورد من قاعدة البيانات");
     }
     setSuppliers(prev => prev.filter(item => item.id !== id));
+
     addAuditLog({
       organizationId: organization.id,
       userId: currentUser.id,
@@ -849,6 +808,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: id,
       details: `حذف المورد: ${id}`,
     });
+
+    showToast(locale === "ar" ? "تم حذف المورد بنجاح" : "Supplier deleted successfully", "success");
   };
 
   // ==========================================
@@ -860,12 +821,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حفظ فاتورة المبيعات في قاعدة البيانات");
     }
     const savedInvoice = res.data;
+    const invoiceItems = savedInvoice.items || [];
 
     let totalCogs = 0;
     const movementsToCreate: StockMovement[] = [];
 
     // Deduct Stock & Create Stock Movements
-    savedInvoice.items.forEach(item => {
+    invoiceItems.forEach(item => {
       totalCogs += item.costPrice * item.quantity;
       
       movementsToCreate.push({
@@ -931,6 +893,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `إصدار فاتورة مبيعات ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
     });
 
+    showToast(locale === "ar" ? `تم إصدار فاتورة المبيعات (${savedInvoice.invoiceNumber}) وترحيل القيد والمخزن بنجاح` : `Sales invoice (${savedInvoice.invoiceNumber}) issued & posted successfully`, "success");
     return savedInvoice;
   };
 
@@ -941,6 +904,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    showToast(locale === "ar" ? "تم حذف فاتورة المبيعات بنجاح" : "Sales invoice deleted successfully", "success");
   };
 
   const createPurchaseInvoice = async (inv: Omit<PurchaseInvoice, "id">): Promise<PurchaseInvoice> => {
@@ -949,10 +913,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حفظ فاتورة المشتريات في قاعدة البيانات");
     }
     const savedInvoice = res.data;
+    const invoiceItems = savedInvoice.items || [];
 
     const movementsToCreate: StockMovement[] = [];
 
-    savedInvoice.items.forEach(item => {
+    invoiceItems.forEach(item => {
       movementsToCreate.push({
         id: generateId(),
         organizationId: organization.id,
@@ -1016,6 +981,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `تسجيل فاتورة مشتريات وتوريد مخزن ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
     });
 
+    showToast(locale === "ar" ? `تم تسجيل فاتورة المشتريات (${savedInvoice.invoiceNumber}) وتوريد المخزون بنجاح` : `Purchase invoice (${savedInvoice.invoiceNumber}) registered & posted successfully`, "success");
     return savedInvoice;
   };
 
@@ -1026,6 +992,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    showToast(locale === "ar" ? "تم حذف فاتورة المشتريات بنجاح" : "Purchase invoice deleted successfully", "success");
   };
 
   // ==========================================
@@ -1038,14 +1005,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedTreasury = res.data;
     setTreasuryAccounts(prev => [...prev.filter(x => x.id !== savedTreasury.id), savedTreasury]);
+    showToast(locale === "ar" ? `تمت إضافة الخزينة/الحساب "${savedTreasury.nameAr}"` : `Treasury account created`, "success");
     return savedTreasury;
   };
   const updateTreasuryAccount = async (id: string, t: Partial<TreasuryAccount>) => {
     const res = await updateTreasuryAccountDB(id, t);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل بيانات الخزينة في قاعدة البيانات");
     }
-    setTreasuryAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...t } : acc));
+    const savedTreasury = res.data;
+    setTreasuryAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...savedTreasury } : acc));
+    showToast(locale === "ar" ? "تم تحديث بيانات الخزينة بنجاح" : "Treasury account updated", "success");
   };
   const deleteTreasuryAccount = async (id: string) => {
     const res = await deleteTreasuryAccountDB(id);
@@ -1053,6 +1023,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف الخزينة من قاعدة البيانات");
     }
     setTreasuryAccounts(prev => prev.filter(acc => acc.id !== id));
+    showToast(locale === "ar" ? "تم حذف الخزينة بنجاح" : "Treasury account deleted", "success");
   };
 
   const createCashReceipt = async (rcp: Omit<CashReceipt, "id">): Promise<CashReceipt> => {
@@ -1092,6 +1063,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `سند قبض نقدية ${savedReceipt.receiptNumber} بمبلغ ${savedReceipt.amount} ${savedReceipt.currency}`,
     });
 
+    showToast(locale === "ar" ? `تم تحرير سند القبض (${savedReceipt.receiptNumber}) وتحديث الخزينة بنجاح` : `Cash receipt created successfully`, "success");
     return savedReceipt;
   };
 
@@ -1101,6 +1073,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف سند القبض من قاعدة البيانات");
     }
     setCashReceipts(prev => prev.filter(r => r.id !== id));
+    showToast(locale === "ar" ? "تم حذف سند القبض بنجاح" : "Cash receipt deleted", "success");
   };
 
   const createCashPayment = async (pay: Omit<CashPayment, "id">): Promise<CashPayment> => {
@@ -1140,6 +1113,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       details: `سند صرف نقدية ${savedPayment.paymentNumber} بمبلغ ${savedPayment.amount} ${savedPayment.currency}`,
     });
 
+    showToast(locale === "ar" ? `تم تحرير سند الصرف (${savedPayment.paymentNumber}) وتحديث الخزينة بنجاح` : `Cash payment created successfully`, "success");
     return savedPayment;
   };
 
@@ -1149,6 +1123,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف سند الصرف من قاعدة البيانات");
     }
     setCashPayments(prev => prev.filter(p => p.id !== id));
+    showToast(locale === "ar" ? "تم حذف سند الصرف بنجاح" : "Cash payment deleted", "success");
   };
 
   const addCheck = async (chk: Omit<CheckRecord, "id">): Promise<CheckRecord> => {
@@ -1168,33 +1143,29 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       entityId: savedCheck.id,
       details: `إضافة شيك ${savedCheck.checkNumber} بمبلغ ${savedCheck.amount} (${savedCheck.type === "incoming" ? "شيك وارد/قبض" : "شيك صادر/دفع"})`,
     });
+
+    showToast(locale === "ar" ? `تم تسجيل الشيك (${savedCheck.checkNumber}) بنجاح` : `Check registered successfully`, "success");
     return savedCheck;
   };
 
   const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
     const check = checks.find(c => c.id === checkId);
     const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تحديث حالة الشيك في قاعدة البيانات");
     }
+    const updatedCheck = res.data;
 
-    setChecks(prev => prev.map(chk => {
-      if (chk.id === checkId) {
-        return {
-          ...chk,
-          status: newStatus,
-          targetTreasuryId: targetTreasuryId || chk.targetTreasuryId,
-          collectionDate: newStatus === "collected" ? new Date().toISOString().split("T")[0] : chk.collectionDate,
-        };
-      }
-      return chk;
-    }));
+    setChecks(prev => prev.map(chk => chk.id === checkId ? { ...chk, ...updatedCheck } : chk));
 
     if (check && newStatus === "collected" && targetTreasuryId) {
+      const delta = check.type === "incoming" ? check.amount : -check.amount;
       setTreasuryAccounts(prev => prev.map(t =>
-        t.id === targetTreasuryId ? { ...t, balance: t.balance + check.amount } : t
+        t.id === targetTreasuryId ? { ...t, balance: t.balance + delta } : t
       ));
     }
+
+    showToast(locale === "ar" ? `تم تحديث حالة الشيك إلى "${newStatus === "collected" ? "مُحصل ومودع بالخزينة" : newStatus}"` : `Check status updated`, "success");
   };
 
   const deleteCheck = async (id: string) => {
@@ -1203,6 +1174,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف الشيك من قاعدة البيانات");
     }
     setChecks(prev => prev.filter(chk => chk.id !== id));
+    showToast(locale === "ar" ? "تم حذف الشيك بنجاح" : "Check deleted", "success");
   };
 
   // ==========================================
@@ -1215,15 +1187,18 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedAccount = res.data;
     setAccounts(prev => [...prev.filter(x => x.id !== savedAccount.id), savedAccount]);
+    showToast(locale === "ar" ? `تمت إضافة الحساب "${savedAccount.nameAr}" بنجاح` : `Account added successfully`, "success");
     return savedAccount;
   };
 
   const updateAccount = async (id: string, acc: Partial<Account>) => {
     const res = await updateAccountDB(id, acc);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل الحساب في قاعدة البيانات");
     }
-    setAccounts(prev => prev.map(item => item.id === id ? { ...item, ...acc } : item));
+    const savedAccount = res.data;
+    setAccounts(prev => prev.map(item => item.id === id ? { ...item, ...savedAccount } : item));
+    showToast(locale === "ar" ? "تم تعديل الحساب بنجاح" : "Account updated successfully", "success");
   };
 
   const deleteAccount = async (id: string) => {
@@ -1232,6 +1207,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف الحساب من شجرة الحسابات");
     }
     setAccounts(prev => prev.filter(item => item.id !== id));
+    showToast(locale === "ar" ? "تم حذف الحساب بنجاح" : "Account deleted", "success");
   };
 
   const addCostCenter = async (cc: Omit<CostCenter, "id">): Promise<CostCenter> => {
@@ -1241,15 +1217,18 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedCc = res.data;
     setCostCenters(prev => [...prev.filter(x => x.id !== savedCc.id), savedCc]);
+    showToast(locale === "ar" ? `تمت إضافة مركز التكلفة "${savedCc.nameAr}"` : `Cost center created`, "success");
     return savedCc;
   };
 
   const updateCostCenter = async (id: string, cc: Partial<CostCenter>) => {
     const res = await updateCostCenterDB(id, cc);
-    if (!res.success) {
+    if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل مركز التكلفة في قاعدة البيانات");
     }
-    setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...cc } : item));
+    const savedCc = res.data;
+    setCostCenters(prev => prev.map(item => item.id === id ? { ...item, ...savedCc } : item));
+    showToast(locale === "ar" ? "تم تعديل مركز التكلفة بنجاح" : "Cost center updated", "success");
   };
 
   const deleteCostCenter = async (id: string) => {
@@ -1258,6 +1237,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف مركز التكلفة من قاعدة البيانات");
     }
     setCostCenters(prev => prev.filter(item => item.id !== id));
+    showToast(locale === "ar" ? "تم حذف مركز التكلفة بنجاح" : "Cost center deleted", "success");
   };
 
   const addJournalEntry = async (entry: Omit<JournalEntry, "id">): Promise<JournalEntry> => {
@@ -1267,6 +1247,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     const savedEntry = res.data;
     setJournalEntries(prev => [savedEntry, ...prev.filter(x => x.id !== savedEntry.id)]);
+    showToast(locale === "ar" ? `تم ترحيل القيد المحاسبي (${savedEntry.entryNumber}) بنجاح` : `Journal entry posted`, "success");
     return savedEntry;
   };
 
@@ -1276,6 +1257,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "فشل حذف القيد المحاسبي من قاعدة البيانات");
     }
     setJournalEntries(prev => prev.filter(je => je.id !== id));
+    showToast(locale === "ar" ? "تم حذف القيد المحاسبي بنجاح" : "Journal entry deleted", "success");
   };
 
   const resetToDemoData = () => {
@@ -1305,6 +1287,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       value={{
         locale, setLocale, direction, theme, setTheme,
         isDbConnected, isLoadingData, refreshData: loadDatabaseData,
+        toasts, showToast, dismissToast,
         currentUser, setCurrentUser, organization, setOrganization, updateOrganization,
         branches, activeBranchId, setActiveBranchId, users,
         products, categories, units, warehouses, stockMovements,
@@ -1329,6 +1312,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} isAr={locale === "ar"} />
     </ERPContext.Provider>
   );
 }

@@ -7,20 +7,22 @@ import Modal from "@/components/ui/Modal";
 import { PurchaseInvoice } from "@/types/erp";
 import {
   ShoppingBag, Plus, Search, Filter, Eye, CheckCircle2,
-  Trash2, Building2, Printer, FileText, Calendar, User, Package
+  Trash2, Building2, Printer, FileText, Calendar, User, Package, AlertCircle, Loader2
 } from "lucide-react";
 
 export default function PurchasesPage() {
   const {
     purchaseInvoices, suppliers, products, warehouses,
     createPurchaseInvoice, deletePurchaseInvoice, organization, activeBranchId,
-    currentUser, locale, hasPermission
+    currentUser, locale, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // New Purchase Form State
   const [supplierId, setSupplierId] = useState("");
@@ -31,6 +33,7 @@ export default function PurchasesPage() {
   const [items, setItems] = useState<any[]>([]);
 
   const handleOpenAddModal = () => {
+    setFormError(null);
     const defaultSupp = suppliers[0]?.id || "";
     const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
     const defaultProd = products[0];
@@ -116,48 +119,73 @@ export default function PurchasesPage() {
 
   const handleCreatePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
     const supp = suppliers.find(s => s.id === supplierId) || suppliers[0];
-    if (!supp || items.length === 0) return;
+    if (!supp) {
+      setFormError(isAr ? "يرجى اختيار المورد أولاً" : "Please select a supplier");
+      return;
+    }
 
-    const invoiceNumber = "PINV-" + new Date().getFullYear() + "-" + (purchaseInvoices.length + 1).toString().padStart(3, "0");
+    if (items.length === 0) {
+      setFormError(isAr ? "يرجى إضافة صنف واحد على الأقل للفاتورة" : "Please add at least one line item");
+      return;
+    }
 
-    await createPurchaseInvoice({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      invoiceNumber,
-      supplierInvoiceRef,
-      date,
-      dueDate,
-      supplierId: supp.id,
-      supplierName: supp.nameAr,
-      supplierTaxNumber: supp.taxNumber,
-      warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
-      status: "unpaid",
-      items: items.map(item => ({ ...item, id: generateId() })),
-      subtotal,
-      discountTotal: 0,
-      taxTotal,
-      grandTotal,
-      paidAmount: 0,
-      dueAmount: grandTotal,
-      notes: "فاتورة توريد بضاعة ومخزون",
-      createdBy: currentUser.name,
-    });
+    setIsSubmitting(true);
 
-    setIsAddModalOpen(false);
+    try {
+      const invoiceNumber = "PINV-" + new Date().getFullYear() + "-" + (purchaseInvoices.length + 1).toString().padStart(4, "0");
+
+      await createPurchaseInvoice({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        invoiceNumber,
+        supplierInvoiceRef,
+        date,
+        dueDate,
+        supplierId: supp.id,
+        supplierName: supp.nameAr,
+        supplierTaxNumber: supp.taxNumber,
+        warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
+        status: "unpaid",
+        items: items.map(item => ({ ...item, id: generateId() })),
+        subtotal,
+        discountTotal: 0,
+        taxTotal,
+        grandTotal,
+        paidAmount: 0,
+        dueAmount: grandTotal,
+        notes: isAr ? "فاتورة توريد بضاعة ومخزون" : "Standard Purchase Invoice",
+        createdBy: currentUser.name,
+      });
+
+      setIsAddModalOpen(false);
+    } catch (err: any) {
+      console.error("Failed to create purchase invoice:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ فاتورة المشتريات" : "Failed to create purchase invoice");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (confirm(isAr ? "هل أنت متأكد من حذف فاتورة المشتريات هذه وتعديل قيودها ومخزونها؟" : "Are you sure you want to delete this purchase invoice?")) {
-      await deletePurchaseInvoice(id);
-      if (selectedInvoice?.id === id) setSelectedInvoice(null);
+      try {
+        await deletePurchaseInvoice(id);
+        if (selectedInvoice?.id === id) setSelectedInvoice(null);
+      } catch (err: any) {
+        showToast(err?.message || (isAr ? "فشل حذف الفاتورة" : "Failed to delete"), "error");
+      }
     }
   };
 
   const filteredInvoices = purchaseInvoices.filter(inv => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return inv.invoiceNumber.toLowerCase().includes(q) || inv.supplierName.includes(q);
+      return (inv.invoiceNumber || "").toLowerCase().includes(q) || (inv.supplierName || "").includes(q);
     }
     return true;
   });
@@ -179,7 +207,7 @@ export default function PurchasesPage() {
 
         <button
           onClick={handleOpenAddModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-600 to-blue-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-950/60 transition-all"
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-600 to-blue-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-950/60 transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>{isAr ? "إضافة فاتورة مشتريات" : "New Purchase Invoice"}</span>
@@ -225,9 +253,9 @@ export default function PurchasesPage() {
                 <tr key={inv.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="p-3.5 text-slate-500 font-mono">{idx + 1}</td>
                   <td className="p-3.5 font-mono font-bold text-white">{inv.invoiceNumber}</td>
-                  <td className="p-3.5 text-slate-400">{formatDate(inv.date, locale)}</td>
+                  <td className="p-3.5 text-slate-400 font-sans">{formatDate(inv.date, locale)}</td>
                   <td className="p-3.5 font-bold text-slate-200">{inv.supplierName}</td>
-                  <td className="p-3.5 font-mono text-slate-400">{inv.supplierInvoiceRef || "---"}</td>
+                  <td className="p-3.5 text-slate-400 font-mono">{inv.supplierInvoiceRef || "---"}</td>
                   <td className="p-3.5 text-center font-mono text-slate-400">
                     {formatCurrency(inv.subtotal, organization.currency, locale)}
                   </td>
@@ -238,24 +266,24 @@ export default function PurchasesPage() {
                     {formatCurrency(inv.grandTotal, organization.currency, locale)}
                   </td>
                   <td className="p-3.5 text-center">
-                    <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 rounded-xl text-[10px] font-bold border border-sky-500/20">
-                      {inv.status === "paid" ? (isAr ? "مدفوعة" : "Paid") : (isAr ? "مستحقة" : "Unpaid")}
+                    <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold border bg-sky-500/10 text-sky-400 border-sky-500/20">
+                      {isAr ? "معتمدة وموردة" : "Posted & Received"}
                     </span>
                   </td>
                   <td className="p-3.5 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <button
                         onClick={() => setSelectedInvoice(inv)}
-                        title={isAr ? "معاينة تفاصيل الفاتورة" : "View Details"}
-                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                        className="p-1.5 bg-slate-800 hover:bg-sky-600 hover:text-white text-slate-300 rounded-lg transition-colors cursor-pointer"
+                        title={isAr ? "معاينة الفاتورة" : "View"}
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
                       {canManage && (
                         <button
                           onClick={() => handleDelete(inv.id)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 rounded-lg transition-colors cursor-pointer"
                           title={isAr ? "حذف الفاتورة" : "Delete"}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -271,9 +299,6 @@ export default function PurchasesPage() {
                     <p className="text-sm font-semibold text-slate-400">
                       {isAr ? "لا توجد فواتير مشتريات مسجلة" : "No purchase invoices found"}
                     </p>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {isAr ? "اضغط على زر (فاتورة مشتريات جديدة) لتسجيل توريد أصناف للمخزن" : "Click 'New Purchase Invoice' to record inventory supply"}
-                    </p>
                   </td>
                 </tr>
               )}
@@ -282,96 +307,80 @@ export default function PurchasesPage() {
         </div>
       </div>
 
-      {/* Purchase Invoice Details Modal */}
+      {/* View Modal */}
       {selectedInvoice && (
         <Modal
-          isOpen={Boolean(selectedInvoice)}
+          isOpen={!!selectedInvoice}
           onClose={() => setSelectedInvoice(null)}
-          title={isAr ? `فاتورة مشتريات ${selectedInvoice.invoiceNumber}` : `Purchase Invoice ${selectedInvoice.invoiceNumber}`}
+          title={isAr ? `فاتورة مشتريات: ${selectedInvoice.invoiceNumber}` : `Purchase Invoice: ${selectedInvoice.invoiceNumber}`}
           maxWidth="4xl"
         >
           <div className="space-y-4 text-xs">
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
               <div>
-                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "المورد:" : "Supplier:"}</span>
-                <span className="text-white font-bold block mt-0.5">{selectedInvoice.supplierName}</span>
+                <span className="text-slate-500 block mb-0.5">{isAr ? "المورد:" : "Supplier:"}</span>
+                <span className="font-bold text-white">{selectedInvoice.supplierName}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "تاريخ الفاتورة:" : "Date:"}</span>
-                <span className="text-white font-mono block mt-0.5">{formatDate(selectedInvoice.date, locale)}</span>
+                <span className="text-slate-500 block mb-0.5">{isAr ? "تاريخ الفاتورة:" : "Date:"}</span>
+                <span className="font-mono text-slate-300">{formatDate(selectedInvoice.date, locale)}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "رقم مرجع المورد:" : "Vendor Ref:"}</span>
-                <span className="text-white font-mono block mt-0.5">{selectedInvoice.supplierInvoiceRef || "---"}</span>
+                <span className="text-slate-500 block mb-0.5">{isAr ? "الرقم المرجعي:" : "Vendor Ref:"}</span>
+                <span className="font-mono text-slate-300">{selectedInvoice.supplierInvoiceRef || "---"}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "الحالة:" : "Status:"}</span>
-                <span className="text-sky-400 font-bold block mt-0.5">{selectedInvoice.status}</span>
+                <span className="text-slate-500 block mb-0.5">{isAr ? "المستودع:" : "Warehouse:"}</span>
+                <span className="font-semibold text-slate-300">
+                  {warehouses.find(w => w.id === selectedInvoice.warehouseId)?.nameAr || "المستودع المركزي"}
+                </span>
               </div>
             </div>
 
-            {/* Line Items Table */}
             <div className="border border-slate-800 rounded-2xl overflow-hidden">
               <table className="w-full text-xs text-right">
                 <thead>
                   <tr className="bg-slate-800 text-slate-400 font-bold">
-                    <th className="p-3">#</th>
-                    <th className="p-3">{isAr ? "اسم الصنف" : "Item"}</th>
+                    <th className="p-3">{isAr ? "الصنف" : "Item"}</th>
                     <th className="p-3 text-center">{isAr ? "الكمية" : "Qty"}</th>
                     <th className="p-3 text-center">{isAr ? "سعر التكلفة" : "Unit Cost"}</th>
-                    <th className="p-3 text-center">{isAr ? "الضريبة" : "VAT"}</th>
                     <th className="p-3 text-left">{isAr ? "الإجمالي" : "Total"}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800 bg-slate-950/60 font-mono">
-                  {selectedInvoice.items.map((item, idx) => (
+                <tbody className="divide-y divide-slate-800 bg-slate-950/60">
+                  {(selectedInvoice.items || []).map((it, idx) => (
                     <tr key={idx}>
-                      <td className="p-3 text-slate-500">{idx + 1}</td>
-                      <td className="p-3 font-sans font-bold text-white">{item.productName}</td>
-                      <td className="p-3 text-center text-slate-200">{item.quantity}</td>
-                      <td className="p-3 text-center text-slate-300">{formatCurrency(item.unitCost, organization.currency, locale)}</td>
-                      <td className="p-3 text-center text-sky-400">{formatCurrency(item.taxAmount, organization.currency, locale)}</td>
-                      <td className="p-3 text-left font-bold text-white">{formatCurrency(item.total, organization.currency, locale)}</td>
+                      <td className="p-3 font-bold text-white">{it.productName}</td>
+                      <td className="p-3 text-center font-mono text-slate-300">{it.quantity}</td>
+                      <td className="p-3 text-center font-mono text-slate-300">
+                        {formatCurrency(it.unitCost, organization.currency, locale)}
+                      </td>
+                      <td className="p-3 text-left font-mono font-bold text-white">
+                        {formatCurrency(it.total, organization.currency, locale)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            {/* Totals Summary */}
-            <div className="flex justify-end">
-              <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <div className="flex justify-between text-slate-400">
-                  <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
-                  <span className="font-mono font-bold text-white">{formatCurrency(selectedInvoice.subtotal, organization.currency, locale)}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>{isAr ? "ضريبة القيمة المضافة:" : "VAT Total:"}</span>
-                  <span className="font-mono font-bold text-sky-400">{formatCurrency(selectedInvoice.taxTotal, organization.currency, locale)}</span>
-                </div>
-                <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
-                  <span>{isAr ? "الإجمالي الكلي:" : "Grand Total:"}</span>
-                  <span className="font-mono text-sky-400">{formatCurrency(selectedInvoice.grandTotal, organization.currency, locale)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
+            <div className="flex justify-between items-center bg-slate-950 p-4 rounded-2xl border border-slate-800">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>{isAr ? "طباعة الفاتورة" : "Print"}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setSelectedInvoice(null)}
-                className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl transition-colors"
-              >
-                {isAr ? "إغلاق" : "Close"}
-              </button>
+              <div className="text-left space-y-1">
+                <div className="text-slate-400">
+                  {isAr ? "الإجمالي الصافي: " : "Grand Total: "}
+                  <span className="font-mono font-bold text-base text-sky-400">
+                    {formatCurrency(selectedInvoice.grandTotal, organization.currency, locale)}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </Modal>
@@ -380,20 +389,20 @@ export default function PurchasesPage() {
       {/* Add Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "تسجيل فاتورة مشتريات وتوريد مخزن" : "Record Purchase Invoice"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "تسجيل فاتورة مشتريات وتوريد مخزون" : "New Purchase Invoice"}
         maxWidth="4xl"
       >
         {suppliers.length === 0 || products.length === 0 ? (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center space-y-4">
-            <Building2 className="w-10 h-10 text-amber-400 mx-auto" />
+            <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
             <div>
               <h3 className="text-sm font-bold text-white mb-1">
-                {isAr ? "متطلبات تسجيل فاتورة المشتريات" : "Purchase Prerequisites Required"}
+                {isAr ? "متطلبات تسجيل فاتورة المشتريات" : "Prerequisites Required"}
               </h3>
               <p className="text-xs text-slate-300">
                 {suppliers.length === 0 && products.length === 0
-                  ? (isAr ? "يرجى إضافة مورد واحد ومنتج واحد على الأقل قبل تسجيل فاتورة المشتريات." : "Please add at least one supplier and one product first.")
+                  ? (isAr ? "يرجى إضافة مورد واحد ومنتج واحد على الأقل أولاً." : "Please add a supplier and product first.")
                   : suppliers.length === 0
                   ? (isAr ? "يرجى إضافة مورد في دليل الموردين أولاً." : "Please add a supplier first.")
                   : (isAr ? "يرجى إضافة صنف / منتج في المخزن أولاً." : "Please add a product first.")}
@@ -414,158 +423,174 @@ export default function PurchasesPage() {
           </div>
         ) : (
           <form onSubmit={handleCreatePurchase} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المورد *" : "Supplier *"}</label>
-              <select
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold"
-              >
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.nameAr}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم فاتورة المورد" : "Supplier Inv Ref"}</label>
-              <input
-                type="text"
-                value={supplierInvoiceRef}
-                onChange={(e) => setSupplierInvoiceRef(e.target.value)}
-                placeholder="SUPP-0091..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ الفاتورة *" : "Date *"}</label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "مستودع الاستلام *" : "Target Warehouse *"}</label>
-              <select
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white"
-              >
-                {warehouses.map(w => <option key={w.id} value={w.id}>{w.nameAr}</option>)}
-              </select>
-            </div>
-          </div>
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
 
-          <div className="border border-slate-800 rounded-2xl overflow-hidden">
-            <table className="w-full text-xs text-right">
-              <thead>
-                <tr className="bg-slate-800 text-slate-400 font-bold">
-                  <th className="p-3">{isAr ? "الصنف" : "Item"}</th>
-                  <th className="p-3 text-center w-24">{isAr ? "الكمية الموردة" : "Qty"}</th>
-                  <th className="p-3 text-center w-32">{isAr ? "سعر التكلفة للوحدة" : "Unit Cost"}</th>
-                  <th className="p-3 text-center w-24">{isAr ? "الضريبة %" : "VAT %"}</th>
-                  <th className="p-3 text-left w-32">{isAr ? "الإجمالي" : "Total"}</th>
-                  <th className="p-3 text-center w-12"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800 bg-slate-950/60">
-                {items.map((item, idx) => (
-                  <tr key={idx}>
-                    <td className="p-2">
-                      <select
-                        value={item.productId}
-                        onChange={(e) => handleUpdateItem(idx, "productId", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
-                      >
-                        {products.map(p => <option key={p.id} value={p.id}>{p.nameAr}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => handleUpdateItem(idx, "quantity", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={item.unitCost}
-                        onChange={(e) => handleUpdateItem(idx, "unitCost", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
-                      />
-                    </td>
-                    <td className="p-2 text-center font-mono text-sky-400 font-bold">
-                      %{item.taxRate}
-                    </td>
-                    <td className="p-2 text-left font-mono font-bold text-white">
-                      {formatCurrency(item.total, organization.currency, locale)}
-                    </td>
-                    <td className="p-2 text-center">
-                      {items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(idx)}
-                          className="p-1 text-slate-500 hover:text-rose-400"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المورد *" : "Supplier *"}</label>
+                <select
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold"
+                >
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.nameAr}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم فاتورة المورد" : "Supplier Inv Ref"}</label>
+                <input
+                  type="text"
+                  value={supplierInvoiceRef}
+                  onChange={(e) => setSupplierInvoiceRef(e.target.value)}
+                  placeholder="SUPP-0091..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ الفاتورة *" : "Date *"}</label>
+                <input
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "مستودع الاستلام *" : "Target Warehouse *"}</label>
+                <select
+                  value={warehouseId}
+                  onChange={(e) => setWarehouseId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                >
+                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.nameAr}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="border border-slate-800 rounded-2xl overflow-hidden">
+              <table className="w-full text-xs text-right">
+                <thead>
+                  <tr className="bg-slate-800 text-slate-400 font-bold">
+                    <th className="p-3">{isAr ? "الصنف" : "Item"}</th>
+                    <th className="p-3 text-center w-24">{isAr ? "الكمية الموردة" : "Qty"}</th>
+                    <th className="p-3 text-center w-32">{isAr ? "سعر التكلفة للوحدة" : "Unit Cost"}</th>
+                    <th className="p-3 text-center w-24">{isAr ? "الضريبة %" : "VAT %"}</th>
+                    <th className="p-3 text-left w-32">{isAr ? "الإجمالي" : "Total"}</th>
+                    <th className="p-3 text-center w-12"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="p-2 bg-slate-950">
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-950/60">
+                  {items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="p-2">
+                        <select
+                          value={item.productId}
+                          onChange={(e) => handleUpdateItem(idx, "productId", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
+                        >
+                          {products.map(p => <option key={p.id} value={p.id}>{p.nameAr}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleUpdateItem(idx, "quantity", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={item.unitCost}
+                          onChange={(e) => handleUpdateItem(idx, "unitCost", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
+                        />
+                      </td>
+                      <td className="p-2 text-center font-mono text-sky-400 font-bold">
+                        %{item.taxRate}
+                      </td>
+                      <td className="p-2 text-left font-mono font-bold text-white">
+                        {formatCurrency(item.total, organization.currency, locale)}
+                      </td>
+                      <td className="p-2 text-center">
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(idx)}
+                            className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="p-2 bg-slate-950">
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold rounded-lg transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isAr ? "إضافة صنف مشتريات" : "Add Line"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
+                  <span className="font-mono font-bold text-white">{formatCurrency(subtotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? ("ضريبة المدخلات (" + organization.defaultVatRate + "%):") : "VAT Input:"}</span>
+                  <span className="font-mono font-bold text-sky-400">{formatCurrency(taxTotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
+                  <span>{isAr ? "إجمالي الفاتورة:" : "Grand Total:"}</span>
+                  <span className="font-mono text-sky-400">{formatCurrency(grandTotal, organization.currency, locale)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={handleAddItem}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold rounded-lg transition-colors"
+                disabled={isSubmitting}
+                onClick={() => setIsAddModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isAr ? "إضافة صنف مشتريات" : "Add Line"}</span>
+                {isAr ? "إلغاء" : "Cancel"}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ والتوريد..." : "Saving & Posting..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ وتغذية المخزن والقيد المحاسبي" : "Save & Post to Ledger"}</span>
+                )}
               </button>
             </div>
-          </div>
-
-          <div className="flex justify-end">
-            <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-              <div className="flex justify-between text-slate-400">
-                <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
-                <span className="font-mono font-bold text-white">{formatCurrency(subtotal, organization.currency, locale)}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>{isAr ? ("ضريبة المدخلات (" + organization.defaultVatRate + "%):") : "VAT Input:"}</span>
-                <span className="font-mono font-bold text-sky-400">{formatCurrency(taxTotal, organization.currency, locale)}</span>
-              </div>
-              <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
-                <span>{isAr ? "إجمالي الفاتورة:" : "Grand Total:"}</span>
-                <span className="font-mono text-sky-400">{formatCurrency(grandTotal, organization.currency, locale)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
-            >
-              {isAr ? "إلغاء" : "Cancel"}
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
-            >
-              {isAr ? "حفظ وتغذية المخزن والقيد المحاسبي" : "Save & Post to Ledger"}
-            </button>
-          </div>
-        </form>
+          </form>
         )}
       </Modal>
     </div>

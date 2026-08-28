@@ -9,13 +9,13 @@ import { Product } from "@/types/erp";
 import {
   Package, Plus, Search, Filter, Edit, Trash2, Eye,
   AlertTriangle, Barcode, Warehouse, Layers, ArrowUpDown,
-  Image as ImageIcon, Upload, X, FileSpreadsheet, CheckCircle2
+  Image as ImageIcon, Upload, X, FileSpreadsheet, CheckCircle2, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function InventoryPage() {
   const {
     products, categories, units, warehouses, addProduct,
-    updateProduct, deleteProduct, locale, organization, hasPermission
+    updateProduct, deleteProduct, locale, organization, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -27,6 +27,8 @@ export default function InventoryPage() {
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Add Form State
   const [nameAr, setNameAr] = useState("");
@@ -79,42 +81,57 @@ export default function InventoryPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleCreateProduct = (e: React.FormEvent) => {
+  const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameAr || !sku) return;
+    setFormError(null);
+    if (!nameAr || !sku) {
+      setFormError(isAr ? "يرجى تعبئة اسم المنتج والرمز SKU" : "Please fill product name and SKU");
+      return;
+    }
 
-    const activeCatId = categoryId || categories[0]?.id || "";
-    const activeUnitId = unitId || units[0]?.id || "";
+    setIsSubmitting(true);
+    try {
+      const activeCatId = categoryId || categories[0]?.id || "";
+      const activeUnitId = unitId || units[0]?.id || "";
 
-    addProduct({
-      organizationId: organization.id,
-      sku,
-      barcode: barcode || ("622" + Date.now().toString().slice(-10)),
-      nameAr,
-      nameEn: nameEn || nameAr,
-      categoryId: activeCatId,
-      unitId: activeUnitId,
-      costPrice,
-      sellingPrice,
-      taxRate: organization.defaultVatRate || 14,
-      minStockLevel,
-      status: "active",
-      warehouseStock: initialWarehouseStock,
-      imageUrl: imageUrl || undefined,
-    });
+      await addProduct({
+        organizationId: organization.id,
+        sku,
+        barcode: barcode || ("622" + Date.now().toString().slice(-10)),
+        nameAr,
+        nameEn: nameEn || nameAr,
+        categoryId: activeCatId,
+        unitId: activeUnitId,
+        costPrice,
+        sellingPrice,
+        taxRate: organization.defaultVatRate || 14,
+        minStockLevel,
+        status: "active",
+        warehouseStock: initialWarehouseStock,
+        imageUrl: imageUrl || undefined,
+      });
 
-    setIsAddModalOpen(false);
-    setNameAr("");
-    setNameEn("");
-    setSku("");
-    setBarcode("");
-    setCostPrice(0);
-    setSellingPrice(0);
-    setImageUrl("");
-    setInitialWarehouseStock({});
+      setIsAddModalOpen(false);
+      setNameAr("");
+      setNameEn("");
+      setSku("");
+      setBarcode("");
+      setCostPrice(0);
+      setSellingPrice(0);
+      setImageUrl("");
+      setInitialWarehouseStock({});
+    } catch (err: any) {
+      console.error("Failed to add product:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ المنتج" : "Failed to add product");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOpenEdit = (p: Product) => {
+    setFormError(null);
     setEditProduct(p);
     setEditNameAr(p.nameAr);
     setEditNameEn(p.nameEn);
@@ -129,31 +146,50 @@ export default function InventoryPage() {
     setEditWarehouseStock({ ...(p.warehouseStock || {}) });
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editProduct) return;
+    setFormError(null);
+    setIsSubmitting(true);
 
-    updateProduct(editProduct.id, {
-      nameAr: editNameAr,
-      nameEn: editNameEn,
-      sku: editSku,
-      barcode: editBarcode,
-      categoryId: editCategoryId,
-      unitId: editUnitId,
-      costPrice: editCostPrice,
-      sellingPrice: editSellingPrice,
-      minStockLevel: editMinStockLevel,
-      imageUrl: editImageUrl || undefined,
-      warehouseStock: editWarehouseStock,
-    });
+    try {
+      await updateProduct(editProduct.id, {
+        nameAr: editNameAr,
+        nameEn: editNameEn,
+        sku: editSku,
+        barcode: editBarcode,
+        categoryId: editCategoryId,
+        unitId: editUnitId,
+        costPrice: editCostPrice,
+        sellingPrice: editSellingPrice,
+        minStockLevel: editMinStockLevel,
+        imageUrl: editImageUrl || undefined,
+        warehouseStock: editWarehouseStock,
+      });
 
-    setEditProduct(null);
+      setEditProduct(null);
+    } catch (err: any) {
+      console.error("Failed to update product:", err);
+      const errMsg = err?.message || (isAr ? "فشل تعديل بيانات المنتج" : "Failed to update product");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
-    deleteProduct(deleteTargetId);
-    setDeleteTargetId(null);
+    setIsSubmitting(true);
+    try {
+      await deleteProduct(deleteTargetId);
+      setDeleteTargetId(null);
+    } catch (err: any) {
+      console.error("Failed to delete product:", err);
+      showToast(err?.message || (isAr ? "فشل حذف المنتج" : "Failed to delete product"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredProducts = products.filter(p => {
@@ -468,12 +504,18 @@ export default function InventoryPage() {
       {/* Edit Product Modal */}
       <Modal
         isOpen={!!editProduct}
-        onClose={() => setEditProduct(null)}
-        title={isAr ? "تعديل بيانات المنتج والمخزون" : "Edit Product"}
+        onClose={() => !isSubmitting && setEditProduct(null)}
+        title={isAr ? "تعديل بيانات المنتج" : "Edit Product"}
         maxWidth="2xl"
       >
         {editProduct && (
           <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
             {/* Image Section */}
             <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center gap-4">
               <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
@@ -638,16 +680,25 @@ export default function InventoryPage() {
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setEditProduct(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "إلغاء" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
               >
-                {isAr ? "حفظ التعديلات" : "Save Changes"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ التعديلات" : "Save Changes"}</span>
+                )}
               </button>
             </div>
           </form>
@@ -657,11 +708,17 @@ export default function InventoryPage() {
       {/* Add Product Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
         title={isAr ? "إضافة منتج جديد للمخزون" : "Add New Product"}
         maxWidth="2xl"
       >
         <form onSubmit={handleCreateProduct} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           {/* Image Upload Area */}
           <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center gap-4">
             <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
@@ -829,16 +886,25 @@ export default function InventoryPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "حفظ المنتج ورصيد أول المدة" : "Save Product"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ المنتج ورصيد أول المدة" : "Save Product"}</span>
+              )}
             </button>
           </div>
         </form>
@@ -847,7 +913,7 @@ export default function InventoryPage() {
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!deleteTargetId}
-        onClose={() => setDeleteTargetId(null)}
+        onClose={() => !isSubmitting && setDeleteTargetId(null)}
         title={isAr ? "تأكيد حذف المنتج" : "Confirm Delete"}
         maxWidth="sm"
       >
@@ -860,17 +926,26 @@ export default function InventoryPage() {
           <div className="flex justify-end gap-3 pt-2 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setDeleteTargetId(null)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={handleConfirmDelete}
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-lg"
+              className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "تأكيد الحذف" : "Confirm Delete"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحذف..." : "Deleting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "تأكيد الحذف" : "Confirm Delete"}</span>
+              )}
             </button>
           </div>
         </div>

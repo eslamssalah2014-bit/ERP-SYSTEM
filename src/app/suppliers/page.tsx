@@ -7,14 +7,16 @@ import Modal from "@/components/ui/Modal";
 import { Supplier } from "@/types/erp";
 import {
   Truck, Plus, Search, MapPin, Eye, Edit, Trash2,
-  AlertTriangle, Phone, Mail, Building2, CreditCard
+  AlertTriangle, Phone, Mail, Building2, CreditCard, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function SuppliersPage() {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, organization, locale } = useERP();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -46,35 +48,51 @@ export default function SuppliersPage() {
 
   const handleCreateSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameAr) return;
+    setFormError(null);
+    if (!nameAr) {
+      setFormError(isAr ? "يرجى كتابة اسم المورد" : "Please enter supplier name");
+      return;
+    }
 
-    await addSupplier({
-      organizationId: organization.id,
-      code: code || ("SUPP-" + (suppliers.length + 1).toString().padStart(3, "0")),
-      nameAr,
-      nameEn: nameEn || nameAr,
-      mobile,
-      email,
-      address,
-      taxNumber,
-      bankName,
-      bankIban,
-      currentBalance: 0,
-      status: "active",
-    });
+    setIsSubmitting(true);
+    try {
+      await addSupplier({
+        organizationId: organization.id,
+        code: code || ("SUPP-" + (suppliers.length + 1).toString().padStart(4, "0")),
+        nameAr,
+        nameEn: nameEn || nameAr,
+        mobile,
+        email,
+        address,
+        taxNumber,
+        bankName,
+        bankIban,
+        currentBalance: 0,
+        status: "active",
+      });
 
-    setIsAddModalOpen(false);
-    setNameAr("");
-    setNameEn("");
-    setMobile("");
-    setEmail("");
-    setAddress("");
-    setTaxNumber("");
-    setBankName("");
-    setBankIban("");
+      setIsAddModalOpen(false);
+      setNameAr("");
+      setNameEn("");
+      setCode("");
+      setMobile("");
+      setEmail("");
+      setAddress("");
+      setTaxNumber("");
+      setBankName("");
+      setBankIban("");
+    } catch (err: any) {
+      console.error("Failed to add supplier:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ المورد" : "Failed to add supplier");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOpenEdit = (s: Supplier) => {
+    setFormError(null);
     setEditSupplier(s);
     setEditNameAr(s.nameAr);
     setEditNameEn(s.nameEn);
@@ -90,26 +108,45 @@ export default function SuppliersPage() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editSupplier) return;
+    setFormError(null);
+    setIsSubmitting(true);
 
-    await updateSupplier(editSupplier.id, {
-      nameAr: editNameAr,
-      nameEn: editNameEn || editNameAr,
-      code: editCode,
-      mobile: editMobile,
-      email: editEmail,
-      address: editAddress,
-      taxNumber: editTaxNumber,
-      bankName: editBankName,
-      bankIban: editBankIban,
-    });
+    try {
+      await updateSupplier(editSupplier.id, {
+        nameAr: editNameAr,
+        nameEn: editNameEn || editNameAr,
+        code: editCode,
+        mobile: editMobile,
+        email: editEmail,
+        address: editAddress,
+        taxNumber: editTaxNumber,
+        bankName: editBankName,
+        bankIban: editBankIban,
+      });
 
-    setEditSupplier(null);
+      setEditSupplier(null);
+    } catch (err: any) {
+      console.error("Failed to update supplier:", err);
+      const errMsg = err?.message || (isAr ? "فشل تعديل بيانات المورد" : "Failed to update supplier");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
-    await deleteSupplier(deleteTargetId);
-    setDeleteTargetId(null);
+    setIsSubmitting(true);
+    try {
+      await deleteSupplier(deleteTargetId);
+      setDeleteTargetId(null);
+    } catch (err: any) {
+      console.error("Failed to delete supplier:", err);
+      showToast(err?.message || (isAr ? "فشل حذف المورد" : "Failed to delete supplier"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredSuppliers = suppliers.filter(s => {
@@ -247,14 +284,20 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      {/* Add Supplier Modal */}
+      {/* Add Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "إضافة مورد / جهة توريد جديدة" : "Add Supplier"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "إضافة مورد جديد" : "Add New Supplier"}
         maxWidth="2xl"
       >
         <form onSubmit={handleCreateSupplier} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم المورد (عربي) *" : "Supplier Name (AR) *"}</label>
@@ -343,16 +386,25 @@ export default function SuppliersPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
             >
-              {isAr ? "حفظ المورد" : "Save Supplier"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ المورد" : "Save Supplier"}</span>
+              )}
             </button>
           </div>
         </form>
@@ -429,11 +481,17 @@ export default function SuppliersPage() {
       {editSupplier && (
         <Modal
           isOpen={true}
-          onClose={() => setEditSupplier(null)}
+          onClose={() => !isSubmitting && setEditSupplier(null)}
           title={isAr ? `تعديل بيانات المورد (${editSupplier.nameAr})` : `Edit Supplier (${editSupplier.nameEn})`}
           maxWidth="2xl"
         >
           <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم المورد (عربي) *" : "Supplier Name (AR) *"}</label>
@@ -522,16 +580,25 @@ export default function SuppliersPage() {
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setEditSupplier(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "إلغاء" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "حفظ التعديلات" : "Save Changes"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ التعديلات" : "Save Changes"}</span>
+                )}
               </button>
             </div>
           </form>
@@ -542,7 +609,7 @@ export default function SuppliersPage() {
       {deleteTargetId && (
         <Modal
           isOpen={true}
-          onClose={() => setDeleteTargetId(null)}
+          onClose={() => !isSubmitting && setDeleteTargetId(null)}
           title={isAr ? "تأكيد حذف المورد" : "Confirm Supplier Deletion"}
           maxWidth="md"
         >
@@ -557,16 +624,25 @@ export default function SuppliersPage() {
 
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
+                disabled={isSubmitting}
                 onClick={() => setDeleteTargetId(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "تراجع" : "Cancel"}
               </button>
               <button
+                disabled={isSubmitting}
                 onClick={handleConfirmDelete}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl"
+                className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحذف..." : "Deleting..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}</span>
+                )}
               </button>
             </div>
           </div>

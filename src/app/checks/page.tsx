@@ -7,14 +7,14 @@ import Modal from "@/components/ui/Modal";
 import { CheckRecord, CheckStatus } from "@/types/erp";
 import {
   CheckSquare, Plus, ArrowDownLeft, ArrowUpRight, CheckCircle2,
-  Clock, XCircle, AlertCircle, Building2, Trash2
+  Clock, XCircle, AlertCircle, Building2, Trash2, Loader2
 } from "lucide-react";
 
 export default function ChecksPage() {
   const {
     checks, treasuryAccounts, customers, suppliers,
     addCheck, updateCheckStatus, deleteCheck,
-    organization, activeBranchId, currentUser, locale, hasPermission
+    organization, activeBranchId, currentUser, locale, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -23,6 +23,8 @@ export default function ChecksPage() {
   const [selectedCheckToCollect, setSelectedCheckToCollect] = useState<CheckRecord | null>(null);
   const [targetTreasuryId, setTargetTreasuryId] = useState<string>(treasuryAccounts[0]?.id || "");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Add Check Form State
   const [checkNumber, setCheckNumber] = useState("");
@@ -42,6 +44,7 @@ export default function ChecksPage() {
   });
 
   const handleOpenAddModal = () => {
+    setFormError(null);
     setCheckNumber("CHK-" + Date.now().toString().slice(-6));
     setBankName(isAr ? "البنك الأهلي المصري" : "National Bank");
     setPartyName(activeTab === "incoming" ? (customers[0]?.nameAr || "") : (suppliers[0]?.nameAr || ""));
@@ -56,36 +59,62 @@ export default function ChecksPage() {
 
   const handleCreateCheck = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (amount <= 0) return;
+    setFormError(null);
+    if (amount <= 0) {
+      setFormError(isAr ? "يرجى تحديد مبلغ صحيح للشيك" : "Please enter a valid amount");
+      return;
+    }
 
-    await addCheck({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      checkNumber,
-      bankName,
-      type: activeTab,
-      partyName: partyName || (activeTab === "incoming" ? "عميل" : "مورد"),
-      customerId: activeTab === "incoming" ? (selectedCustomerId || undefined) : undefined,
-      supplierId: activeTab === "outgoing" ? (selectedSupplierId || undefined) : undefined,
-      amount: Number(amount) || 0,
-      issueDate,
-      dueDate,
-      status: "pending",
-      notes: notes || undefined,
-    });
+    setIsSubmitting(true);
+    try {
+      await addCheck({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        checkNumber,
+        bankName,
+        type: activeTab,
+        partyName: partyName || (activeTab === "incoming" ? "عميل" : "مورد"),
+        customerId: activeTab === "incoming" ? (selectedCustomerId || undefined) : undefined,
+        supplierId: activeTab === "outgoing" ? (selectedSupplierId || undefined) : undefined,
+        amount: Number(amount) || 0,
+        issueDate,
+        dueDate,
+        status: "pending",
+        notes: notes || undefined,
+      });
 
-    setIsAddModalOpen(false);
+      setIsAddModalOpen(false);
+    } catch (err: any) {
+      console.error("Failed to add check:", err);
+      const errMsg = err?.message || (isAr ? "فشل تسجيل الشيك" : "Failed to add check");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleConfirmCollect = async () => {
     if (!selectedCheckToCollect) return;
-    await updateCheckStatus(selectedCheckToCollect.id, "collected", targetTreasuryId);
-    setSelectedCheckToCollect(null);
+    setIsSubmitting(true);
+    try {
+      await updateCheckStatus(selectedCheckToCollect.id, "collected", targetTreasuryId);
+      setSelectedCheckToCollect(null);
+    } catch (err: any) {
+      console.error("Failed to collect check:", err);
+      showToast(err?.message || (isAr ? "فشل تحصيل الشيك" : "Failed to collect check"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeleteCheck = async (id: string) => {
     if (confirm(isAr ? "هل أنت متأكد من حذف هذا الشيك من الحافظة؟" : "Are you sure you want to delete this check?")) {
-      await deleteCheck(id);
+      try {
+        await deleteCheck(id);
+      } catch (err: any) {
+        showToast(err?.message || (isAr ? "فشل حذف الشيك" : "Failed to delete check"), "error");
+      }
     }
   };
 
@@ -275,16 +304,25 @@ export default function ChecksPage() {
 
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
+              disabled={isSubmitting}
               onClick={() => setSelectedCheckToCollect(null)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
+              disabled={isSubmitting}
               onClick={handleConfirmCollect}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "تأكيد التحصيل والإيداع" : "Confirm Collection"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري التحصيل..." : "Collecting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "تأكيد التحصيل والإيداع" : "Confirm Collection"}</span>
+              )}
             </button>
           </div>
         </div>
@@ -293,11 +331,17 @@ export default function ChecksPage() {
       {/* Add Check Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
         title={activeTab === "incoming" ? (isAr ? "تسجيل شيك وارد جديد (ورقة قبض)" : "Register Incoming Check") : (isAr ? "تسجيل شيك صادر جديد (ورقة دفع)" : "Register Outgoing Check")}
         maxWidth="lg"
       >
         <form onSubmit={handleCreateCheck} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم الشيك *" : "Check Number *"}</label>
@@ -381,16 +425,25 @@ export default function ChecksPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "حفظ الشيك في الحافظة" : "Save Check"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ الشيك في الحافظة" : "Save Check"}</span>
+              )}
             </button>
           </div>
         </form>

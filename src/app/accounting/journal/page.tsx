@@ -7,16 +7,18 @@ import Modal from "@/components/ui/Modal";
 import { JournalLine } from "@/types/erp";
 import {
   FileText, Plus, Search, CheckCircle2, AlertTriangle,
-  Trash2, Scale
+  Trash2, Scale, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function JournalPage() {
-  const { journalEntries, accounts, addJournalEntry, organization, activeBranchId, currentUser, locale } = useERP();
+  const { journalEntries, accounts, addJournalEntry, organization, activeBranchId, currentUser, locale, showToast } = useERP();
   const isAr = locale === "ar";
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [lines, setLines] = useState<Omit<JournalLine, "id">[]>([
     { accountId: accounts[0]?.id || "", accountCode: accounts[0]?.code || "", accountName: accounts[0]?.nameAr || "", debit: 1000, credit: 0, description: "" },
     { accountId: accounts[1]?.id || "", accountCode: accounts[1]?.code || "", accountName: accounts[1]?.nameAr || "", debit: 0, credit: 1000, description: "" },
@@ -67,27 +69,45 @@ export default function JournalPage() {
 
   const handleCreateJournal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isBalanced || !description) return;
+    setFormError(null);
+    if (!isBalanced) {
+      setFormError(isAr ? "القيد المحاسبي غير متزن (المدين لا يساوي الدائن)" : "Journal entry is not balanced");
+      return;
+    }
+    if (!description) {
+      setFormError(isAr ? "يرجى كتابة شرح القيد المحاسبي" : "Please enter entry description");
+      return;
+    }
 
-    const entryNumber = "JV-" + new Date().getFullYear() + "-" + (journalEntries.length + 1).toString().padStart(3, "0");
+    setIsSubmitting(true);
+    try {
+      const entryNumber = "JV-" + new Date().getFullYear() + "-" + (journalEntries.length + 1).toString().padStart(4, "0");
 
-    await addJournalEntry({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      entryNumber,
-      date,
-      referenceType: "manual_entry",
-      description,
-      lines: lines.map(l => ({ ...l, id: generateId() })),
-      totalDebit,
-      totalCredit,
-      isBalanced: true,
-      status: "posted",
-      createdBy: currentUser.name,
-    });
+      await addJournalEntry({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        entryNumber,
+        date,
+        referenceType: "manual_entry",
+        description,
+        lines: lines.map(l => ({ ...l, id: generateId() })),
+        totalDebit,
+        totalCredit,
+        isBalanced: true,
+        status: "posted",
+        createdBy: currentUser.name,
+      });
 
-    setIsAddModalOpen(false);
-    setDescription("");
+      setIsAddModalOpen(false);
+      setDescription("");
+    } catch (err: any) {
+      console.error("Failed to add journal entry:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ القيد اليومي" : "Failed to post journal entry");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -164,14 +184,20 @@ export default function JournalPage() {
         ))}
       </div>
 
-      {/* Manual Journal Modal */}
+      {/* Add Entry Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "تحرير قيد يومية يدوي مزدوج" : "New Journal Entry"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "تسجيل قيد يومية محاسبي جديد" : "New Journal Entry"}
         maxWidth="4xl"
       >
         <form onSubmit={handleCreateJournal} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ القيد *" : "Date *"}</label>
@@ -303,17 +329,25 @@ export default function JournalPage() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              disabled={!isBalanced}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
+              disabled={!isBalanced || isSubmitting}
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-lg transition-colors cursor-pointer"
             >
-              {isAr ? "ترحيل القيد لدفتر الأستاذ" : "Post Journal Entry"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الترحيل..." : "Posting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "ترحيل القيد لدفتر الأستاذ" : "Post Journal Entry"}</span>
+              )}
             </button>
           </div>
         </form>

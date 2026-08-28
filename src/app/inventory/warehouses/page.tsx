@@ -7,18 +7,20 @@ import Modal from "@/components/ui/Modal";
 import { Warehouse } from "@/types/erp";
 import {
   Warehouse as WarehouseIcon, Plus, MapPin, User, Phone,
-  Boxes, DollarSign, Edit, Trash2, AlertTriangle
+  Boxes, DollarSign, Edit, Trash2, AlertTriangle, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function WarehousesPage() {
   const {
     warehouses, products, branches, addWarehouse, updateWarehouse,
-    deleteWarehouse, organization, locale
+    deleteWarehouse, organization, locale, showToast
   } = useERP();
   const isAr = locale === "ar";
 
   // Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [code, setCode] = useState("");
@@ -43,31 +45,46 @@ export default function WarehousesPage() {
 
   const handleCreateWarehouse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameAr || !code) return;
+    setFormError(null);
+    if (!nameAr || !code) {
+      setFormError(isAr ? "يرجى كتابة اسم وكود المستودع" : "Please enter warehouse name and code");
+      return;
+    }
 
-    await addWarehouse({
-      organizationId: organization.id,
-      branchId: branchId || branches[0]?.id || "00000000-0000-0000-0000-000000000002",
-      code,
-      nameAr,
-      nameEn: nameEn || nameAr,
-      location,
-      managerName,
-      managerPhone,
-      isDefault,
-    });
+    setIsSubmitting(true);
+    try {
+      await addWarehouse({
+        organizationId: organization.id,
+        branchId: branchId || branches[0]?.id || "00000000-0000-0000-0000-000000000002",
+        code,
+        nameAr,
+        nameEn: nameEn || nameAr,
+        location,
+        managerName,
+        managerPhone,
+        isDefault,
+      });
 
-    setIsAddModalOpen(false);
-    setNameAr("");
-    setNameEn("");
-    setCode("");
-    setLocation("");
-    setManagerName("");
-    setManagerPhone("");
-    setIsDefault(false);
+      setIsAddModalOpen(false);
+      setNameAr("");
+      setNameEn("");
+      setCode("");
+      setLocation("");
+      setManagerName("");
+      setManagerPhone("");
+      setIsDefault(false);
+    } catch (err: any) {
+      console.error("Failed to add warehouse:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ المستودع" : "Failed to add warehouse");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOpenEdit = (wh: Warehouse) => {
+    setFormError(null);
     setEditWarehouse(wh);
     setEditNameAr(wh.nameAr);
     setEditNameEn(wh.nameEn);
@@ -81,24 +98,43 @@ export default function WarehousesPage() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editWarehouse) return;
+    setFormError(null);
+    setIsSubmitting(true);
 
-    await updateWarehouse(editWarehouse.id, {
-      nameAr: editNameAr,
-      nameEn: editNameEn || editNameAr,
-      code: editCode,
-      location: editLocation,
-      managerName: editManagerName,
-      managerPhone: editManagerPhone,
-      isDefault: editIsDefault,
-    });
+    try {
+      await updateWarehouse(editWarehouse.id, {
+        nameAr: editNameAr,
+        nameEn: editNameEn || editNameAr,
+        code: editCode,
+        location: editLocation,
+        managerName: editManagerName,
+        managerPhone: editManagerPhone,
+        isDefault: editIsDefault,
+      });
 
-    setEditWarehouse(null);
+      setEditWarehouse(null);
+    } catch (err: any) {
+      console.error("Failed to update warehouse:", err);
+      const errMsg = err?.message || (isAr ? "فشل تعديل بيانات المستودع" : "Failed to update warehouse");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
-    await deleteWarehouse(deleteTargetId);
-    setDeleteTargetId(null);
+    setIsSubmitting(true);
+    try {
+      await deleteWarehouse(deleteTargetId);
+      setDeleteTargetId(null);
+    } catch (err: any) {
+      console.error("Failed to delete warehouse:", err);
+      showToast(err?.message || (isAr ? "فشل حذف المستودع" : "Failed to delete warehouse"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -200,10 +236,16 @@ export default function WarehousesPage() {
       {/* Add Warehouse Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "إنشاء مستودع / مخزن جديد" : "Add Warehouse"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "إضافة مستودع تخزين جديد" : "Add Warehouse"}
       >
         <form onSubmit={handleCreateWarehouse} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم المستودع (عربي) *" : "Warehouse Name (AR) *"}</label>
@@ -274,16 +316,25 @@ export default function WarehousesPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
             >
-              {isAr ? "حفظ المستودع" : "Save Warehouse"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ المستودع" : "Save Warehouse"}</span>
+              )}
             </button>
           </div>
         </form>
@@ -293,10 +344,16 @@ export default function WarehousesPage() {
       {editWarehouse && (
         <Modal
           isOpen={true}
-          onClose={() => setEditWarehouse(null)}
+          onClose={() => !isSubmitting && setEditWarehouse(null)}
           title={isAr ? `تعديل مستودع (${editWarehouse.nameAr})` : `Edit Warehouse (${editWarehouse.nameEn})`}
         >
           <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم المستودع (عربي) *" : "Warehouse Name (AR) *"}</label>
@@ -367,16 +424,25 @@ export default function WarehousesPage() {
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setEditWarehouse(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "إلغاء" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "حفظ التعديلات" : "Save Changes"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ التعديلات" : "Save Changes"}</span>
+                )}
               </button>
             </div>
           </form>
@@ -387,7 +453,7 @@ export default function WarehousesPage() {
       {deleteTargetId && (
         <Modal
           isOpen={true}
-          onClose={() => setDeleteTargetId(null)}
+          onClose={() => !isSubmitting && setDeleteTargetId(null)}
           title={isAr ? "تأكيد حذف المستودع" : "Confirm Warehouse Deletion"}
           maxWidth="md"
         >
@@ -402,16 +468,25 @@ export default function WarehousesPage() {
 
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
+                disabled={isSubmitting}
                 onClick={() => setDeleteTargetId(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "تراجع" : "Cancel"}
               </button>
               <button
+                disabled={isSubmitting}
                 onClick={handleConfirmDelete}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl"
+                className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحذف..." : "Deleting..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}</span>
+                )}
               </button>
             </div>
           </div>

@@ -10,7 +10,7 @@ import { StockCardRecord, StockMovement } from "@/types/erp";
 import {
   FileSpreadsheet, Package, Warehouse as WarehouseIcon, Calendar,
   ArrowDownRight, ArrowUpRight, Printer, Download, Eye, Edit, Trash2,
-  Image as ImageIcon, Filter, CheckCircle2, AlertCircle, Building2, User
+  Image as ImageIcon, Filter, CheckCircle2, AlertCircle, Building2, User, Loader2
 } from "lucide-react";
 
 export default function KardexPage() {
@@ -28,7 +28,7 @@ function KardexContent() {
   const {
     products, warehouses, stockMovements, customers, suppliers,
     updateStockMovement, deleteStockMovement, locale, organization,
-    currentUser, hasPermission
+    currentUser, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -37,6 +37,8 @@ function KardexContent() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (urlProductId && products.some(p => p.id === urlProductId)) {
@@ -84,6 +86,7 @@ function KardexContent() {
 
   // Open Edit Modal with initialized values
   const handleOpenEdit = (rec: StockCardRecord) => {
+    setFormError(null);
     setEditRecord(rec);
     setEditDate(rec.date);
     setEditQuantity(rec.inQuantity > 0 ? rec.inQuantity : rec.outQuantity);
@@ -94,31 +97,50 @@ function KardexContent() {
   };
 
   // Submit Edit Movement
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editRecord?.movementId) return;
+    setFormError(null);
+    setIsSubmitting(true);
 
-    const isIncoming = editRecord.inQuantity > 0 || editRecord.movementType === "opening_balance" || editRecord.movementType === "purchase_receipt" || editRecord.movementType === "sales_return";
-    const signedQty = isIncoming ? Math.abs(editQuantity) : -Math.abs(editQuantity);
+    try {
+      const isIncoming = editRecord.inQuantity > 0 || editRecord.movementType === "opening_balance" || editRecord.movementType === "purchase_receipt" || editRecord.movementType === "sales_return";
+      const signedQty = isIncoming ? Math.abs(editQuantity) : -Math.abs(editQuantity);
 
-    updateStockMovement(editRecord.movementId, {
-      date: editDate,
-      quantity: signedQty,
-      unitCost: editUnitCost,
-      totalCost: Math.abs(signedQty * editUnitCost),
-      warehouseId: editWarehouseId,
-      partnerName: editPartnerName,
-      notes: editNotes,
-    });
+      await updateStockMovement(editRecord.movementId, {
+        date: editDate,
+        quantity: signedQty,
+        unitCost: editUnitCost,
+        totalCost: Math.abs(signedQty * editUnitCost),
+        warehouseId: editWarehouseId,
+        partnerName: editPartnerName,
+        notes: editNotes,
+      });
 
-    setEditRecord(null);
+      setEditRecord(null);
+    } catch (err: any) {
+      console.error("Failed to update movement:", err);
+      const errMsg = err?.message || (isAr ? "فشل تعديل حركة المخزون" : "Failed to update movement");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Confirm Delete Movement
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
-    deleteStockMovement(deleteTargetId);
-    setDeleteTargetId(null);
+    setIsSubmitting(true);
+    try {
+      await deleteStockMovement(deleteTargetId);
+      setDeleteTargetId(null);
+    } catch (err: any) {
+      console.error("Failed to delete movement:", err);
+      showToast(err?.message || (isAr ? "فشل حذف حركة المخزون" : "Failed to delete movement"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Export Excel / CSV with UTF-8 BOM for perfect Arabic display
@@ -565,12 +587,18 @@ function KardexContent() {
       {/* Edit Transaction Modal */}
       <Modal
         isOpen={!!editRecord}
-        onClose={() => setEditRecord(null)}
+        onClose={() => !isSubmitting && setEditRecord(null)}
         title={isAr ? "تعديل حركة المخزون وإعادة احتساب الرصيد" : "Edit Stock Movement"}
         maxWidth="lg"
       >
         {editRecord && (
           <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2 text-amber-400">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>
@@ -654,16 +682,25 @@ function KardexContent() {
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setEditRecord(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "إلغاء" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
               >
-                {isAr ? "حفظ وتحديث الرصيد" : "Save Changes"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ وتحديث الرصيد" : "Save Changes"}</span>
+                )}
               </button>
             </div>
           </form>
@@ -673,7 +710,7 @@ function KardexContent() {
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!deleteTargetId}
-        onClose={() => setDeleteTargetId(null)}
+        onClose={() => !isSubmitting && setDeleteTargetId(null)}
         title={isAr ? "تأكيد حذف حركة المخزون" : "Delete Stock Movement"}
         maxWidth="sm"
       >
@@ -687,17 +724,26 @@ function KardexContent() {
           <div className="flex justify-end gap-3 pt-2 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setDeleteTargetId(null)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "تراجع" : "Cancel"}
             </button>
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={handleConfirmDelete}
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-lg"
+              className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
             >
-              {isAr ? "تأكيد الحذف" : "Confirm Delete"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحذف..." : "Deleting..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "تأكيد الحذف" : "Confirm Delete"}</span>
+              )}
             </button>
           </div>
         </div>

@@ -8,7 +8,7 @@ import Modal from "@/components/ui/Modal";
 import {
   BarChart3, FileSpreadsheet, ShieldCheck, Printer, Download,
   Filter, Package, Calendar, Clock, User, ArrowDownRight, ArrowUpRight,
-  TrendingDown, CheckCircle2, AlertCircle, Layers, Image as ImageIcon
+  TrendingDown, CheckCircle2, AlertCircle, Layers, Image as ImageIcon, Loader2
 } from "lucide-react";
 
 export default function ReportsPage() {
@@ -16,7 +16,7 @@ export default function ReportsPage() {
     products, categories, units, warehouses, stockMovements,
     productChangeLogs, periodClosings, createPeriodClosing,
     salesInvoices, purchaseInvoices, accounts, journalEntries,
-    organization, currentUser, locale, hasPermission
+    organization, currentUser, locale, hasPermission, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -41,6 +41,8 @@ export default function ReportsPage() {
   const [closingPeriodLabel, setClosingPeriodLabel] = useState(`2026-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
   const [closingDate, setClosingDate] = useState(new Date().toISOString().split("T")[0]);
   const [closingNotes, setClosingNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Compute Stock Balance Report
   const stockBalanceRows = computeStockBalanceReport(
@@ -175,24 +177,35 @@ export default function ReportsPage() {
   };
 
   // Handle Submit Period Closing
-  const handleExecutePeriodClosing = (e: React.FormEvent) => {
+  const handleExecutePeriodClosing = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    setIsSubmitting(true);
 
-    createPeriodClosing({
-      organizationId: organization.id,
-      periodType: closingPeriodType,
-      periodLabel: closingPeriodLabel,
-      closingDate,
-      openingInventoryValue,
-      purchasesValue,
-      closingInventoryValue,
-      cogsValue: periodicCOGS,
-      notes: closingNotes,
-      createdBy: currentUser.name,
-    });
+    try {
+      await createPeriodClosing({
+        organizationId: organization.id,
+        periodType: closingPeriodType,
+        periodLabel: closingPeriodLabel,
+        closingDate,
+        openingInventoryValue,
+        purchasesValue,
+        closingInventoryValue,
+        cogsValue: periodicCOGS,
+        notes: closingNotes,
+        createdBy: currentUser.name,
+      });
 
-    setIsClosingModalOpen(false);
-    setClosingNotes("");
+      setIsClosingModalOpen(false);
+      setClosingNotes("");
+    } catch (err: any) {
+      console.error("Failed to execute period closing:", err);
+      const errMsg = err?.message || (isAr ? "فشل إقفال الفترة المالية" : "Failed to execute closing");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const canManageClosing = hasPermission(["super_admin", "tenant_admin", "accountant"]);
@@ -701,11 +714,17 @@ export default function ReportsPage() {
           {/* Period Closing Modal */}
           <Modal
             isOpen={isClosingModalOpen}
-            onClose={() => setIsClosingModalOpen(false)}
+            onClose={() => !isSubmitting && setIsClosingModalOpen(false)}
             title={isAr ? "إجراء إقفال المخزون والفترة المالية وتوليد القيد" : "Period-End Inventory Closing"}
             maxWidth="lg"
           >
             <form onSubmit={handleExecutePeriodClosing} className="space-y-4 text-xs">
+              {formError && (
+                <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400">
                 {isAr
                   ? "سيقوم النظام باحتساب قيمة مخزون آخر المدة تلقائياً وتوليد قيد إقفال تكلفة البضاعة المباعة لدفتر الأستاذ."
@@ -779,16 +798,25 @@ export default function ReportsPage() {
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsClosingModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold disabled:opacity-50 cursor-pointer"
                 >
                   {isAr ? "إلغاء" : "Cancel"}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
                 >
-                  {isAr ? "تأكيد الإقفال وترحيل القيد" : "Confirm Closing & Post Entry"}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{isAr ? "جاري الإقفال..." : "Closing..."}</span>
+                    </>
+                  ) : (
+                    <span>{isAr ? "تأكيد الإقفال وترحيل القيد" : "Confirm Closing & Post Entry"}</span>
+                  )}
                 </button>
               </div>
             </form>

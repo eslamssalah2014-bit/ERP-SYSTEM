@@ -8,15 +8,17 @@ import Modal from "@/components/ui/Modal";
 import { Customer } from "@/types/erp";
 import {
   Users, Plus, Search, MapPin, Eye, Edit, Trash2,
-  AlertTriangle, Phone, Mail, Building2, CreditCard
+  AlertTriangle, Phone, Mail, Building2, CreditCard, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function CustomersPage() {
-  const { customers, salesInvoices, addCustomer, updateCustomer, deleteCustomer, organization, locale } = useERP();
+  const { customers, salesInvoices, addCustomer, updateCustomer, deleteCustomer, organization, locale, showToast } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"directory" | "aging">("directory");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -50,32 +52,50 @@ export default function CustomersPage() {
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameAr) return;
+    setFormError(null);
+    if (!nameAr) {
+      setFormError(isAr ? "يرجى كتابة اسم العميل" : "Please enter customer name");
+      return;
+    }
 
-    await addCustomer({
-      organizationId: organization.id,
-      code: code || ("CUST-" + (customers.length + 1).toString().padStart(3, "0")),
-      nameAr,
-      nameEn: nameEn || nameAr,
-      mobile,
-      email,
-      address,
-      city,
-      taxNumber,
-      creditLimit,
-      paymentTermsDays,
-      currentBalance: 0,
-      status: "active",
-    });
+    setIsSubmitting(true);
+    try {
+      await addCustomer({
+        organizationId: organization.id,
+        code: code || ("CUST-" + (customers.length + 1).toString().padStart(4, "0")),
+        nameAr,
+        nameEn: nameEn || nameAr,
+        mobile,
+        email,
+        address,
+        city,
+        taxNumber,
+        creditLimit,
+        paymentTermsDays,
+        currentBalance: 0,
+        status: "active",
+      });
 
-    setIsAddModalOpen(false);
-    setNameAr("");
-    setNameEn("");
-    setMobile("");
-    setEmail("");
+      setIsAddModalOpen(false);
+      setNameAr("");
+      setNameEn("");
+      setCode("");
+      setMobile("");
+      setEmail("");
+      setAddress("");
+      setTaxNumber("");
+    } catch (err: any) {
+      console.error("Failed to add customer:", err);
+      const errMsg = err?.message || (isAr ? "فشل حفظ العميل" : "Failed to add customer");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOpenEdit = (c: Customer) => {
+    setFormError(null);
     setEditCustomer(c);
     setEditNameAr(c.nameAr);
     setEditNameEn(c.nameEn);
@@ -92,27 +112,46 @@ export default function CustomersPage() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editCustomer) return;
+    setFormError(null);
+    setIsSubmitting(true);
 
-    await updateCustomer(editCustomer.id, {
-      nameAr: editNameAr,
-      nameEn: editNameEn || editNameAr,
-      code: editCode,
-      mobile: editMobile,
-      email: editEmail,
-      address: editAddress,
-      city: editCity,
-      taxNumber: editTaxNumber,
-      creditLimit: editCreditLimit,
-      paymentTermsDays: editPaymentTermsDays,
-    });
+    try {
+      await updateCustomer(editCustomer.id, {
+        nameAr: editNameAr,
+        nameEn: editNameEn || editNameAr,
+        code: editCode,
+        mobile: editMobile,
+        email: editEmail,
+        address: editAddress,
+        city: editCity,
+        taxNumber: editTaxNumber,
+        creditLimit: editCreditLimit,
+        paymentTermsDays: editPaymentTermsDays,
+      });
 
-    setEditCustomer(null);
+      setEditCustomer(null);
+    } catch (err: any) {
+      console.error("Failed to update customer:", err);
+      const errMsg = err?.message || (isAr ? "فشل تعديل بيانات العميل" : "Failed to update customer");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
-    await deleteCustomer(deleteTargetId);
-    setDeleteTargetId(null);
+    setIsSubmitting(true);
+    try {
+      await deleteCustomer(deleteTargetId);
+      setDeleteTargetId(null);
+    } catch (err: any) {
+      console.error("Failed to delete customer:", err);
+      showToast(err?.message || (isAr ? "فشل حذف العميل" : "Failed to delete customer"), "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const agingBuckets = computeAging(customers, salesInvoices);
@@ -316,14 +355,20 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Add Customer Modal */}
+      {/* Add Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={isAr ? "إضافة عميل جديد" : "Add Customer"}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
+        title={isAr ? "إضافة عميل جديد" : "Add New Customer"}
         maxWidth="2xl"
       >
         <form onSubmit={handleCreateCustomer} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم العميل (عربي) *" : "Customer Name (AR) *"}</label>
@@ -433,16 +478,25 @@ export default function CustomersPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
             >
-              {isAr ? "حفظ العميل" : "Save Customer"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ العميل" : "Save Customer"}</span>
+              )}
             </button>
           </div>
         </form>
@@ -519,11 +573,17 @@ export default function CustomersPage() {
       {editCustomer && (
         <Modal
           isOpen={true}
-          onClose={() => setEditCustomer(null)}
+          onClose={() => !isSubmitting && setEditCustomer(null)}
           title={isAr ? `تعديل بيانات العميل (${editCustomer.nameAr})` : `Edit Customer (${editCustomer.nameEn})`}
           maxWidth="2xl"
         >
           <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم العميل (عربي) *" : "Customer Name (AR) *"}</label>
@@ -633,16 +693,25 @@ export default function CustomersPage() {
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setEditCustomer(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "إلغاء" : "Cancel"}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "حفظ التعديلات" : "Save Changes"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ التعديلات" : "Save Changes"}</span>
+                )}
               </button>
             </div>
           </form>
@@ -653,7 +722,7 @@ export default function CustomersPage() {
       {deleteTargetId && (
         <Modal
           isOpen={true}
-          onClose={() => setDeleteTargetId(null)}
+          onClose={() => !isSubmitting && setDeleteTargetId(null)}
           title={isAr ? "تأكيد حذف العميل" : "Confirm Customer Deletion"}
           maxWidth="md"
         >
@@ -668,16 +737,25 @@ export default function CustomersPage() {
 
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
+                disabled={isSubmitting}
                 onClick={() => setDeleteTargetId(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl disabled:opacity-50 cursor-pointer"
               >
                 {isAr ? "تراجع" : "Cancel"}
               </button>
               <button
+                disabled={isSubmitting}
                 onClick={handleConfirmDelete}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl"
+                className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-lg"
               >
-                {isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحذف..." : "Deleting..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "تأكيد الحذف النهائي" : "Confirm Delete"}</span>
+                )}
               </button>
             </div>
           </div>

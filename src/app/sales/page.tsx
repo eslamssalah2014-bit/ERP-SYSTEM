@@ -8,20 +8,22 @@ import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
 import { SalesInvoice, SalesInvoiceItem } from "@/types/erp";
 import {
   ShoppingCart, Plus, Search, Filter, Eye, Printer,
-  FileText, CheckCircle2, AlertCircle, Clock, Trash2
+  FileText, CheckCircle2, AlertCircle, Clock, Trash2, Loader2
 } from "lucide-react";
 
 export default function SalesInvoicesPage() {
   const {
     salesInvoices, customers, products, warehouses,
     createSalesInvoice, organization, activeBranchId,
-    currentUser, locale
+    currentUser, locale, showToast
   } = useERP();
 
   const isAr = locale === "ar";
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // New Invoice Form State
   const [customerId, setCustomerId] = useState("");
@@ -31,6 +33,7 @@ export default function SalesInvoicesPage() {
   const [items, setItems] = useState<Omit<SalesInvoiceItem, "id">[]>([]);
 
   const handleOpenAddModal = () => {
+    setFormError(null);
     const defaultCust = customers[0]?.id || "";
     const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
     const defaultProd = products[0];
@@ -120,43 +123,64 @@ export default function SalesInvoicesPage() {
 
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
     const cust = customers.find(c => c.id === customerId) || customers[0];
-    if (!cust || items.length === 0) return;
+    if (!cust) {
+      setFormError(isAr ? "يرجى اختيار العميل أولاً" : "Please select a customer");
+      return;
+    }
 
-    const invoiceNumber = "INV-" + new Date().getFullYear() + "-" + (salesInvoices.length + 1).toString().padStart(3, "0");
+    if (items.length === 0) {
+      setFormError(isAr ? "يرجى إضافة صنف واحد على الأقل للفاتورة" : "Please add at least one line item");
+      return;
+    }
 
-    const created = await createSalesInvoice({
-      organizationId: organization.id,
-      branchId: activeBranchId,
-      invoiceNumber,
-      date,
-      dueDate,
-      customerId: cust.id,
-      customerName: cust.nameAr,
-      customerTaxNumber: cust.taxNumber,
-      salesRepId: currentUser.id,
-      salesRepName: currentUser.name,
-      warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
-      status: "unpaid",
-      items: items.map(item => ({ ...item, id: generateId() })),
-      subtotal,
-      discountTotal: 0,
-      taxTotal,
-      grandTotal,
-      paidAmount: 0,
-      dueAmount: grandTotal,
-      notes: "فاتورة مبيعات إلكترونية معتمدة",
-      createdBy: currentUser.name,
-    });
+    setIsSubmitting(true);
 
-    setIsAddModalOpen(false);
-    setSelectedInvoice(created);
+    try {
+      const invoiceNumber = "INV-" + new Date().getFullYear() + "-" + (salesInvoices.length + 1).toString().padStart(4, "0");
+
+      const created = await createSalesInvoice({
+        organizationId: organization.id,
+        branchId: activeBranchId,
+        invoiceNumber,
+        date,
+        dueDate,
+        customerId: cust.id,
+        customerName: cust.nameAr,
+        customerTaxNumber: cust.taxNumber,
+        salesRepId: currentUser.id,
+        salesRepName: currentUser.name,
+        warehouseId: warehouseId || warehouses[0]?.id || "00000000-0000-0000-0000-000000000004",
+        status: "unpaid",
+        items: items.map(item => ({ ...item, id: generateId() })),
+        subtotal,
+        discountTotal: 0,
+        taxTotal,
+        grandTotal,
+        paidAmount: 0,
+        dueAmount: grandTotal,
+        notes: isAr ? "فاتورة مبيعات إلكترونية معتمدة" : "Standard Sales Invoice",
+        createdBy: currentUser.name,
+      });
+
+      setIsAddModalOpen(false);
+      setSelectedInvoice(created);
+    } catch (err: any) {
+      console.error("Failed to create sales invoice:", err);
+      const errMsg = err?.message || (isAr ? "فشل إصدار الفاتورة، يرجى المحاولة مرة أخرى" : "Failed to issue invoice");
+      setFormError(errMsg);
+      showToast(errMsg, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredInvoices = salesInvoices.filter(inv => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return inv.invoiceNumber.toLowerCase().includes(q) || inv.customerName.includes(q);
+      return (inv.invoiceNumber || "").toLowerCase().includes(q) || (inv.customerName || "").includes(q);
     }
     return true;
   });
@@ -176,7 +200,7 @@ export default function SalesInvoicesPage() {
 
         <button
           onClick={handleOpenAddModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>{isAr ? "إصدار فاتورة مبيعات جديدة" : "Create Sales Invoice"}</span>
@@ -251,7 +275,7 @@ export default function SalesInvoicesPage() {
                   <td className="p-3.5 text-center">
                     <button
                       onClick={() => setSelectedInvoice(inv)}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>{isAr ? "الفاتورة الضريبية" : "View"}</span>
@@ -279,7 +303,7 @@ export default function SalesInvoicesPage() {
 
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => !isSubmitting && setIsAddModalOpen(false)}
         title={isAr ? "تحرير فاتورة مبيعات ضريبية جديدة" : "New Sales Invoice"}
         maxWidth="4xl"
       >
@@ -313,148 +337,164 @@ export default function SalesInvoicesPage() {
           </div>
         ) : (
           <form onSubmit={handleCreateInvoice} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "العميل *" : "Customer *"}</label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold"
-              >
-                {customers.map(c => <option key={c.id} value={c.id}>{c.nameAr} ({c.code})</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ الفاتورة *" : "Invoice Date *"}</label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "مستودع الصرف *" : "Warehouse *"}</label>
-              <select
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              >
-                {warehouses.map(w => <option key={w.id} value={w.id}>{w.nameAr}</option>)}
-              </select>
-            </div>
-          </div>
+            {formError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
 
-          <div className="border border-slate-800 rounded-2xl overflow-hidden">
-            <table className="w-full text-xs text-right">
-              <thead>
-                <tr className="bg-slate-800 text-slate-400 font-bold">
-                  <th className="p-3">{isAr ? "الصنف" : "Item"}</th>
-                  <th className="p-3 text-center w-24">{isAr ? "الكمية" : "Qty"}</th>
-                  <th className="p-3 text-center w-32">{isAr ? "السعر" : "Price"}</th>
-                  <th className="p-3 text-center w-24">{isAr ? "الضريبة %" : "VAT %"}</th>
-                  <th className="p-3 text-left w-32">{isAr ? "الإجمالي" : "Total"}</th>
-                  <th className="p-3 text-center w-12"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800 bg-slate-950/60">
-                {items.map((item, idx) => (
-                  <tr key={idx}>
-                    <td className="p-2">
-                      <select
-                        value={item.productId}
-                        onChange={(e) => handleUpdateItem(idx, "productId", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
-                      >
-                        {products.map(p => <option key={p.id} value={p.id}>{p.nameAr}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => handleUpdateItem(idx, "quantity", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={item.unitPrice}
-                        onChange={(e) => handleUpdateItem(idx, "unitPrice", e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
-                      />
-                    </td>
-                    <td className="p-2 text-center font-mono text-emerald-400 font-bold">
-                      %{item.taxRate}
-                    </td>
-                    <td className="p-2 text-left font-mono font-bold text-white">
-                      {formatCurrency(item.total, organization.currency, locale)}
-                    </td>
-                    <td className="p-2 text-center">
-                      {items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(idx)}
-                          className="p-1 text-slate-500 hover:text-rose-400"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </td>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "العميل *" : "Customer *"}</label>
+                <select
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold"
+                >
+                  {customers.map(c => <option key={c.id} value={c.id}>{c.nameAr} ({c.code})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "تاريخ الفاتورة *" : "Invoice Date *"}</label>
+                <input
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "مستودع الصرف *" : "Warehouse *"}</label>
+                <select
+                  value={warehouseId}
+                  onChange={(e) => setWarehouseId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                >
+                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.nameAr}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="border border-slate-800 rounded-2xl overflow-hidden">
+              <table className="w-full text-xs text-right">
+                <thead>
+                  <tr className="bg-slate-800 text-slate-400 font-bold">
+                    <th className="p-3">{isAr ? "الصنف" : "Item"}</th>
+                    <th className="p-3 text-center w-24">{isAr ? "الكمية" : "Qty"}</th>
+                    <th className="p-3 text-center w-32">{isAr ? "السعر" : "Price"}</th>
+                    <th className="p-3 text-center w-24">{isAr ? "الضريبة %" : "VAT %"}</th>
+                    <th className="p-3 text-left w-32">{isAr ? "الإجمالي" : "Total"}</th>
+                    <th className="p-3 text-center w-12"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="p-2 bg-slate-950 flex justify-start">
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-950/60">
+                  {items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="p-2">
+                        <select
+                          value={item.productId}
+                          onChange={(e) => handleUpdateItem(idx, "productId", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
+                        >
+                          {products.map(p => <option key={p.id} value={p.id}>{p.nameAr}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleUpdateItem(idx, "quantity", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={item.unitPrice}
+                          onChange={(e) => handleUpdateItem(idx, "unitPrice", e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-center text-white font-mono"
+                        />
+                      </td>
+                      <td className="p-2 text-center font-mono text-emerald-400 font-bold">
+                        %{item.taxRate}
+                      </td>
+                      <td className="p-2 text-left font-mono font-bold text-white">
+                        {formatCurrency(item.total, organization.currency, locale)}
+                      </td>
+                      <td className="p-2 text-center">
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(idx)}
+                            className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="p-2 bg-slate-950 flex justify-start">
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-lg transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isAr ? "إضافة سطر صنف جديد" : "Add Line Item"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
+                  <span className="font-mono font-bold text-white">{formatCurrency(subtotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? ("الضريبة (" + organization.defaultVatRate + "%):") : "VAT:"}</span>
+                  <span className="font-mono font-bold text-emerald-400">{formatCurrency(taxTotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
+                  <span>{isAr ? "الإجمالي النهائي:" : "Grand Total:"}</span>
+                  <span className="font-mono text-emerald-400">{formatCurrency(grandTotal, organization.currency, locale)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
                 type="button"
-                onClick={handleAddItem}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-lg transition-colors"
+                disabled={isSubmitting}
+                onClick={() => setIsAddModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isAr ? "إضافة سطر صنف جديد" : "Add Line Item"}</span>
+                {isAr ? "إلغاء" : "Cancel"}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري إصدار الفاتورة والترحيل..." : "Issuing & Posting..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "إصدار الفاتورة واعتماد القيد والمخزن" : "Issue Invoice & Post Journal"}</span>
+                )}
               </button>
             </div>
-          </div>
-
-          <div className="flex justify-end">
-            <div className="w-72 bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-              <div className="flex justify-between text-slate-400">
-                <span>{isAr ? "المجموع الفرعي:" : "Subtotal:"}</span>
-                <span className="font-mono font-bold text-white">{formatCurrency(subtotal, organization.currency, locale)}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>{isAr ? ("الضريبة (" + organization.defaultVatRate + "%):") : "VAT:"}</span>
-                <span className="font-mono font-bold text-emerald-400">{formatCurrency(taxTotal, organization.currency, locale)}</span>
-              </div>
-              <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
-                <span>{isAr ? "الإجمالي النهائي:" : "Grand Total:"}</span>
-                <span className="font-mono text-emerald-400">{formatCurrency(grandTotal, organization.currency, locale)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors"
-            >
-              {isAr ? "إلغاء" : "Cancel"}
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-colors"
-            >
-              {isAr ? "إصدار الفاتورة واعتماد القيد والمخزن" : "Issue Invoice & Post Journal"}
-            </button>
-          </div>
-        </form>
+          </form>
         )}
       </Modal>
 
