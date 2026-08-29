@@ -39,7 +39,13 @@ export interface HydratedERPData {
  */
 export async function fetchFullERPData(): Promise<HydratedERPData | null> {
   try {
-    const res = await fetch("/api/erp/data", { cache: "no-store" });
+    const res = await fetch(`/api/erp/data?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache"
+      }
+    });
     if (!res.ok) {
       console.warn("Could not fetch live ERP data:", res.statusText);
       return null;
