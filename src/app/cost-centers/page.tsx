@@ -3,13 +3,14 @@
 import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { CostCenter } from "@/types/erp";
 import {
   Layers, Plus, Search, Edit, Trash2, AlertTriangle, CheckCircle2, Loader2, AlertCircle
 } from "lucide-react";
 
 export default function CostCentersPage() {
-  const { costCenters, addCostCenter, updateCostCenter, deleteCostCenter, organization, locale, showToast } = useERP();
+  const { costCenters, addCostCenter, updateCostCenter, deleteCostCenter, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   // Add Modal State
@@ -114,6 +115,10 @@ export default function CostCentersPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={5} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

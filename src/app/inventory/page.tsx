@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Product } from "@/types/erp";
 import {
   Package, Plus, Search, Filter, Edit, Trash2, Eye,
@@ -15,7 +16,7 @@ import {
 export default function InventoryPage() {
   const {
     products, categories, units, warehouses, addProduct,
-    updateProduct, deleteProduct, locale, organization, hasPermission, showToast
+    updateProduct, deleteProduct, locale, organization, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -205,6 +206,10 @@ export default function InventoryPage() {
     const totalQty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
     return sum + (totalQty * p.costPrice);
   }, 0);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

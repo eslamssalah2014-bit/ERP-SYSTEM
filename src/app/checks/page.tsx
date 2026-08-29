@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { CheckRecord, CheckStatus } from "@/types/erp";
 import {
   CheckSquare, Plus, ArrowDownLeft, ArrowUpRight, CheckCircle2,
@@ -14,7 +15,7 @@ export default function ChecksPage() {
   const {
     checks, treasuryAccounts, customers, suppliers,
     addCheck, updateCheckStatus, deleteCheck,
-    organization, activeBranchId, currentUser, locale, hasPermission, showToast
+    organization, activeBranchId, currentUser, locale, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -119,6 +120,10 @@ export default function ChecksPage() {
   };
 
   const canManage = hasPermission(["super_admin", "tenant_admin", "accountant"]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={5} columns={8} summaryCards={3} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

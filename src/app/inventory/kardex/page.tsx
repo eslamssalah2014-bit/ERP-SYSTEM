@@ -6,6 +6,7 @@ import { useERP } from "@/context/erp-context";
 import { computeStockKardex } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { StockCardRecord, StockMovement } from "@/types/erp";
 import {
   FileSpreadsheet, Package, Warehouse as WarehouseIcon, Calendar,
@@ -15,7 +16,7 @@ import {
 
 export default function KardexPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-400">جاري تحميل سجل حركة الصنف (كاردكس)...</div>}>
+    <Suspense fallback={<TableSkeleton rows={6} columns={8} summaryCards={4} isAr={true} />}>
       <KardexContent />
     </Suspense>
   );
@@ -28,7 +29,7 @@ function KardexContent() {
   const {
     products, warehouses, stockMovements, customers, suppliers,
     updateStockMovement, deleteStockMovement, locale, organization,
-    currentUser, hasPermission, showToast
+    currentUser, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -187,6 +188,10 @@ function KardexContent() {
   };
 
   const canManageInventory = hasPermission(["super_admin", "tenant_admin", "inventory_manager"]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

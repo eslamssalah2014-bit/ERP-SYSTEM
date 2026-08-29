@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { PurchaseReturn, PurchaseReturnItem } from "@/types/erp";
 import {
   RotateCcw, Plus, Search, Eye, Trash2, Loader2, AlertCircle,
@@ -14,7 +15,7 @@ export default function PurchaseReturnsPage() {
   const {
     purchaseReturns, purchaseInvoices, suppliers, products, warehouses,
     treasuryAccounts, addPurchaseReturn, deletePurchaseReturn,
-    organization, activeBranchId, currentUser, locale, showToast
+    organization, activeBranchId, currentUser, locale, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -207,6 +208,10 @@ export default function PurchaseReturnsPage() {
     }
     return true;
   });
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={3} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

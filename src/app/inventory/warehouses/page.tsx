@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Warehouse } from "@/types/erp";
 import {
   Warehouse as WarehouseIcon, Plus, MapPin, User, Phone,
@@ -13,7 +14,7 @@ import {
 export default function WarehousesPage() {
   const {
     warehouses, products, branches, addWarehouse, updateWarehouse,
-    deleteWarehouse, organization, locale, showToast
+    deleteWarehouse, organization, locale, showToast, isLoadingData
   } = useERP();
   const isAr = locale === "ar";
 
@@ -136,6 +137,10 @@ export default function WarehousesPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={4} columns={5} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

@@ -270,30 +270,30 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<User[]>(initialUsers);
   const [currentUser, setCurrentUser] = useState<User>(initialUsers[0]);
 
-  // Master Data State
-  const [categories, setCategories] = useState<ProductCategory[]>(initialCategories);
-  const [customerCategories, setCustomerCategories] = useState<CustomerCategory[]>(initialCustomerCategories);
-  const [units, setUnits] = useState<ProductUnit[]>(initialUnits);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(initialWarehouses);
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
+  // Master Data State (Initialized empty to guarantee 0 stale/ghost records before API hydration)
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [customerCategories, setCustomerCategories] = useState<CustomerCategory[]>([]);
+  const [units, setUnits] = useState<ProductUnit[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  // Transaction State
-  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>(initialSalesInvoices);
-  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(initialSalesReturns);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>(initialPurchaseInvoices);
-  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(initialPurchaseReturns);
-  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>(initialTreasuryAccounts);
+  // Transaction State (Initialized empty to guarantee 0 stale/ghost records before API hydration)
+  const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>([]);
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccount[]>([]);
   const [cashReceipts, setCashReceipts] = useState<CashReceipt[]>([]);
   const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
-  const [checks, setChecks] = useState<CheckRecord[]>(initialChecks);
-  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialCostCenters);
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>(initialStockMovements);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(initialJournalEntries);
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+  const [checks, setChecks] = useState<CheckRecord[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
   const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
 
@@ -319,26 +319,26 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
           const admin = liveData.users.find(u => u.role === "super_admin") || liveData.users[0];
           setCurrentUser(admin);
         }
-        if (liveData.products) setProducts(liveData.products);
-        if (liveData.categories) setCategories(liveData.categories);
-        if (liveData.customerCategories) setCustomerCategories(liveData.customerCategories);
-        if (liveData.units) setUnits(liveData.units);
-        if (liveData.customers) setCustomers(liveData.customers);
-        if (liveData.suppliers) setSuppliers(liveData.suppliers);
-        if (liveData.salesInvoices) setSalesInvoices(liveData.salesInvoices);
-        if (liveData.salesReturns) setSalesReturns(liveData.salesReturns);
-        if (liveData.purchaseInvoices) setPurchaseInvoices(liveData.purchaseInvoices);
-        if (liveData.purchaseReturns) setPurchaseReturns(liveData.purchaseReturns);
-        if (liveData.warehouses) setWarehouses(liveData.warehouses);
-        if (liveData.costCenters) setCostCenters(liveData.costCenters);
-        if (liveData.accounts) setAccounts(liveData.accounts);
-        if (liveData.treasuryAccounts) setTreasuryAccounts(liveData.treasuryAccounts);
-        if (liveData.cashReceipts) setCashReceipts(liveData.cashReceipts);
-        if (liveData.cashPayments) setCashPayments(liveData.cashPayments);
-        if (liveData.checks) setChecks(liveData.checks);
-        if (liveData.journalEntries) setJournalEntries(liveData.journalEntries);
-        if (liveData.stockMovements) setStockMovements(liveData.stockMovements);
-        if (liveData.auditLogs) setAuditLogs(liveData.auditLogs);
+        setProducts(liveData.products || []);
+        setCategories(liveData.categories || []);
+        setCustomerCategories(liveData.customerCategories || []);
+        setUnits(liveData.units || []);
+        setCustomers(liveData.customers || []);
+        setSuppliers(liveData.suppliers || []);
+        setSalesInvoices(liveData.salesInvoices || []);
+        setSalesReturns(liveData.salesReturns || []);
+        setPurchaseInvoices(liveData.purchaseInvoices || []);
+        setPurchaseReturns(liveData.purchaseReturns || []);
+        setWarehouses(liveData.warehouses || []);
+        setCostCenters(liveData.costCenters || []);
+        setAccounts(liveData.accounts || []);
+        setTreasuryAccounts(liveData.treasuryAccounts || []);
+        setCashReceipts(liveData.cashReceipts || []);
+        setCashPayments(liveData.cashPayments || []);
+        setChecks(liveData.checks || []);
+        setJournalEntries(liveData.journalEntries || []);
+        setStockMovements(liveData.stockMovements || []);
+        setAuditLogs(liveData.auditLogs || []);
       } else {
         setIsDbConnected(false);
       }

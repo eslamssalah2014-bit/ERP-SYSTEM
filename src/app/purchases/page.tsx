@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { PurchaseInvoice, PurchaseInvoiceItem } from "@/types/erp";
 import {
   ShoppingBag, Plus, Search, Filter, Eye, CheckCircle2,
@@ -15,7 +16,7 @@ export default function PurchasesPage() {
   const {
     purchaseInvoices, suppliers, products, warehouses,
     createPurchaseInvoice, deletePurchaseInvoice, organization, activeBranchId,
-    currentUser, locale, hasPermission, showToast
+    currentUser, locale, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -263,6 +264,10 @@ export default function PurchasesPage() {
   });
 
   const canManage = hasPermission(["super_admin", "tenant_admin", "accountant", "inventory_manager"]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

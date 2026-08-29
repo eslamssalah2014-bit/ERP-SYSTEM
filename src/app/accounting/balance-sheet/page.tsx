@@ -4,11 +4,16 @@ import React from "react";
 import { useERP } from "@/context/erp-context";
 import { computeBalanceSheet } from "@/lib/accounting-engine";
 import { formatCurrency } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Scale, Printer, CheckCircle2 } from "lucide-react";
 
 export default function BalanceSheetPage() {
-  const { accounts, journalEntries, organization, locale } = useERP();
+  const { accounts, journalEntries, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={4} summaryCards={2} isAr={isAr} />;
+  }
 
   const { assets, liabilities, equity, totalAssets, totalLiabilities, totalEquity, netIncome, isBalanced } = computeBalanceSheet(accounts, journalEntries);
 

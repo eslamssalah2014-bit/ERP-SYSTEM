@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Supplier } from "@/types/erp";
 import {
   Truck, Plus, Search, MapPin, Eye, Edit, Trash2,
@@ -12,7 +13,7 @@ import {
 } from "lucide-react";
 
 export default function SuppliersPage() {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast } = useERP();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -224,6 +225,10 @@ export default function SuppliersPage() {
   });
 
   const totalPayables = suppliers.reduce((sum, s) => sum + (s.currentBalance || 0), 0);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={3} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

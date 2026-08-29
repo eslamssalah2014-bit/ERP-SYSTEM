@@ -4,11 +4,16 @@ import React from "react";
 import { useERP } from "@/context/erp-context";
 import { computeTrialBalance } from "@/lib/accounting-engine";
 import { formatCurrency } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Scale, CheckCircle2, Printer } from "lucide-react";
 
 export default function TrialBalancePage() {
-  const { accounts, journalEntries, organization, locale } = useERP();
+  const { accounts, journalEntries, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={7} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   const { rows, totalDebit, totalCredit, isBalanced } = computeTrialBalance(accounts, journalEntries);
 

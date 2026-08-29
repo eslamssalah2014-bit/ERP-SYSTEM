@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { JournalLine } from "@/types/erp";
 import {
   FileText, Plus, Search, CheckCircle2, AlertTriangle,
@@ -11,7 +12,7 @@ import {
 } from "lucide-react";
 
 export default function JournalPage() {
-  const { journalEntries, accounts, addJournalEntry, organization, activeBranchId, currentUser, locale, showToast } = useERP();
+  const { journalEntries, accounts, addJournalEntry, organization, activeBranchId, currentUser, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -109,6 +110,10 @@ export default function JournalPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={5} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

@@ -4,13 +4,14 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { Currency, CustomerCategory } from "@/types/erp";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Settings, Building2, Globe, Shield, Save, Check, Users, Plus, Edit, Trash2, Tag, Loader2, AlertCircle } from "lucide-react";
 
 export default function SettingsPage() {
   const {
     organization, updateOrganization, customerCategories,
     addCustomerCategory, updateCustomerCategory, deleteCustomerCategory,
-    locale, showToast
+    locale, showToast, isLoadingData
   } = useERP();
   const isAr = locale === "ar";
 
@@ -148,6 +149,10 @@ export default function SettingsPage() {
       showToast(err?.message || (isAr ? "فشل حذف التصنيف" : "Failed to delete"), "error");
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={5} columns={4} summaryCards={2} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">

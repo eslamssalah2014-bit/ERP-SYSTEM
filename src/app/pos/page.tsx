@@ -5,6 +5,7 @@ import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import { Product } from "@/types/erp";
 import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, CreditCard,
   Banknote, CheckCircle2, User, ArrowRight, Printer, Sparkles, Loader2
@@ -21,7 +22,7 @@ interface CartItem {
 export default function PosTerminal() {
   const {
     products, categories, customers, warehouses, createSalesInvoice,
-    organization, activeBranchId, currentUser, locale, showToast
+    organization, activeBranchId, currentUser, locale, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -154,6 +155,10 @@ export default function PosTerminal() {
       setIsSubmitting(false);
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="h-[calc(100vh-6.5rem)] flex flex-col lg:flex-row gap-4">

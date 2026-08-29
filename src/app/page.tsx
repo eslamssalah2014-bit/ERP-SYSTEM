@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import StatCard from "@/components/ui/StatCard";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
 import { SalesInvoice } from "@/types/erp";
 import {
@@ -22,7 +23,7 @@ export default function Dashboard() {
   const {
     locale, organization, salesInvoices, purchaseInvoices,
     products, customers, suppliers, treasuryAccounts, checks,
-    categories, updateCheckStatus
+    categories, updateCheckStatus, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -113,6 +114,10 @@ export default function Dashboard() {
       };
     });
   }, [salesInvoices, products, categories, isAr]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={6} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

@@ -3,12 +3,17 @@
 import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { BookOpen, Search } from "lucide-react";
 
 export default function LedgerPage() {
-  const { accounts, journalEntries, organization, locale } = useERP();
+  const { accounts, journalEntries, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
   const [selectedAccountId, setSelectedAccountId] = useState<string>(accounts[0]?.id || "");
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId) || accounts[0];
 

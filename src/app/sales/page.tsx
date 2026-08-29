@@ -4,6 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import ZatcaInvoiceModal from "@/components/ui/ZatcaInvoiceModal";
 import { SalesInvoice, SalesInvoiceItem } from "@/types/erp";
 import {
@@ -16,7 +17,7 @@ export default function SalesInvoicesPage() {
   const {
     salesInvoices, customers, products, warehouses,
     createSalesInvoice, organization, activeBranchId,
-    currentUser, locale, showToast
+    currentUser, locale, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -253,6 +254,10 @@ export default function SalesInvoicesPage() {
     }
     return true;
   });
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

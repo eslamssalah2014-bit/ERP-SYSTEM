@@ -3,13 +3,14 @@
 import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   FileSpreadsheet, Search, Printer, Download, ArrowRight,
   Filter, DollarSign, ArrowUpRight, ArrowDownLeft, Building2, Truck, FileText
 } from "lucide-react";
 
 export default function SupplierBalancesReportPage() {
-  const { suppliers, getSupplierBalancesReport, organization, locale } = useERP();
+  const { suppliers, getSupplierBalancesReport, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   const [fromDate, setFromDate] = useState<string>(
@@ -59,14 +60,19 @@ export default function SupplierBalancesReportPage() {
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" +
       [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `تقرير_ارصدة_الموردين_${fromDate}_${toDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={6} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

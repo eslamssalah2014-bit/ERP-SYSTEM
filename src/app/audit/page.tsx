@@ -3,11 +3,16 @@
 import React from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { ShieldCheck, User, Clock } from "lucide-react";
 
 export default function AuditTrailPage() {
-  const { auditLogs, locale } = useERP();
+  const { auditLogs, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={5} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -34,22 +39,30 @@ export default function AuditTrailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {auditLogs.map((log, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30">
-                  <td className="p-3.5 text-slate-400 font-mono flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{log.createdAt}</span>
+              {auditLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-12 text-center text-slate-500 font-bold">
+                    {isAr ? "لا توجد سجلات تدقيق حالياً." : "No audit logs recorded yet."}
                   </td>
-                  <td className="p-3.5 font-bold text-white">{log.userName}</td>
-                  <td className="p-3.5 font-mono">
-                    <span className="px-2 py-0.5 bg-slate-800 text-emerald-400 rounded border border-slate-700 font-bold">
-                      {log.action}
-                    </span>
-                  </td>
-                  <td className="p-3.5 text-slate-300 font-medium">{log.entityType}</td>
-                  <td className="p-3.5 text-slate-400 font-sans text-[11px]">{log.details}</td>
                 </tr>
-              ))}
+              ) : (
+                auditLogs.map((log, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/30">
+                    <td className="p-3.5 text-slate-400 font-mono flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{log.createdAt}</span>
+                    </td>
+                    <td className="p-3.5 font-bold text-white">{log.userName}</td>
+                    <td className="p-3.5 font-mono">
+                      <span className="px-2 py-0.5 bg-slate-800 text-emerald-400 rounded border border-slate-700 font-bold">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-slate-300 font-medium">{log.entityType}</td>
+                    <td className="p-3.5 text-slate-400 font-sans text-[11px]">{log.details}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

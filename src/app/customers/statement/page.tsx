@@ -4,6 +4,7 @@ import React, { useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   FileText, Search, Printer, Download, Calendar,
   ArrowRight, User, TrendingUp, CreditCard, DollarSign,
@@ -11,7 +12,7 @@ import {
 } from "lucide-react";
 
 function CustomerStatementContent() {
-  const { customers, getCustomerStatement, organization, locale } = useERP();
+  const { customers, getCustomerStatement, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
   const searchParams = useSearchParams();
 
@@ -19,6 +20,10 @@ function CustomerStatementContent() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(initialCustomerId);
   const [fromDate, setFromDate] = useState("2026-01-01");
   const [toDate, setToDate] = useState(new Date().toISOString().split("T")[0]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={4} isAr={isAr} />;
+  }
 
   const selectedCustomer = useMemo(() => {
     return customers.find(c => c.id === selectedCustomerId) || customers[0];
@@ -296,7 +301,7 @@ function CustomerStatementContent() {
 
 export default function CustomerStatementPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-slate-400">جاري تحميل كشف الحساب...</div>}>
+    <Suspense fallback={<TableSkeleton rows={6} columns={7} summaryCards={4} isAr={true} />}>
       <CustomerStatementContent />
     </Suspense>
   );

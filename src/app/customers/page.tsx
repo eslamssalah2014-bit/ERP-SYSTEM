@@ -5,6 +5,7 @@ import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import { computeAging } from "@/lib/accounting-engine";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Customer } from "@/types/erp";
 import {
   Users, Plus, Search, MapPin, Eye, Edit, Trash2,
@@ -16,7 +17,7 @@ export default function CustomersPage() {
   const {
     customers, customerCategories, salesInvoices,
     addCustomer, updateCustomer, deleteCustomer,
-    organization, locale, showToast
+    organization, locale, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -265,6 +266,10 @@ export default function CustomersPage() {
   });
 
   const totalReceivables = customers.reduce((sum, c) => sum + (c.currentBalance || 0), 0);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

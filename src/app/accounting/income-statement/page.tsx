@@ -4,11 +4,16 @@ import React from "react";
 import { useERP } from "@/context/erp-context";
 import { computeIncomeStatement } from "@/lib/accounting-engine";
 import { formatCurrency } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { TrendingUp, Printer, Package, ArrowDownRight, Layers, FileText } from "lucide-react";
 
 export default function IncomeStatementPage() {
-  const { accounts, journalEntries, products, purchaseInvoices, stockMovements, organization, locale } = useERP();
+  const { accounts, journalEntries, products, purchaseInvoices, stockMovements, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={4} summaryCards={3} isAr={isAr} />;
+  }
 
   const {
     revenues, cogs, expenses, totalRevenue, totalCOGS, grossProfit,

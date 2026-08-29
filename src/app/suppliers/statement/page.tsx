@@ -3,13 +3,14 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   FileText, Search, Printer, Download, ArrowRight, Building2,
   Calendar, Filter, User, DollarSign, ArrowUpRight, ArrowDownLeft, Truck
 } from "lucide-react";
 
 export default function SupplierStatementPage() {
-  const { suppliers, getSupplierStatement, organization, locale } = useERP();
+  const { suppliers, getSupplierStatement, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   // Selected Supplier & Dates
@@ -77,14 +78,19 @@ export default function SupplierStatementPage() {
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" +
       [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `كشف_حساب_مورد_${selectedSupplier.nameAr}_${fromDate}_${toDate}.csv`);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `كشف_حساب_مورد_${selectedSupplier?.nameAr || "مورد"}_${fromDate}_${toDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

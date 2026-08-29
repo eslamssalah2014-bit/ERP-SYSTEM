@@ -4,11 +4,12 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Account, AccountType } from "@/types/erp";
 import { BookOpen, Plus, Search, Loader2, AlertCircle } from "lucide-react";
 
 export default function ChartOfAccountsPage() {
-  const { accounts, addAccount, organization, locale, showToast } = useERP();
+  const { accounts, addAccount, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -82,6 +83,10 @@ export default function ChartOfAccountsPage() {
       case "expense": return <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-bold border border-amber-500/20">{isAr ? "مصروفات" : "Expense"}</span>;
     }
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={8} columns={6} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

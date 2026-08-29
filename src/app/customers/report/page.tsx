@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   FileSpreadsheet, Download, Printer, Search, Tag, Filter,
   Users, TrendingUp, ArrowUpRight, ArrowDownLeft, FileText, ArrowRight
@@ -11,7 +12,7 @@ import {
 export default function CustomerBalancesReportPage() {
   const {
     customers, customerCategories, getCustomerBalancesReport,
-    organization, locale
+    organization, locale, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -58,11 +59,15 @@ export default function CustomerBalancesReportPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `customer_balances_report_${fromDate}_${toDate}.csv`);
+    link.setAttribute("download", `Customer_Balances_${fromDate}_${toDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

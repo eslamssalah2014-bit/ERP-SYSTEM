@@ -5,6 +5,7 @@ import { useERP } from "@/context/erp-context";
 import { computeStockBalanceReport, computeIncomeStatement } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   BarChart3, FileSpreadsheet, ShieldCheck, Printer, Download,
   Filter, Package, Calendar, Clock, User, ArrowDownRight, ArrowUpRight,
@@ -16,7 +17,7 @@ export default function ReportsPage() {
     products, categories, units, warehouses, stockMovements,
     productChangeLogs, periodClosings, createPeriodClosing,
     salesInvoices, purchaseInvoices, accounts, journalEntries,
-    organization, currentUser, locale, hasPermission, showToast
+    organization, currentUser, locale, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -209,6 +210,10 @@ export default function ReportsPage() {
   };
 
   const canManageClosing = hasPermission(["super_admin", "tenant_admin", "accountant"]);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={7} columns={8} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

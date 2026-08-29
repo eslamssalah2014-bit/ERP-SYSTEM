@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   Wallet, Plus, ArrowDownLeft, ArrowUpRight, Building2,
   CreditCard, CheckCircle2, History, Banknote, Trash2, Loader2, AlertCircle
@@ -14,7 +15,7 @@ export default function TreasuryPage() {
     treasuryAccounts, cashReceipts, cashPayments,
     customers, suppliers, accounts, createCashReceipt, deleteCashReceipt,
     createCashPayment, deleteCashPayment, organization, activeBranchId,
-    currentUser, locale, hasPermission, showToast
+    currentUser, locale, hasPermission, showToast, isLoadingData
   } = useERP();
 
   const isAr = locale === "ar";
@@ -148,6 +149,10 @@ export default function TreasuryPage() {
   };
 
   const totalLiquidCash = treasuryAccounts.reduce((sum, t) => sum + t.balance, 0);
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={6} columns={7} summaryCards={4} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">

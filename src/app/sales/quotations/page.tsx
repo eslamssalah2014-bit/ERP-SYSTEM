@@ -1,25 +1,21 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { FileText, Plus } from "lucide-react";
+import TableSkeleton from "@/components/ui/TableSkeleton";
+import { FileText, Plus, ShoppingCart, ArrowRight } from "lucide-react";
 
 export default function QuotationsPage() {
-  const { customers, locale, organization } = useERP();
+  const { salesInvoices, locale, organization, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
-  const sampleQuotations = [
-    {
-      id: "quot_01",
-      quotationNumber: "QUOT-2026-001",
-      customerName: "شركة وادي التكنولوجيا",
-      date: "2026-08-10",
-      validUntil: "2026-08-30",
-      grandTotal: 45000,
-      status: "sent"
-    }
-  ];
+  const quotations = salesInvoices.filter(inv => inv.invoiceType === "quotation");
+
+  if (isLoadingData) {
+    return <TableSkeleton rows={5} columns={7} summaryCards={0} isAr={isAr} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -30,9 +26,17 @@ export default function QuotationsPage() {
             <span>{isAr ? "عروض الأسعار والصفقات" : "Sales Quotations"}</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            {isAr ? "إنشاء عروض الأسعار مع التحويل الفوري بنقرة واحدة إلى فواتير مبيعات" : "Create quotations and 1-click convert to sales invoices"}
+            {isAr ? "إدارة عروض الأسعار المسجلة مع إمكانية إصدار عروض جديدة من شاشة المبيعات" : "Manage registered quotations with instant conversion to invoices"}
           </p>
         </div>
+
+        <Link
+          href="/sales"
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span>{isAr ? "إنشاء عرض سعر جديد" : "New Quotation"}</span>
+        </Link>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
@@ -49,23 +53,31 @@ export default function QuotationsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
-            {sampleQuotations.map((q, idx) => (
-              <tr key={q.id} className="hover:bg-slate-800/30">
-                <td className="p-3.5 text-slate-500 font-mono">{idx + 1}</td>
-                <td className="p-3.5 font-bold text-white font-mono">{q.quotationNumber}</td>
-                <td className="p-3.5 text-slate-200">{q.customerName}</td>
-                <td className="p-3.5 text-slate-400">{formatDate(q.date, locale)}</td>
-                <td className="p-3.5 text-slate-400">{formatDate(q.validUntil, locale)}</td>
-                <td className="p-3.5 text-center font-mono font-bold text-emerald-400">
-                  {formatCurrency(q.grandTotal, organization.currency, locale)}
-                </td>
-                <td className="p-3.5 text-center">
-                  <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 rounded-xl font-bold border border-sky-500/20">
-                    {isAr ? "مرسل للعميل" : "Sent"}
-                  </span>
+            {quotations.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-12 text-center text-slate-500 font-bold">
+                  {isAr ? "لا توجد عروض أسعار مسجلة حالياً." : "No quotations registered yet."}
                 </td>
               </tr>
-            ))}
+            ) : (
+              quotations.map((q, idx) => (
+                <tr key={q.id} className="hover:bg-slate-800/30">
+                  <td className="p-3.5 text-slate-500 font-mono">{idx + 1}</td>
+                  <td className="p-3.5 font-bold text-white font-mono">{q.invoiceNumber}</td>
+                  <td className="p-3.5 text-slate-200">{q.customerName}</td>
+                  <td className="p-3.5 text-slate-400">{formatDate(q.date, locale)}</td>
+                  <td className="p-3.5 text-slate-400">{formatDate(q.dueDate || q.date, locale)}</td>
+                  <td className="p-3.5 text-center font-mono font-bold text-emerald-400">
+                    {formatCurrency(q.grandTotal, organization.currency, locale)}
+                  </td>
+                  <td className="p-3.5 text-center">
+                    <span className="px-2.5 py-1 bg-sky-500/10 text-sky-400 rounded-xl font-bold border border-sky-500/20">
+                      {isAr ? "عرض سعر" : "Quotation"}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
