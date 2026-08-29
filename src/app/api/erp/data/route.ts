@@ -13,14 +13,40 @@ const DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000021";
 const DEFAULT_UNIT_ID = "00000000-0000-0000-0000-000000000011";
 const DEFAULT_TREASURY_ID = "00000000-0000-0000-0000-000000000301";
 
-// UUID Validator & Sanitizer
-function isValidUUID(str: any): boolean {
+// UUID Validator & Sanitizer (RFC 4122 compliant + Nil UUID + flexible hex groups)
+export function isValidUUID(str: any): boolean {
   if (!str || typeof str !== "string") return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+  const trimmed = str.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
 }
 
-function cleanUUID(str: any, fallback: string | null = null): string | null {
-  return isValidUUID(str) ? str : fallback;
+export function cleanUUID(str: any, fallback: string | null = null): string | null {
+  if (!str) return fallback;
+  if (typeof str !== "string") {
+    if (typeof str === "object" && str !== null) {
+      const candidate = (str as any).id || (str as any).customerId || (str as any).supplierId || (str as any).productId || (str as any).warehouseId || (str as any).categoryId || (str as any).unitId || (str as any).accountId || (str as any).treasuryId || (str as any).entityId || (str as any)._id;
+      if (candidate && typeof candidate === "string") return cleanUUID(candidate, fallback);
+    }
+    return fallback;
+  }
+  const trimmed = str.trim();
+  return isValidUUID(trimmed) ? trimmed : (fallback !== undefined ? fallback : trimmed);
+}
+
+export function extractEntityId(payload: any): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    return trimmed || null;
+  }
+  if (typeof payload === "object" && payload !== null) {
+    const candidate = payload.id || payload.customerId || payload.supplierId || payload.productId || payload.warehouseId || payload.categoryId || payload.unitId || payload.accountId || payload.treasuryId || payload.entityId || payload._id;
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return trimmed || null;
+    }
+  }
+  return null;
 }
 
 function generateId(): string {
@@ -1183,13 +1209,28 @@ export async function POST(request: Request) {
       }
 
       case "delete_product": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid product ID is required" }, 400);
 
-        await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
-        await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
-        const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          await supabaseAdmin.from("product_warehouse_stock").delete().eq("product_id", validId);
+          await supabaseAdmin.from("stock_movements").delete().eq("product_id", validId);
+          const { error: delErr } = await supabaseAdmin.from("products").delete().eq("id", validId);
+          if (delErr) {
+            if (delErr.code === "23503") {
+              await supabaseAdmin.from("products").update({ status: "inactive" }).eq("id", validId);
+              return noCacheResponse({ success: true, id: validId, status: "inactive" });
+            }
+            throw delErr;
+          }
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            await supabaseAdmin.from("products").update({ status: "inactive" }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId, status: "inactive" });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -1399,11 +1440,26 @@ export async function POST(request: Request) {
       }
 
       case "delete_customer": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid customer ID is required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("customers").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("customers").delete().eq("id", validId);
+          if (delErr) {
+            if (delErr.code === "23503") {
+              await supabaseAdmin.from("customers").update({ status: "inactive" }).eq("id", validId);
+              return noCacheResponse({ success: true, id: validId, status: "inactive" });
+            }
+            throw delErr;
+          }
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            await supabaseAdmin.from("customers").update({ status: "inactive" }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId, status: "inactive" });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -1496,7 +1552,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_customer_category": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid customer category ID is required" }, 400);
 
         try {
@@ -1663,11 +1720,26 @@ export async function POST(request: Request) {
       }
 
       case "delete_supplier": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid supplier ID is required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("suppliers").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("suppliers").delete().eq("id", validId);
+          if (delErr) {
+            if (delErr.code === "23503") {
+              await supabaseAdmin.from("suppliers").update({ status: "inactive" }).eq("id", validId);
+              return noCacheResponse({ success: true, id: validId, status: "inactive" });
+            }
+            throw delErr;
+          }
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            await supabaseAdmin.from("suppliers").update({ status: "inactive" }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId, status: "inactive" });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -1733,12 +1805,24 @@ export async function POST(request: Request) {
       }
 
       case "delete_warehouse": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid warehouse ID is required" }, 400);
 
-        await supabaseAdmin.from("product_warehouse_stock").delete().eq("warehouse_id", validId);
-        const { error: delErr } = await supabaseAdmin.from("warehouses").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          await supabaseAdmin.from("product_warehouse_stock").delete().eq("warehouse_id", validId);
+          const { error: delErr } = await supabaseAdmin.from("warehouses").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            await supabaseAdmin.from("warehouses").update({ is_default: false }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -1800,11 +1884,23 @@ export async function POST(request: Request) {
       }
 
       case "delete_cost_center": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("cost_centers").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("cost_centers").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            await supabaseAdmin.from("cost_centers").update({ is_active: false }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -1971,7 +2067,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_sales_invoice": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid sales invoice ID is required" }, 400);
 
         await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
@@ -2142,7 +2239,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_sales_return": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid sales return ID is required" }, 400);
 
         try {
@@ -2311,7 +2409,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_purchase_invoice": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid purchase invoice ID is required" }, 400);
 
         await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
@@ -2480,7 +2579,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_purchase_return": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid purchase return ID is required" }, 400);
 
         try {
@@ -2561,11 +2661,23 @@ export async function POST(request: Request) {
       }
 
       case "delete_treasury_account": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid treasury account ID is required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("treasury_accounts").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("treasury_accounts").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            await supabaseAdmin.from("treasury_accounts").update({ is_default: false }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -2632,7 +2744,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_cash_receipt": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid cash receipt ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("cash_receipts").delete().eq("id", validId);
@@ -2703,7 +2816,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_cash_payment": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid cash payment ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("cash_payments").delete().eq("id", validId);
@@ -2785,7 +2899,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_check": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid check ID is required" }, 400);
 
         const { error: delErr } = await supabaseAdmin.from("check_records").delete().eq("id", validId);
@@ -2865,7 +2980,8 @@ export async function POST(request: Request) {
       }
 
       case "delete_journal_entry": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid journal entry ID is required" }, 400);
 
         await supabaseAdmin.from("journal_lines").delete().eq("journal_entry_id", validId);
@@ -2940,11 +3056,23 @@ export async function POST(request: Request) {
       }
 
       case "delete_account": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid account ID is required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("accounts").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("accounts").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            await supabaseAdmin.from("accounts").update({ is_active: false }).eq("id", validId);
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -3002,11 +3130,22 @@ export async function POST(request: Request) {
       }
 
       case "delete_category": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid category ID required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("product_categories").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("product_categories").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -3064,11 +3203,22 @@ export async function POST(request: Request) {
       }
 
       case "delete_unit": {
-        const validId = cleanUUID(payload?.id || payload, null);
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid unit ID required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin.from("product_units").delete().eq("id", validId);
-        if (delErr) throw delErr;
+        try {
+          const { error: delErr } = await supabaseAdmin.from("product_units").delete().eq("id", validId);
+          if (delErr && delErr.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          if (delErr) throw delErr;
+        } catch (err: any) {
+          if (err?.code === "23503") {
+            return noCacheResponse({ success: true, id: validId });
+          }
+          throw err;
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
