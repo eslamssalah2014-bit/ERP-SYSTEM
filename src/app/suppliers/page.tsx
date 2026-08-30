@@ -12,8 +12,29 @@ import {
   FileSpreadsheet, FileText, ArrowRight
 } from "lucide-react";
 
+const SYSTEM_BANKS = [
+  { code: "NBE", nameAr: "البنك الأهلي المصري (NBE)", nameEn: "National Bank of Egypt (NBE)" },
+  { code: "BM", nameAr: "بنك مصر (Banque Misr)", nameEn: "Banque Misr" },
+  { code: "CIB", nameAr: "البنك التجاري الدولي (CIB)", nameEn: "Commercial International Bank (CIB)" },
+  { code: "QNB", nameAr: "بنك قطر الوطني الأهلي (QNB)", nameEn: "QNB Alahli" },
+  { code: "ADIB", nameAr: "مصرف أبو ظبي الإسلامي (ADIB)", nameEn: "Abu Dhabi Islamic Bank (ADIB)" },
+  { code: "ALEX", nameAr: "بنك الإسكندرية (Bank of Alexandria)", nameEn: "Bank of Alexandria" },
+  { code: "AAIB", nameAr: "البنك العربي الأفريقي الدولي (AAIB)", nameEn: "Arab African International Bank" },
+  { code: "FAISAL", nameAr: "بنك فيصل الإسلامي المصري", nameEn: "Faisal Islamic Bank of Egypt" },
+  { code: "HSBC", nameAr: "بنك إتش إس بي سي مصر (HSBC)", nameEn: "HSBC Bank Egypt" },
+  { code: "UB", nameAr: "المصرف المتحد (The United Bank)", nameEn: "The United Bank" },
+  { code: "BDC", nameAr: "بنك القاهرة (Banque Du Caire)", nameEn: "Banque Du Caire" },
+  { code: "FAB", nameAr: "بنك أبوظبي الأول (FAB)", nameEn: "First Abu Dhabi Bank (FAB)" },
+  { code: "ENBD", nameAr: "بنك الإمارات دبي الوطني (Emirates NBD)", nameEn: "Emirates NBD" },
+  { code: "ABK", nameAr: "البنك الأهلي الكويتي (ABK)", nameEn: "Al Ahli Bank of Kuwait (ABK)" },
+  { code: "EGBANK", nameAr: "البنك المصري الخليجي (EG Bank)", nameEn: "Egyptian Gulf Bank (EG Bank)" },
+  { code: "SAIB", nameAr: "بنك الشركة المصرفية العربية الدولية (SAIB)", nameEn: "Société Arabe Internationale de Banque" },
+  { code: "ALRAJHI", nameAr: "مصرف الراجحي (Al Rajhi Bank)", nameEn: "Al Rajhi Bank" },
+  { code: "SNB", nameAr: "البنك الأهلي السعودي (SNB)", nameEn: "Saudi National Bank (SNB)" },
+];
+
 export default function SuppliersPage() {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast, isLoadingData } = useERP();
+  const { suppliers, accounts, treasuryAccounts, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -480,13 +501,37 @@ export default function SuppliersPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم البنك" : "Bank Name"}</label>
-              <input
-                type="text"
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+              <select
                 value={bankName}
                 onChange={(e) => setBankName(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
-              />
+              >
+                <option value="">{isAr ? "-- اختر البنك المتعامل معه --" : "-- Select Bank --"}</option>
+                {treasuryAccounts?.filter(t => t.type === "bank_account" || Boolean(t.bankName)).length > 0 && (
+                  <optgroup label={isAr ? "حسابات البنوك المسجلة بالخزينة" : "Treasury Bank Accounts"}>
+                    {treasuryAccounts
+                      .filter(t => t.type === "bank_account" || Boolean(t.bankName))
+                      .map(t => (
+                        <option key={t.id} value={t.bankName || t.nameAr}>
+                          {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                <optgroup label={isAr ? "البنوك المعتمدة والرئيسية" : "Standard Registered Banks"}>
+                  {SYSTEM_BANKS.map(b => (
+                    <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
+                      {isAr ? b.nameAr : b.nameEn}
+                    </option>
+                  ))}
+                </optgroup>
+                {bankName && !SYSTEM_BANKS.some(b => b.nameAr === bankName || b.nameEn === bankName) && !treasuryAccounts?.some(t => t.bankName === bankName || t.nameAr === bankName) && (
+                  <optgroup label={isAr ? "بنك المورد الحالي" : "Current Supplier Bank"}>
+                    <option value={bankName}>{bankName}</option>
+                  </optgroup>
+                )}
+              </select>
             </div>
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم الآيبان (IBAN)" : "Bank IBAN"}</label>
@@ -704,13 +749,37 @@ export default function SuppliersPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "اسم البنك" : "Bank Name"}</label>
-                <input
-                  type="text"
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+                <select
                   value={editBankName}
                   onChange={(e) => setEditBankName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
-                />
+                >
+                  <option value="">{isAr ? "-- اختر البنك المتعامل معه --" : "-- Select Bank --"}</option>
+                  {treasuryAccounts?.filter(t => t.type === "bank_account" || Boolean(t.bankName)).length > 0 && (
+                    <optgroup label={isAr ? "حسابات البنوك المسجلة بالخزينة" : "Treasury Bank Accounts"}>
+                      {treasuryAccounts
+                        .filter(t => t.type === "bank_account" || Boolean(t.bankName))
+                        .map(t => (
+                          <option key={t.id} value={t.bankName || t.nameAr}>
+                            {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                  <optgroup label={isAr ? "البنوك المعتمدة والرئيسية" : "Standard Registered Banks"}>
+                    {SYSTEM_BANKS.map(b => (
+                      <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
+                        {isAr ? b.nameAr : b.nameEn}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {editBankName && !SYSTEM_BANKS.some(b => b.nameAr === editBankName || b.nameEn === editBankName) && !treasuryAccounts?.some(t => t.bankName === editBankName || t.nameAr === editBankName) && (
+                    <optgroup label={isAr ? "بنك المورد الحالي" : "Current Supplier Bank"}>
+                      <option value={editBankName}>{editBankName}</option>
+                    </optgroup>
+                  )}
+                </select>
               </div>
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم الآيبان (IBAN)" : "Bank IBAN"}</label>

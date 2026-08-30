@@ -69,6 +69,257 @@ function noCacheResponse(payload: any, status = 200) {
 }
 
 // ==========================================
+// AUTOMATIC JOURNAL POSTING HELPER (GL / TRIAL BALANCE PERSISTENCE)
+// ==========================================
+async function autoPostDocumentJournal(
+  docType: "sales_invoice" | "purchase_invoice" | "sales_return" | "purchase_return",
+  doc: any,
+  items: any[],
+  validOrgId: string,
+  validBranchId: string
+) {
+  if (!supabaseAdmin) return;
+  try {
+    const { data: accountsList } = await supabaseAdmin.from("accounts").select("*");
+    const accounts = accountsList || [];
+
+    // Clear any previous journal entry with this reference_id
+    const { data: existingJEs } = await supabaseAdmin
+      .from("journal_entries")
+      .select("id")
+      .eq("reference_id", doc.id);
+
+    if (existingJEs && existingJEs.length > 0) {
+      const jeIds = existingJEs.map((j: any) => j.id);
+      await supabaseAdmin.from("journal_lines").delete().in("journal_entry_id", jeIds);
+      await supabaseAdmin.from("journal_entries").delete().in("id", jeIds);
+    }
+
+    let entryNumber = "";
+    let description = "";
+    const lines: any[] = [];
+    const grandTotal = Number(doc.grand_total) || 0;
+    const taxTotal = Number(doc.tax_total) || 0;
+    const subtotal = Number(doc.subtotal) || 0;
+    const discountTotal = Number(doc.discount_total) || 0;
+    // Net Amount = Subtotal - Discount
+    // Tax Base = Net Amount
+    // Grand Total = Net Amount + Tax
+    const netAmount = Math.max(0, subtotal - discountTotal);
+
+    const arAcc = accounts.find((a: any) => a.code === "1120") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000120", code: "1120", name_ar: "العملاء والمدينون (A/R)" };
+    const salesAcc = accounts.find((a: any) => a.code === "4100") || accounts.find((a: any) => a.type === "revenue") || { id: "00000000-0000-0000-0000-000000000410", code: "4100", name_ar: "إيرادات مبيعات البضائع والخدمات" };
+    const vatOutAcc = accounts.find((a: any) => a.code === "2130") || accounts.find((a: any) => a.code === "2100") || { id: "00000000-0000-0000-0000-000000000213", code: "2130", name_ar: "ضريبة القيمة المضافة - مخرجات (VAT Out)" };
+    const cogsAcc = accounts.find((a: any) => a.code === "5100") || accounts.find((a: any) => a.type === "expense") || { id: "00000000-0000-0000-0000-000000000510", code: "5100", name_ar: "تكلفة البضاعة المباعة (COGS)" };
+    const invAcc = accounts.find((a: any) => a.code === "1130") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000130", code: "1130", name_ar: "مخزون البضائع للبيع" };
+    const vatInAcc = accounts.find((a: any) => a.code === "1140") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000140", code: "1140", name_ar: "ضريبة القيمة المضافة - مدخلات (VAT In)" };
+    const apAcc = accounts.find((a: any) => a.code === "2110") || accounts.find((a: any) => a.type === "liabilities") || { id: "00000000-0000-0000-0000-000000000211", code: "2110", name_ar: "الموردون والدائنون (A/P)" };
+    const treasuryAcc = accounts.find((a: any) => a.code === "1110" || a.code === "1115") || { id: "00000000-0000-0000-0000-000000000111", code: "1110", name_ar: "النقدية بالخزينة" };
+
+    if (docType === "sales_invoice") {
+      entryNumber = `JV-SALES-${doc.invoice_number}`;
+      description = `إثبات مبيعات ومخزون فاتورة ${doc.invoice_number} للعميل ${doc.customer_name}`;
+
+      lines.push({
+        account_id: arAcc.id,
+        account_code: arAcc.code,
+        account_name: arAcc.name_ar,
+        debit: grandTotal,
+        credit: 0,
+        description: `استحقاق فاتورة مبيعات ${doc.invoice_number} - ${doc.customer_name}`
+      });
+      lines.push({
+        account_id: salesAcc.id,
+        account_code: salesAcc.code,
+        account_name: salesAcc.name_ar,
+        debit: 0,
+        credit: netAmount,
+        description: `إيراد مبيعات بضاعة صافي فاتورة ${doc.invoice_number}`
+      });
+      lines.push({
+        account_id: vatOutAcc.id,
+        account_code: vatOutAcc.code,
+        account_name: vatOutAcc.name_ar,
+        debit: 0,
+        credit: taxTotal,
+        description: `ضريبة القيمة المضافة المستحقة (مخرجات) فاتورة ${doc.invoice_number}`
+      });
+
+      let totalCogs = 0;
+      items.forEach((it: any) => {
+        totalCogs += (Number(it.cost_price || it.costPrice) || 0) * (Number(it.quantity) || 0);
+      });
+      if (totalCogs > 0) {
+        lines.push({
+          account_id: cogsAcc.id,
+          account_code: cogsAcc.code,
+          account_name: cogsAcc.name_ar,
+          debit: totalCogs,
+          credit: 0,
+          description: `إثبات تكلفة البضاعة المباعة (COGS) فاتورة ${doc.invoice_number}`
+        });
+        lines.push({
+          account_id: invAcc.id,
+          account_code: invAcc.code,
+          account_name: invAcc.name_ar,
+          debit: 0,
+          credit: totalCogs,
+          description: `صرف مخزون بضاعة فاتورة ${doc.invoice_number}`
+        });
+      }
+    } else if (docType === "purchase_invoice") {
+      entryNumber = `JV-PURCHASE-${doc.invoice_number}`;
+      description = `إثبات توريد ومخزون فاتورة مشتريات ${doc.invoice_number} - ${doc.supplier_name}`;
+
+      lines.push({
+        account_id: invAcc.id,
+        account_code: invAcc.code,
+        account_name: invAcc.name_ar,
+        debit: netAmount,
+        credit: 0,
+        description: `إضافة بضاعة للمخزن بالصافي فاتورة مشتريات ${doc.invoice_number}`
+      });
+      lines.push({
+        account_id: vatInAcc.id,
+        account_code: vatInAcc.code,
+        account_name: vatInAcc.name_ar,
+        debit: taxTotal,
+        credit: 0,
+        description: `ضريبة مدخلات قابلة للخصم فاتورة مشتريات ${doc.invoice_number}`
+      });
+      lines.push({
+        account_id: apAcc.id,
+        account_code: apAcc.code,
+        account_name: apAcc.name_ar,
+        debit: 0,
+        credit: grandTotal,
+        description: `استحقاق مورد فاتورة مشتريات ${doc.invoice_number} - ${doc.supplier_name}`
+      });
+    } else if (docType === "sales_return") {
+      entryNumber = `JV-SRET-${doc.return_number}`;
+      description = `إثبات قيد مرتجع مبيعات إشعار دائن ${doc.return_number}`;
+      const creditAcc = (doc.refund_method === "treasury" || doc.refund_method === "cash") ? treasuryAcc : arAcc;
+
+      lines.push({
+        account_id: salesAcc.id,
+        account_code: salesAcc.code,
+        account_name: salesAcc.name_ar,
+        debit: subtotal,
+        credit: 0,
+        description: `مردودات مبيعات إشعار دائن ${doc.return_number}`
+      });
+      lines.push({
+        account_id: vatOutAcc.id,
+        account_code: vatOutAcc.code,
+        account_name: vatOutAcc.name_ar,
+        debit: taxTotal,
+        credit: 0,
+        description: `تخفيض ضريبة القيمة المضافة لمرتجع مبيعات ${doc.return_number}`
+      });
+      lines.push({
+        account_id: creditAcc.id,
+        account_code: creditAcc.code,
+        account_name: creditAcc.name_ar,
+        debit: 0,
+        credit: grandTotal,
+        description: `تسوية حساب العميل/الخزينة لمرتجع ${doc.return_number} - ${doc.customer_name}`
+      });
+
+      let returnCogs = 0;
+      items.forEach((it: any) => {
+        returnCogs += (Number(it.cost_price || it.costPrice) || 0) * (Number(it.quantity) || 0);
+      });
+      if (returnCogs > 0) {
+        lines.push({
+          account_id: invAcc.id,
+          account_code: invAcc.code,
+          account_name: invAcc.name_ar,
+          debit: returnCogs,
+          credit: 0,
+          description: `إعادة إدخال بضاعة مرتجعة للمخزن ${doc.return_number}`
+        });
+        lines.push({
+          account_id: cogsAcc.id,
+          account_code: cogsAcc.code,
+          account_name: cogsAcc.name_ar,
+          debit: 0,
+          credit: returnCogs,
+          description: `تخفيض تكلفة البضاعة المباعة لمرتجع ${doc.return_number}`
+        });
+      }
+    } else if (docType === "purchase_return") {
+      entryNumber = `JV-PRET-${doc.return_number}`;
+      description = `إثبات قيد مرتجع مشتريات إشعار مدين ${doc.return_number}`;
+      const debitAcc = (doc.refund_method === "treasury" || doc.refund_method === "cash") ? treasuryAcc : apAcc;
+
+      lines.push({
+        account_id: debitAcc.id,
+        account_code: debitAcc.code,
+        account_name: debitAcc.name_ar,
+        debit: grandTotal,
+        credit: 0,
+        description: `تسوية حساب المورد/الخزينة لمرتجع مشتريات ${doc.return_number} - ${doc.supplier_name}`
+      });
+      lines.push({
+        account_id: invAcc.id,
+        account_code: invAcc.code,
+        account_name: invAcc.name_ar,
+        debit: 0,
+        credit: subtotal,
+        description: `إخراج بضاعة مرتجعة من المخزن ${doc.return_number}`
+      });
+      lines.push({
+        account_id: vatInAcc.id,
+        account_code: vatInAcc.code,
+        account_name: vatInAcc.name_ar,
+        debit: 0,
+        credit: taxTotal,
+        description: `تخفيض ضريبة المدخلات لمرتجع مشتريات ${doc.return_number}`
+      });
+    }
+
+    const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+    const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+    const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+    const { data: createdJE, error: jeErr } = await supabaseAdmin
+      .from("journal_entries")
+      .insert([{
+        organization_id: validOrgId,
+        branch_id: validBranchId,
+        entry_number: entryNumber,
+        date: doc.date || new Date().toISOString().split("T")[0],
+        reference_type: docType,
+        reference_id: doc.id,
+        description: description,
+        total_debit: totalDebit,
+        total_credit: totalCredit,
+        is_balanced: isBalanced,
+        status: "posted",
+        created_by: doc.created_by || "النظام"
+      }])
+      .select()
+      .single();
+
+    if (!jeErr && createdJE && lines.length > 0) {
+      const lineRows = lines.map((l: any) => ({
+        id: generateId(),
+        journal_entry_id: createdJE.id,
+        account_id: cleanUUID(l.account_id, "00000000-0000-0000-0000-000000000101"),
+        account_code: l.account_code,
+        account_name: l.account_name,
+        debit: Number(l.debit) || 0,
+        credit: Number(l.credit) || 0,
+        description: l.description
+      }));
+      await supabaseAdmin.from("journal_lines").insert(lineRows);
+    }
+  } catch (err) {
+    console.error("autoPostDocumentJournal error:", err);
+  }
+}
+
+// ==========================================
 // SYSTEM ENTITY MAPPERS (SNAKE_CASE -> CAMELCASE)
 // ==========================================
 
@@ -2062,6 +2313,11 @@ export async function POST(request: Request) {
           }
         }
 
+        // Auto-post live journal entry to General Ledger & Trial Balance (non-quotations)
+        if (invType !== "quotation" && inv?.id) {
+          await autoPostDocumentJournal("sales_invoice", inv, mappedItems, validOrgId || DEFAULT_ORG_ID, validBranchId || DEFAULT_BRANCH_ID);
+        }
+
         const mappedInvoice = mapSalesInvoice(inv, mappedItems);
         return noCacheResponse({ success: true, data: mappedInvoice });
       }
@@ -2073,7 +2329,14 @@ export async function POST(request: Request) {
 
         await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
-        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+        
+        // Clean up journal lines & entries
+        const { data: oldJEs } = await supabaseAdmin.from("journal_entries").select("id").eq("reference_id", validId);
+        if (oldJEs && oldJEs.length > 0) {
+          const jeIds = oldJEs.map((j: any) => j.id);
+          await supabaseAdmin.from("journal_lines").delete().in("journal_entry_id", jeIds);
+          await supabaseAdmin.from("journal_entries").delete().in("id", jeIds);
+        }
 
         const { error: delErr } = await supabaseAdmin.from("sales_invoices").delete().eq("id", validId);
         if (delErr) throw delErr;
@@ -2235,6 +2498,11 @@ export async function POST(request: Request) {
           }
         }
 
+        // Auto-post live journal entry for sales return
+        if (sret?.id) {
+          await autoPostDocumentJournal("sales_return", sret, mappedItems, validOrgId || DEFAULT_ORG_ID, validBranchId || DEFAULT_BRANCH_ID);
+        }
+
         return noCacheResponse({ success: true, data: mapSalesReturn(sret, mappedItems) });
       }
 
@@ -2250,7 +2518,14 @@ export async function POST(request: Request) {
           console.warn("sales_returns delete skipped:", e);
         }
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
-        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+        
+        // Clean up journal lines & entries
+        const { data: oldJEs } = await supabaseAdmin.from("journal_entries").select("id").eq("reference_id", validId);
+        if (oldJEs && oldJEs.length > 0) {
+          const jeIds = oldJEs.map((j: any) => j.id);
+          await supabaseAdmin.from("journal_lines").delete().in("journal_entry_id", jeIds);
+          await supabaseAdmin.from("journal_entries").delete().in("id", jeIds);
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }
@@ -2404,6 +2679,11 @@ export async function POST(request: Request) {
           }
         }
 
+        // Auto-post live journal entry to General Ledger & Trial Balance (non-purchase-orders)
+        if (pType !== "purchase_order" && pinv?.id) {
+          await autoPostDocumentJournal("purchase_invoice", pinv, mappedItems, validOrgId || DEFAULT_ORG_ID, validBranchId || DEFAULT_BRANCH_ID);
+        }
+
         const mappedPInv = mapPurchaseInvoice(pinv, mappedItems);
         return noCacheResponse({ success: true, data: mappedPInv });
       }
@@ -2415,7 +2695,14 @@ export async function POST(request: Request) {
 
         await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
-        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+        
+        // Clean up journal lines & entries
+        const { data: oldJEs } = await supabaseAdmin.from("journal_entries").select("id").eq("reference_id", validId);
+        if (oldJEs && oldJEs.length > 0) {
+          const jeIds = oldJEs.map((j: any) => j.id);
+          await supabaseAdmin.from("journal_lines").delete().in("journal_entry_id", jeIds);
+          await supabaseAdmin.from("journal_entries").delete().in("id", jeIds);
+        }
 
         const { error: delErr } = await supabaseAdmin.from("purchase_invoices").delete().eq("id", validId);
         if (delErr) throw delErr;
@@ -2575,6 +2862,11 @@ export async function POST(request: Request) {
           }
         }
 
+        // Auto-post live journal entry for purchase return
+        if (pret?.id) {
+          await autoPostDocumentJournal("purchase_return", pret, mappedItems, validOrgId || DEFAULT_ORG_ID, validBranchId || DEFAULT_BRANCH_ID);
+        }
+
         return noCacheResponse({ success: true, data: mapPurchaseReturn(pret, mappedItems) });
       }
 
@@ -2590,7 +2882,14 @@ export async function POST(request: Request) {
           console.warn("purchase_returns delete skipped:", e);
         }
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
-        await supabaseAdmin.from("journal_entries").delete().eq("reference_id", validId);
+        
+        // Clean up journal lines & entries
+        const { data: oldJEs } = await supabaseAdmin.from("journal_entries").select("id").eq("reference_id", validId);
+        if (oldJEs && oldJEs.length > 0) {
+          const jeIds = oldJEs.map((j: any) => j.id);
+          await supabaseAdmin.from("journal_lines").delete().in("journal_entry_id", jeIds);
+          await supabaseAdmin.from("journal_entries").delete().in("id", jeIds);
+        }
 
         return noCacheResponse({ success: true, id: validId });
       }

@@ -45,11 +45,9 @@ export default function SalesInvoicesPage() {
   const handleOpenAddModal = () => {
     setFormError(null);
     setInvoiceType("tax_invoice");
-    const defaultCust = customers[0]?.id || "";
     const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
-    const defaultProd = products[0];
 
-    setCustomerId(defaultCust);
+    setCustomerId("");
     setWarehouseId(defaultWh);
     setDate(new Date().toISOString().split("T")[0]);
     setDueDate(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0]);
@@ -57,45 +55,26 @@ export default function SalesInvoicesPage() {
     setDiscountValue(0);
     setNotes("");
     setProductSearchTerms({});
-
-    if (defaultProd) {
-      setItems([{
-        productId: defaultProd.id,
-        productName: isAr ? defaultProd.nameAr : defaultProd.nameEn,
-        warehouseId: defaultWh,
-        quantity: 1,
-        unitPrice: defaultProd.sellingPrice,
-        costPrice: defaultProd.costPrice,
-        discountPercent: 0,
-        discountAmount: 0,
-        taxRate: organization.defaultVatRate,
-        taxAmount: (defaultProd.sellingPrice * organization.defaultVatRate) / 100,
-        total: defaultProd.sellingPrice * (1 + organization.defaultVatRate / 100),
-      }]);
-    } else {
-      setItems([]);
-    }
+    setItems([]);
     setIsAddModalOpen(true);
   };
 
   const handleAddItem = () => {
-    const p = products[0];
-    if (!p) return;
     const currentWh = warehouseId || warehouses[0]?.id || "";
     setItems(prev => [
       ...prev,
       {
-        productId: p.id,
-        productName: isAr ? p.nameAr : p.nameEn,
+        productId: "",
+        productName: "",
         warehouseId: currentWh,
         quantity: 1,
-        unitPrice: p.sellingPrice,
-        costPrice: p.costPrice,
+        unitPrice: 0,
+        costPrice: 0,
         discountPercent: 0,
         discountAmount: 0,
         taxRate: organization.defaultVatRate,
-        taxAmount: (p.sellingPrice * organization.defaultVatRate) / 100,
-        total: p.sellingPrice * (1 + organization.defaultVatRate / 100),
+        taxAmount: 0,
+        total: 0,
       }
     ]);
   };
@@ -181,14 +160,19 @@ export default function SalesInvoicesPage() {
     e.preventDefault();
     setFormError(null);
 
-    const cust = customers.find(c => c.id === customerId) || customers[0];
+    const cust = customers.find(c => c.id === customerId);
     if (!cust) {
-      setFormError(isAr ? "يرجى اختيار العميل أولاً" : "Please select a customer");
+      setFormError(isAr ? "يرجى اختيار العميل أولاً من القائمة" : "Please select a customer first");
       return;
     }
 
     if (items.length === 0) {
       setFormError(isAr ? "يرجى إضافة صنف واحد على الأقل للفاتورة" : "Please add at least one line item");
+      return;
+    }
+
+    if (items.some(it => !it.productId)) {
+      setFormError(isAr ? "يرجى تحديد كافة الأصناف في بنود الفاتورة" : "Please select a product for all invoice items");
       return;
     }
 
@@ -509,6 +493,7 @@ export default function SalesInvoicesPage() {
                   onChange={(e) => setCustomerId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold"
                 >
+                  <option value="">{isAr ? "-- اختر العميل من القائمة --" : "-- Select Customer --"}</option>
                   {customers.map(c => (
                     <option key={c.id} value={c.id}>
                       {c.nameAr} ({c.code}){c.categoryName ? ` [${c.categoryName}]` : ""}
@@ -574,6 +559,7 @@ export default function SalesInvoicesPage() {
                               onChange={(e) => handleSelectProduct(idx, e.target.value)}
                               className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
                             >
+                              <option value="">{isAr ? "-- اختر الصنف من القائمة --" : "-- Select Product --"}</option>
                               {filteredProds.map(p => (
                                 <option key={p.id} value={p.id}>
                                   {p.nameAr} {p.barcode ? `(${p.barcode})` : ""} {p.sku ? `[${p.sku}]` : ""} - {p.sellingPrice} {organization.currency}

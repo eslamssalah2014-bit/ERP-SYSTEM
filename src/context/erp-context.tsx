@@ -21,6 +21,8 @@ import { generateId } from "@/lib/utils";
 import {
   generateSalesInvoiceJournal,
   generatePurchaseInvoiceJournal,
+  generateSalesReturnJournal,
+  generatePurchaseReturnJournal,
   generateReceiptJournal,
   generatePaymentJournal,
   generateOpeningStockJournal,
@@ -1132,6 +1134,15 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       ));
     }
 
+    let returnCogs = 0;
+    returnItems.forEach(it => {
+      returnCogs += (Number(it.costPrice || it.unitPrice) || 0) * (Number(it.quantity) || 0);
+    });
+    const sretJournal = generateSalesReturnJournal(savedReturn, accounts, returnCogs);
+    if (sretJournal) {
+      setJournalEntries(prev => [{ ...sretJournal, id: generateId() }, ...prev]);
+    }
+
     setSalesReturns(prev => [savedReturn, ...prev.filter(x => x.id !== savedReturn.id)]);
 
     addAuditLog({
@@ -1155,6 +1166,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     setSalesReturns(prev => prev.filter(r => r.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    setJournalEntries(prev => prev.filter(je => je.referenceId !== id));
     showToast(locale === "ar" ? "تم حذف مرتجع المبيعات بنجاح" : "Sales return deleted", "success");
   };
 
@@ -1217,6 +1229,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       ));
     }
 
+    const pretJournal = generatePurchaseReturnJournal(savedReturn, accounts);
+    if (pretJournal) {
+      setJournalEntries(prev => [{ ...pretJournal, id: generateId() }, ...prev]);
+    }
+
     setPurchaseReturns(prev => [savedReturn, ...prev.filter(x => x.id !== savedReturn.id)]);
 
     addAuditLog({
@@ -1240,6 +1257,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     }
     setPurchaseReturns(prev => prev.filter(r => r.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
+    setJournalEntries(prev => prev.filter(je => je.referenceId !== id));
     showToast(locale === "ar" ? "تم حذف مرتجع المشتريات بنجاح" : "Purchase return deleted", "success");
   };
 

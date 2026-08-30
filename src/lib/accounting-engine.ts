@@ -1,6 +1,6 @@
 import {
   Account, JournalEntry, JournalLine, SalesInvoice,
-  PurchaseInvoice, CashReceipt, CashPayment, StockMovement,
+  PurchaseInvoice, SalesReturn, PurchaseReturn, CashReceipt, CashPayment, StockMovement,
   StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier,
   Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow
 } from "@/types/erp";
@@ -8,13 +8,19 @@ import {
 export function generateSalesInvoiceJournal(
   invoice: SalesInvoice,
   accounts: Account[],
-  cogsAmount: number
+  cogsAmount: number = 0
 ): Omit<JournalEntry, "id"> {
-  const arAccount = accounts.find(a => a.code === "1120") || accounts[0];
-  const salesAccount = accounts.find(a => a.code === "4100") || accounts[0];
-  const vatOutAccount = accounts.find(a => a.code === "2130") || accounts[0];
-  const cogsAccount = accounts.find(a => a.code === "5100") || accounts[0];
-  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
+  const arAccount = accounts.find(a => a.code === "1120") || accounts.find(a => a.type === "assets") || accounts[0];
+  const salesAccount = accounts.find(a => a.code === "4100") || accounts.find(a => a.type === "revenue") || accounts[0];
+  const vatOutAccount = accounts.find(a => a.code === "2130") || accounts.find(a => a.code === "2100") || accounts[0];
+  const cogsAccount = accounts.find(a => a.code === "5100") || accounts.find(a => a.type === "expense") || accounts[0];
+  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+
+  // Net Amount = Amount Before Discount - Discount
+  // Tax Base = Net Amount
+  // Final Total = Net Amount + Tax
+  const discount = Number(invoice.discountTotal) || 0;
+  const netSalesAmount = Math.max(0, invoice.subtotal - discount);
 
   const lines: JournalLine[] = [
     {
@@ -32,8 +38,8 @@ export function generateSalesInvoiceJournal(
       accountCode: salesAccount.code,
       accountName: salesAccount.nameAr,
       debit: 0,
-      credit: invoice.subtotal,
-      description: `إيراد مبيعات بضاعة فاتورة ${invoice.invoiceNumber}`,
+      credit: netSalesAmount,
+      description: `إيراد مبيعات بضاعة صافي فاتورة ${invoice.invoiceNumber}`,
     },
     {
       id: "jl_vat",
@@ -85,7 +91,7 @@ export function generateSalesInvoiceJournal(
     totalCredit,
     isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
     status: "posted",
-    createdBy: invoice.createdBy,
+    createdBy: invoice.createdBy || "النظام",
   };
 }
 
@@ -93,9 +99,15 @@ export function generatePurchaseInvoiceJournal(
   invoice: PurchaseInvoice,
   accounts: Account[]
 ): Omit<JournalEntry, "id"> {
-  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
-  const vatInAccount = accounts.find(a => a.code === "1140") || accounts[0];
-  const apAccount = accounts.find(a => a.code === "2110") || accounts[0];
+  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+  const vatInAccount = accounts.find(a => a.code === "1140") || accounts.find(a => a.type === "assets") || accounts[0];
+  const apAccount = accounts.find(a => a.code === "2110") || accounts.find(a => a.type === "liabilities") || accounts[0];
+
+  // Net Stock Cost = Amount Before Discount - Discount
+  // Tax Base = Net Stock Cost
+  // Final Total = Net Stock Cost + Tax
+  const discount = Number(invoice.discountTotal) || 0;
+  const netStockCost = Math.max(0, invoice.subtotal - discount);
 
   const lines: JournalLine[] = [
     {
@@ -103,9 +115,9 @@ export function generatePurchaseInvoiceJournal(
       accountId: invAccount.id,
       accountCode: invAccount.code,
       accountName: invAccount.nameAr,
-      debit: invoice.subtotal,
+      debit: netStockCost,
       credit: 0,
-      description: `إضافة بضاعة للمخزن فاتورة مشتريات ${invoice.invoiceNumber}`,
+      description: `إضافة بضاعة للمخزن بالصافي فاتورة مشتريات ${invoice.invoiceNumber}`,
     },
     {
       id: "jl_pinv_vat",
@@ -143,7 +155,159 @@ export function generatePurchaseInvoiceJournal(
     totalCredit,
     isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
     status: "posted",
-    createdBy: invoice.createdBy,
+    createdBy: invoice.createdBy || "النظام",
+  };
+}
+
+export function generateSalesReturnJournal(
+  salesReturn: SalesReturn,
+  accounts: Account[],
+  cogsAmount: number = 0
+): Omit<JournalEntry, "id"> {
+  const salesAccount = accounts.find(a => a.code === "4100") || accounts.find(a => a.type === "revenue") || accounts[0];
+  const vatOutAccount = accounts.find(a => a.code === "2130") || accounts.find(a => a.code === "2100") || accounts[0];
+  const arAccount = accounts.find(a => a.code === "1120") || accounts.find(a => a.type === "assets") || accounts[0];
+  const treasuryAccount = accounts.find(a => a.code === "1110" || a.code === "1115") || accounts[0];
+  const cogsAccount = accounts.find(a => a.code === "5100") || accounts.find(a => a.type === "expense") || accounts[0];
+  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+
+  const creditAcc = salesReturn.refundMethod === "treasury" || salesReturn.refundMethod === "cash"
+    ? treasuryAccount
+    : arAccount;
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_sret_rev",
+      accountId: salesAccount.id,
+      accountCode: salesAccount.code,
+      accountName: salesAccount.nameAr,
+      debit: salesReturn.subtotal,
+      credit: 0,
+      description: `مردودات مبيعات إشعار دائن ${salesReturn.returnNumber}`,
+    },
+    {
+      id: "jl_sret_vat",
+      accountId: vatOutAccount.id,
+      accountCode: vatOutAccount.code,
+      accountName: vatOutAccount.nameAr,
+      debit: salesReturn.taxTotal,
+      credit: 0,
+      description: `تخفيض ضريبة القيمة المضافة لمرتجع مبيعات ${salesReturn.returnNumber}`,
+    },
+    {
+      id: "jl_sret_cr",
+      accountId: creditAcc.id,
+      accountCode: creditAcc.code,
+      accountName: creditAcc.nameAr,
+      debit: 0,
+      credit: salesReturn.grandTotal,
+      description: `تسوية مستحقات مرتجع مبيعات ${salesReturn.returnNumber} - ${salesReturn.customerName}`,
+    },
+  ];
+
+  if (cogsAmount > 0) {
+    lines.push(
+      {
+        id: "jl_sret_inv",
+        accountId: invAccount.id,
+        accountCode: invAccount.code,
+        accountName: invAccount.nameAr,
+        debit: cogsAmount,
+        credit: 0,
+        description: `إعادة إدخال بضاعة مرتجعة للمخزن ${salesReturn.returnNumber}`,
+      },
+      {
+        id: "jl_sret_cogs",
+        accountId: cogsAccount.id,
+        accountCode: cogsAccount.code,
+        accountName: cogsAccount.nameAr,
+        debit: 0,
+        credit: cogsAmount,
+        description: `تخفيض تكلفة البضاعة المباعة لمرتجع ${salesReturn.returnNumber}`,
+      }
+    );
+  }
+
+  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+
+  return {
+    organizationId: salesReturn.organizationId,
+    branchId: salesReturn.branchId,
+    entryNumber: "JV-SRET-" + salesReturn.returnNumber,
+    date: salesReturn.date,
+    referenceType: "sales_return",
+    referenceId: salesReturn.id,
+    description: `إثبات قيد مرتجع مبيعات إشعار دائن ${salesReturn.returnNumber}`,
+    lines,
+    totalDebit,
+    totalCredit,
+    isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+    status: "posted",
+    createdBy: salesReturn.createdBy || "النظام",
+  };
+}
+
+export function generatePurchaseReturnJournal(
+  purchaseReturn: PurchaseReturn,
+  accounts: Account[]
+): Omit<JournalEntry, "id"> {
+  const apAccount = accounts.find(a => a.code === "2110") || accounts.find(a => a.type === "liabilities") || accounts[0];
+  const treasuryAccount = accounts.find(a => a.code === "1110" || a.code === "1115") || accounts[0];
+  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+  const vatInAccount = accounts.find(a => a.code === "1140") || accounts.find(a => a.type === "assets") || accounts[0];
+
+  const debitAcc = purchaseReturn.refundMethod === "treasury" || purchaseReturn.refundMethod === "cash"
+    ? treasuryAccount
+    : apAccount;
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_pret_dr",
+      accountId: debitAcc.id,
+      accountCode: debitAcc.code,
+      accountName: debitAcc.nameAr,
+      debit: purchaseReturn.grandTotal,
+      credit: 0,
+      description: `تسوية مستحقات مرتجع مشتريات إشعار مدين ${purchaseReturn.returnNumber} - ${purchaseReturn.supplierName}`,
+    },
+    {
+      id: "jl_pret_inv",
+      accountId: invAccount.id,
+      accountCode: invAccount.code,
+      accountName: invAccount.nameAr,
+      debit: 0,
+      credit: purchaseReturn.subtotal,
+      description: `إخراج بضاعة مرتجعة من المخزن ${purchaseReturn.returnNumber}`,
+    },
+    {
+      id: "jl_pret_vat",
+      accountId: vatInAccount.id,
+      accountCode: vatInAccount.code,
+      accountName: vatInAccount.nameAr,
+      debit: 0,
+      credit: purchaseReturn.taxTotal,
+      description: `تخفيض ضريبة المدخلات لمرتجع مشتريات ${purchaseReturn.returnNumber}`,
+    },
+  ];
+
+  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+
+  return {
+    organizationId: purchaseReturn.organizationId,
+    branchId: purchaseReturn.branchId,
+    entryNumber: "JV-PRET-" + purchaseReturn.returnNumber,
+    date: purchaseReturn.date,
+    referenceType: "purchase_return",
+    referenceId: purchaseReturn.id,
+    description: `إثبات قيد مرتجع مشتريات إشعار مدين ${purchaseReturn.returnNumber}`,
+    lines,
+    totalDebit,
+    totalCredit,
+    isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+    status: "posted",
+    createdBy: purchaseReturn.createdBy || "النظام",
   };
 }
 
@@ -588,24 +752,23 @@ export function computeTrialBalance(
   accounts: Account[],
   entries: JournalEntry[]
 ): { rows: TrialBalanceRow[]; totalDebit: number; totalCredit: number; isBalanced: boolean } {
-  const debitMap: { [accId: string]: number } = {};
-  const creditMap: { [accId: string]: number } = {};
-
-  entries.forEach(entry => {
-    entry.lines.forEach(line => {
-      debitMap[line.accountId] = (debitMap[line.accountId] || 0) + line.debit;
-      creditMap[line.accountId] = (creditMap[line.accountId] || 0) + line.credit;
-    });
-  });
-
   let grandDebit = 0;
   let grandCredit = 0;
 
   const rows: TrialBalanceRow[] = accounts.map(acc => {
-    const periodDr = debitMap[acc.id] || 0;
-    const periodCr = creditMap[acc.id] || 0;
-    const net = periodDr - periodCr;
+    let periodDr = 0;
+    let periodCr = 0;
 
+    entries.forEach(entry => {
+      entry.lines.forEach(line => {
+        if (line.accountId === acc.id || line.accountCode === acc.code) {
+          periodDr += Number(line.debit) || 0;
+          periodCr += Number(line.credit) || 0;
+        }
+      });
+    });
+
+    const net = periodDr - periodCr;
     const endingDr = acc.nature === "debit" ? Math.max(0, net) : 0;
     const endingCr = acc.nature === "credit" ? Math.max(0, -net) : 0;
 

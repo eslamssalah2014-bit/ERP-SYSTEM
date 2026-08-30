@@ -104,19 +104,37 @@ export default function ZatcaInvoiceModal({ invoice, isOpen, onClose }: ZatcaInv
         </div>
 
         <div className="flex justify-end pt-2">
-          <div className="w-64 space-y-1.5 text-xs bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+          <div className="w-80 space-y-1.5 text-xs bg-slate-950/80 p-4 rounded-xl border border-slate-800">
             <div className="flex justify-between text-slate-400">
-              <span>{isAr ? "المجموع الفرعي (غير شامل الضريبة):" : "Subtotal:"}</span>
+              <span>{isAr ? "المجموع الفرعي (قبل الخصم):" : "Subtotal (Before Discount):"}</span>
               <span className="font-mono font-bold text-white">{formatCurrency(invoice.subtotal, organization.currency, locale)}</span>
             </div>
+            {Number(invoice.discountTotal) > 0 && (
+              <div className="flex justify-between text-rose-400">
+                <span>{isAr ? "إجمالي الخصم التجاري:" : "Trade Discount:"}</span>
+                <span className="font-mono font-bold">-{formatCurrency(invoice.discountTotal, organization.currency, locale)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-slate-300 font-semibold pt-1 border-t border-slate-800/80">
+              <span>{isAr ? "الصافي الخاضع للضريبة (الوعاء):" : "Net Taxable Base:"}</span>
+              <span className="font-mono font-bold text-white">
+                {formatCurrency(Math.max(0, invoice.subtotal - (invoice.discountTotal || 0)), organization.currency, locale)}
+              </span>
+            </div>
             <div className="flex justify-between text-slate-400">
-              <span>{isAr ? ("ضريبة القيمة المضافة (" + organization.defaultVatRate + "%):") : "VAT Total:"}</span>
+              <span>{isAr ? ("ضريبة القيمة المضافة (" + (organization.defaultVatRate || 14) + "%):") : "VAT Total:"}</span>
               <span className="font-mono font-bold text-emerald-400">{formatCurrency(invoice.taxTotal, organization.currency, locale)}</span>
             </div>
             <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-slate-800">
-              <span>{isAr ? "الإجمالي المستحق:" : "Grand Total:"}</span>
+              <span>{isAr ? "الإجمالي النهائي المستحق:" : "Grand Total:"}</span>
               <span className="font-mono text-emerald-400">{formatCurrency(invoice.grandTotal, organization.currency, locale)}</span>
             </div>
+            {invoice.dueAmount !== undefined && (
+              <div className="flex justify-between text-xs text-amber-400 pt-1">
+                <span>{isAr ? "المتبقي / الآجل:" : "Due Balance:"}</span>
+                <span className="font-mono font-bold">{formatCurrency(invoice.dueAmount, organization.currency, locale)}</span>
+              </div>
+            )}
           </div>
         </div>
 

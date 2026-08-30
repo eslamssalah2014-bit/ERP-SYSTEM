@@ -23,7 +23,7 @@ export default function LedgerPage() {
 
   journalEntries.forEach(entry => {
     entry.lines.forEach(line => {
-      if (line.accountId === selectedAccountId) {
+      if (line.accountId === selectedAccountId || (selectedAccount && line.accountCode === selectedAccount.code)) {
         const change = line.debit - line.credit;
         runningBalance += selectedAccount?.nature === "debit" ? change : -change;
         ledgerLines.push({

@@ -45,11 +45,9 @@ export default function PurchasesPage() {
   const handleOpenAddModal = () => {
     setFormError(null);
     setInvoiceType("purchase_invoice");
-    const defaultSupp = suppliers[0]?.id || "";
     const defaultWh = warehouses.find(w => w.isDefault)?.id || warehouses[0]?.id || "";
-    const defaultProd = products[0];
 
-    setSupplierId(defaultSupp);
+    setSupplierId("");
     setWarehouseId(defaultWh);
     setDate(new Date().toISOString().split("T")[0]);
     setDueDate(new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0]);
@@ -58,41 +56,24 @@ export default function PurchasesPage() {
     setDiscountValue(0);
     setNotes("");
     setProductSearchTerms({});
-
-    if (defaultProd) {
-      setItems([{
-        productId: defaultProd.id,
-        productName: isAr ? defaultProd.nameAr : defaultProd.nameEn,
-        warehouseId: defaultWh,
-        quantity: 1,
-        unitCost: defaultProd.costPrice || 0,
-        discountAmount: 0,
-        taxRate: organization.defaultVatRate,
-        taxAmount: ((defaultProd.costPrice || 0) * organization.defaultVatRate) / 100,
-        total: (defaultProd.costPrice || 0) * (1 + organization.defaultVatRate / 100),
-      }]);
-    } else {
-      setItems([]);
-    }
+    setItems([]);
     setIsAddModalOpen(true);
   };
 
   const handleAddItem = () => {
-    const p = products[0];
-    if (!p) return;
     const currentWh = warehouseId || warehouses[0]?.id || "";
     setItems(prev => [
       ...prev,
       {
-        productId: p.id,
-        productName: isAr ? p.nameAr : p.nameEn,
+        productId: "",
+        productName: "",
         warehouseId: currentWh,
         quantity: 1,
-        unitCost: p.costPrice || 0,
+        unitCost: 0,
         discountAmount: 0,
         taxRate: organization.defaultVatRate,
-        taxAmount: ((p.costPrice || 0) * organization.defaultVatRate) / 100,
-        total: (p.costPrice || 0) * (1 + organization.defaultVatRate / 100),
+        taxAmount: 0,
+        total: 0,
       }
     ]);
   };
@@ -177,14 +158,19 @@ export default function PurchasesPage() {
     e.preventDefault();
     setFormError(null);
 
-    const supp = suppliers.find(s => s.id === supplierId) || suppliers[0];
+    const supp = suppliers.find(s => s.id === supplierId);
     if (!supp) {
-      setFormError(isAr ? "يرجى اختيار المورد أولاً" : "Please select a supplier");
+      setFormError(isAr ? "يرجى اختيار المورد أولاً من القائمة" : "Please select a supplier first");
       return;
     }
 
     if (items.length === 0) {
       setFormError(isAr ? "يرجى إضافة صنف واحد على الأقل للفاتورة" : "Please add at least one line item");
+      return;
+    }
+
+    if (items.some(it => !it.productId)) {
+      setFormError(isAr ? "يرجى تحديد كافة الأصناف في بنود الفاتورة" : "Please select a product for all invoice items");
       return;
     }
 
@@ -483,6 +469,7 @@ export default function PurchasesPage() {
                 onChange={(e) => setSupplierId(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500 font-bold"
               >
+                <option value="">{isAr ? "-- اختر المورد من القائمة --" : "-- Select Supplier --"}</option>
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.nameAr} ({s.code})</option>)}
               </select>
             </div>
@@ -566,6 +553,7 @@ export default function PurchasesPage() {
                             onChange={(e) => handleSelectProduct(idx, e.target.value)}
                             className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-bold"
                           >
+                            <option value="">{isAr ? "-- اختر الصنف من القائمة --" : "-- Select Product --"}</option>
                             {filteredProds.map(p => (
                               <option key={p.id} value={p.id}>
                                 {p.nameAr} {p.barcode ? `(${p.barcode})` : ""} {p.sku ? `[${p.sku}]` : ""} - تكلفة: {p.costPrice} {organization.currency}
@@ -800,10 +788,54 @@ export default function PurchasesPage() {
               </table>
             </div>
 
-            <div className="flex justify-end pt-3">
+            <div className="flex justify-end pt-2">
+              <div className="w-80 space-y-1.5 text-xs bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? "المجموع الفرعي (قبل الخصم):" : "Subtotal (Before Discount):"}</span>
+                  <span className="font-mono font-bold text-white">{formatCurrency(selectedInvoice.subtotal, organization.currency, locale)}</span>
+                </div>
+                {Number(selectedInvoice.discountTotal) > 0 && (
+                  <div className="flex justify-between text-rose-400">
+                    <span>{isAr ? "إجمالي الخصم:" : "Trade Discount:"}</span>
+                    <span className="font-mono font-bold">-{formatCurrency(selectedInvoice.discountTotal, organization.currency, locale)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-300 font-semibold pt-1 border-t border-slate-800/80">
+                  <span>{isAr ? "الصافي الخاضع للضريبة (الوعاء):" : "Net Taxable Base:"}</span>
+                  <span className="font-mono font-bold text-white">
+                    {formatCurrency(Math.max(0, selectedInvoice.subtotal - (selectedInvoice.discountTotal || 0)), organization.currency, locale)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>{isAr ? ("ضريبة القيمة المضافة (" + (organization.defaultVatRate || 14) + "%):") : "VAT Total:"}</span>
+                  <span className="font-mono font-bold text-sky-400">{formatCurrency(selectedInvoice.taxTotal, organization.currency, locale)}</span>
+                </div>
+                <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-slate-800">
+                  <span>{isAr ? "الإجمالي النهائي:" : "Grand Total:"}</span>
+                  <span className="font-mono text-sky-400">{formatCurrency(selectedInvoice.grandTotal, organization.currency, locale)}</span>
+                </div>
+                {selectedInvoice.dueAmount !== undefined && (
+                  <div className="flex justify-between text-xs text-amber-400 pt-1">
+                    <span>{isAr ? "المتبقي / الآجل:" : "Due Balance:"}</span>
+                    <span className="font-mono font-bold">{formatCurrency(selectedInvoice.dueAmount, organization.currency, locale)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
               <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs shadow-lg cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>{isAr ? "طباعة الفاتورة" : "Print Invoice"}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setSelectedInvoice(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-xs cursor-pointer"
               >
                 {isAr ? "إغلاق" : "Close"}
               </button>
