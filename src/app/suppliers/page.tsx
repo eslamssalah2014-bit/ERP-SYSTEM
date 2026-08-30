@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
@@ -9,10 +9,11 @@ import { Supplier } from "@/types/erp";
 import {
   Truck, Plus, Search, MapPin, Eye, Edit, Trash2,
   AlertTriangle, Phone, Mail, Building2, CreditCard, Loader2, AlertCircle,
-  FileSpreadsheet, FileText, ArrowRight
+  FileSpreadsheet, FileText, ArrowRight, Landmark
 } from "lucide-react";
 
-const SYSTEM_BANKS = [
+// Reference banks (temporary testing reference before user populates custom CoA accounts)
+const GUIDANCE_BANKS = [
   { code: "NBE", nameAr: "البنك الأهلي المصري (NBE)", nameEn: "National Bank of Egypt (NBE)" },
   { code: "BM", nameAr: "بنك مصر (Banque Misr)", nameEn: "Banque Misr" },
   { code: "CIB", nameAr: "البنك التجاري الدولي (CIB)", nameEn: "Commercial International Bank (CIB)" },
@@ -24,11 +25,6 @@ const SYSTEM_BANKS = [
   { code: "HSBC", nameAr: "بنك إتش إس بي سي مصر (HSBC)", nameEn: "HSBC Bank Egypt" },
   { code: "UB", nameAr: "المصرف المتحد (The United Bank)", nameEn: "The United Bank" },
   { code: "BDC", nameAr: "بنك القاهرة (Banque Du Caire)", nameEn: "Banque Du Caire" },
-  { code: "FAB", nameAr: "بنك أبوظبي الأول (FAB)", nameEn: "First Abu Dhabi Bank (FAB)" },
-  { code: "ENBD", nameAr: "بنك الإمارات دبي الوطني (Emirates NBD)", nameEn: "Emirates NBD" },
-  { code: "ABK", nameAr: "البنك الأهلي الكويتي (ABK)", nameEn: "Al Ahli Bank of Kuwait (ABK)" },
-  { code: "EGBANK", nameAr: "البنك المصري الخليجي (EG Bank)", nameEn: "Egyptian Gulf Bank (EG Bank)" },
-  { code: "SAIB", nameAr: "بنك الشركة المصرفية العربية الدولية (SAIB)", nameEn: "Société Arabe Internationale de Banque" },
   { code: "ALRAJHI", nameAr: "مصرف الراجحي (Al Rajhi Bank)", nameEn: "Al Rajhi Bank" },
   { code: "SNB", nameAr: "البنك الأهلي السعودي (SNB)", nameEn: "Saudi National Bank (SNB)" },
 ];
@@ -36,6 +32,20 @@ const SYSTEM_BANKS = [
 export default function SuppliersPage() {
   const { suppliers, accounts, treasuryAccounts, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  // Dynamic Bank Accounts derived from Chart of Accounts (COA)
+  const coaBankAccounts = useMemo(() => {
+    return (accounts || []).filter(a =>
+      (a.code.startsWith("1115") || a.code.startsWith("1112") || a.parentId === "00000000-0000-0000-0000-000000000115" ||
+       (a.type === "assets" && (a.nameAr.includes("بنك") || a.nameEn?.toLowerCase().includes("bank")))) &&
+      a.code !== "1000" && a.code !== "1100"
+    );
+  }, [accounts]);
+
+  // Dynamic Bank Accounts derived from Treasury Module
+  const treasuryBankAccounts = useMemo(() => {
+    return (treasuryAccounts || []).filter(t => t.type === "bank_account" || Boolean(t.bankName));
+  }, [treasuryAccounts]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -501,33 +511,57 @@ export default function SuppliersPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-400 font-semibold">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+                <span className="text-[10px] text-sky-400 flex items-center gap-1 font-medium">
+                  <Landmark className="w-3 h-3" />
+                  {isAr ? "شجرة الحسابات والخزينة" : "CoA & Treasury"}
+                </span>
+              </div>
               <select
                 value={bankName}
                 onChange={(e) => setBankName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500 text-xs font-medium"
               >
-                <option value="">{isAr ? "-- اختر البنك المتعامل معه --" : "-- Select Bank --"}</option>
-                {treasuryAccounts?.filter(t => t.type === "bank_account" || Boolean(t.bankName)).length > 0 && (
-                  <optgroup label={isAr ? "حسابات البنوك المسجلة بالخزينة" : "Treasury Bank Accounts"}>
-                    {treasuryAccounts
-                      .filter(t => t.type === "bank_account" || Boolean(t.bankName))
-                      .map(t => (
-                        <option key={t.id} value={t.bankName || t.nameAr}>
-                          {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
-                        </option>
-                      ))}
+                <option value="">{isAr ? "-- اختر الحساب البنكي --" : "-- Select Bank Account --"}</option>
+                
+                {/* 1. Dynamic Chart of Accounts Bank Accounts */}
+                {coaBankAccounts.length > 0 && (
+                  <optgroup label={isAr ? "🏛️ دليل الحسابات (Chart of Accounts)" : "🏛️ Chart of Accounts"}>
+                    {coaBankAccounts.map(a => (
+                      <option key={a.id} value={isAr ? a.nameAr : (a.nameEn || a.nameAr)}>
+                        {isAr ? `${a.nameAr} (${a.code})` : `${a.nameEn || a.nameAr} (${a.code})`}
+                      </option>
+                    ))}
                   </optgroup>
                 )}
-                <optgroup label={isAr ? "البنوك المعتمدة والرئيسية" : "Standard Registered Banks"}>
-                  {SYSTEM_BANKS.map(b => (
+
+                {/* 2. Dynamic Treasury Bank Accounts */}
+                {treasuryBankAccounts.length > 0 && (
+                  <optgroup label={isAr ? "🏦 حسابات البنوك بالخزينة (Treasury Accounts)" : "🏦 Treasury Bank Accounts"}>
+                    {treasuryBankAccounts.map(t => (
+                      <option key={t.id} value={t.bankName || t.nameAr}>
+                        {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+
+                {/* 3. Reference Guide Banks for Testing & Development */}
+                <optgroup label={isAr ? "📋 قائمة استرشادية للتطوير والاختبار (Reference Guide)" : "📋 Reference Banks (Guidance)"}>
+                  {GUIDANCE_BANKS.map(b => (
                     <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
                       {isAr ? b.nameAr : b.nameEn}
                     </option>
                   ))}
                 </optgroup>
-                {bankName && !SYSTEM_BANKS.some(b => b.nameAr === bankName || b.nameEn === bankName) && !treasuryAccounts?.some(t => t.bankName === bankName || t.nameAr === bankName) && (
-                  <optgroup label={isAr ? "بنك المورد الحالي" : "Current Supplier Bank"}>
+
+                {/* 4. Current / Custom Supplier Bank */}
+                {bankName && 
+                 !GUIDANCE_BANKS.some(b => b.nameAr === bankName || b.nameEn === bankName) && 
+                 !treasuryBankAccounts.some(t => t.bankName === bankName || t.nameAr === bankName) &&
+                 !coaBankAccounts.some(a => a.nameAr === bankName || a.nameEn === bankName) && (
+                  <optgroup label={isAr ? "⭐ بنك المورد المسجل" : "⭐ Custom Supplier Bank"}>
                     <option value={bankName}>{bankName}</option>
                   </optgroup>
                 )}
@@ -749,33 +783,57 @@ export default function SuppliersPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 font-semibold">{isAr ? "البنك المعتمد" : "Bank Name"}</label>
+                  <span className="text-[10px] text-sky-400 flex items-center gap-1 font-medium">
+                    <Landmark className="w-3 h-3" />
+                    {isAr ? "شجرة الحسابات والخزينة" : "CoA & Treasury"}
+                  </span>
+                </div>
                 <select
                   value={editBankName}
                   onChange={(e) => setEditBankName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500 text-xs font-medium"
                 >
-                  <option value="">{isAr ? "-- اختر البنك المتعامل معه --" : "-- Select Bank --"}</option>
-                  {treasuryAccounts?.filter(t => t.type === "bank_account" || Boolean(t.bankName)).length > 0 && (
-                    <optgroup label={isAr ? "حسابات البنوك المسجلة بالخزينة" : "Treasury Bank Accounts"}>
-                      {treasuryAccounts
-                        .filter(t => t.type === "bank_account" || Boolean(t.bankName))
-                        .map(t => (
-                          <option key={t.id} value={t.bankName || t.nameAr}>
-                            {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
-                          </option>
-                        ))}
+                  <option value="">{isAr ? "-- اختر الحساب البنكي --" : "-- Select Bank Account --"}</option>
+                  
+                  {/* 1. Dynamic Chart of Accounts Bank Accounts */}
+                  {coaBankAccounts.length > 0 && (
+                    <optgroup label={isAr ? "🏛️ دليل الحسابات (Chart of Accounts)" : "🏛️ Chart of Accounts"}>
+                      {coaBankAccounts.map(a => (
+                        <option key={a.id} value={isAr ? a.nameAr : (a.nameEn || a.nameAr)}>
+                          {isAr ? `${a.nameAr} (${a.code})` : `${a.nameEn || a.nameAr} (${a.code})`}
+                        </option>
+                      ))}
                     </optgroup>
                   )}
-                  <optgroup label={isAr ? "البنوك المعتمدة والرئيسية" : "Standard Registered Banks"}>
-                    {SYSTEM_BANKS.map(b => (
+
+                  {/* 2. Dynamic Treasury Bank Accounts */}
+                  {treasuryBankAccounts.length > 0 && (
+                    <optgroup label={isAr ? "🏦 حسابات البنوك بالخزينة (Treasury Accounts)" : "🏦 Treasury Bank Accounts"}>
+                      {treasuryBankAccounts.map(t => (
+                        <option key={t.id} value={t.bankName || t.nameAr}>
+                          {isAr ? `${t.nameAr} (${t.bankName || t.code})` : `${t.nameEn || t.nameAr} (${t.bankName || t.code})`}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+
+                  {/* 3. Reference Guide Banks for Testing & Development */}
+                  <optgroup label={isAr ? "📋 قائمة استرشادية للتطوير والاختبار (Reference Guide)" : "📋 Reference Banks (Guidance)"}>
+                    {GUIDANCE_BANKS.map(b => (
                       <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
                         {isAr ? b.nameAr : b.nameEn}
                       </option>
                     ))}
                   </optgroup>
-                  {editBankName && !SYSTEM_BANKS.some(b => b.nameAr === editBankName || b.nameEn === editBankName) && !treasuryAccounts?.some(t => t.bankName === editBankName || t.nameAr === editBankName) && (
-                    <optgroup label={isAr ? "بنك المورد الحالي" : "Current Supplier Bank"}>
+
+                  {/* 4. Current / Custom Supplier Bank */}
+                  {editBankName && 
+                   !GUIDANCE_BANKS.some(b => b.nameAr === editBankName || b.nameEn === editBankName) && 
+                   !treasuryBankAccounts.some(t => t.bankName === editBankName || t.nameAr === editBankName) &&
+                   !coaBankAccounts.some(a => a.nameAr === editBankName || a.nameEn === editBankName) && (
+                    <optgroup label={isAr ? "⭐ بنك المورد المسجل" : "⭐ Custom Supplier Bank"}>
                       <option value={editBankName}>{editBankName}</option>
                     </optgroup>
                   )}
