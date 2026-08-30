@@ -12,28 +12,11 @@ import {
   FileSpreadsheet, FileText, ArrowRight, Landmark
 } from "lucide-react";
 
-// Reference banks (temporary testing reference before user populates custom CoA accounts)
-const GUIDANCE_BANKS = [
-  { code: "NBE", nameAr: "البنك الأهلي المصري (NBE)", nameEn: "National Bank of Egypt (NBE)" },
-  { code: "BM", nameAr: "بنك مصر (Banque Misr)", nameEn: "Banque Misr" },
-  { code: "CIB", nameAr: "البنك التجاري الدولي (CIB)", nameEn: "Commercial International Bank (CIB)" },
-  { code: "QNB", nameAr: "بنك قطر الوطني الأهلي (QNB)", nameEn: "QNB Alahli" },
-  { code: "ADIB", nameAr: "مصرف أبو ظبي الإسلامي (ADIB)", nameEn: "Abu Dhabi Islamic Bank (ADIB)" },
-  { code: "ALEX", nameAr: "بنك الإسكندرية (Bank of Alexandria)", nameEn: "Bank of Alexandria" },
-  { code: "AAIB", nameAr: "البنك العربي الأفريقي الدولي (AAIB)", nameEn: "Arab African International Bank" },
-  { code: "FAISAL", nameAr: "بنك فيصل الإسلامي المصري", nameEn: "Faisal Islamic Bank of Egypt" },
-  { code: "HSBC", nameAr: "بنك إتش إس بي سي مصر (HSBC)", nameEn: "HSBC Bank Egypt" },
-  { code: "UB", nameAr: "المصرف المتحد (The United Bank)", nameEn: "The United Bank" },
-  { code: "BDC", nameAr: "بنك القاهرة (Banque Du Caire)", nameEn: "Banque Du Caire" },
-  { code: "ALRAJHI", nameAr: "مصرف الراجحي (Al Rajhi Bank)", nameEn: "Al Rajhi Bank" },
-  { code: "SNB", nameAr: "البنك الأهلي السعودي (SNB)", nameEn: "Saudi National Bank (SNB)" },
-];
-
 export default function SuppliersPage() {
   const { suppliers, accounts, treasuryAccounts, addSupplier, updateSupplier, deleteSupplier, organization, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
-  // Dynamic Bank Accounts derived from Chart of Accounts (COA)
+  // Dynamic Bank Accounts derived 100% exclusively from Chart of Accounts (COA)
   const coaBankAccounts = useMemo(() => {
     return (accounts || []).filter(a =>
       (a.code.startsWith("1115") || a.code.startsWith("1112") || a.parentId === "00000000-0000-0000-0000-000000000115" ||
@@ -42,7 +25,7 @@ export default function SuppliersPage() {
     );
   }, [accounts]);
 
-  // Dynamic Bank Accounts derived from Treasury Module
+  // Dynamic Bank Accounts derived 100% exclusively from Treasury Module
   const treasuryBankAccounts = useMemo(() => {
     return (treasuryAccounts || []).filter(t => t.type === "bank_account" || Boolean(t.bankName));
   }, [treasuryAccounts]);
@@ -547,19 +530,16 @@ export default function SuppliersPage() {
                   </optgroup>
                 )}
 
-                {/* 3. Reference Guide Banks for Testing & Development */}
-                <optgroup label={isAr ? "📋 قائمة استرشادية للتطوير والاختبار (Reference Guide)" : "📋 Reference Banks (Guidance)"}>
-                  {GUIDANCE_BANKS.map(b => (
-                    <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
-                      {isAr ? b.nameAr : b.nameEn}
-                    </option>
-                  ))}
-                </optgroup>
+                {/* 3. Empty notification if no bank accounts configured yet */}
+                {coaBankAccounts.length === 0 && treasuryBankAccounts.length === 0 && (
+                  <option value="" disabled>
+                    {isAr ? "⚠️ لا توجد حسابات بنكية مسجلة (أضف حساب بنكي من شجرة الحسابات أو الخزينة)" : "⚠️ No bank accounts configured (Add via Chart of Accounts or Treasury)"}
+                  </option>
+                )}
 
                 {/* 4. Current / Custom Supplier Bank */}
                 {bankName && 
-                 !GUIDANCE_BANKS.some(b => b.nameAr === bankName || b.nameEn === bankName) && 
-                 !treasuryBankAccounts.some(t => t.bankName === bankName || t.nameAr === bankName) &&
+                 !treasuryBankAccounts.some(t => t.bankName === bankName || t.nameAr === bankName) && 
                  !coaBankAccounts.some(a => a.nameAr === bankName || a.nameEn === bankName) && (
                   <optgroup label={isAr ? "⭐ بنك المورد المسجل" : "⭐ Custom Supplier Bank"}>
                     <option value={bankName}>{bankName}</option>
@@ -819,19 +799,16 @@ export default function SuppliersPage() {
                     </optgroup>
                   )}
 
-                  {/* 3. Reference Guide Banks for Testing & Development */}
-                  <optgroup label={isAr ? "📋 قائمة استرشادية للتطوير والاختبار (Reference Guide)" : "📋 Reference Banks (Guidance)"}>
-                    {GUIDANCE_BANKS.map(b => (
-                      <option key={b.code} value={isAr ? b.nameAr : b.nameEn}>
-                        {isAr ? b.nameAr : b.nameEn}
-                      </option>
-                    ))}
-                  </optgroup>
+                  {/* 3. Empty notification if no bank accounts configured yet */}
+                  {coaBankAccounts.length === 0 && treasuryBankAccounts.length === 0 && (
+                    <option value="" disabled>
+                      {isAr ? "⚠️ لا توجد حسابات بنكية مسجلة (أضف حساب بنكي من شجرة الحسابات أو الخزينة)" : "⚠️ No bank accounts configured (Add via Chart of Accounts or Treasury)"}
+                    </option>
+                  )}
 
                   {/* 4. Current / Custom Supplier Bank */}
                   {editBankName && 
-                   !GUIDANCE_BANKS.some(b => b.nameAr === editBankName || b.nameEn === editBankName) && 
-                   !treasuryBankAccounts.some(t => t.bankName === editBankName || t.nameAr === editBankName) &&
+                   !treasuryBankAccounts.some(t => t.bankName === editBankName || t.nameAr === editBankName) && 
                    !coaBankAccounts.some(a => a.nameAr === editBankName || a.nameEn === editBankName) && (
                     <optgroup label={isAr ? "⭐ بنك المورد المسجل" : "⭐ Custom Supplier Bank"}>
                       <option value={editBankName}>{editBankName}</option>
