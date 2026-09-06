@@ -1,5 +1,5 @@
 import {
-  Account, JournalEntry, JournalLine, SalesInvoice,
+  Account, AccountType, JournalEntry, JournalLine, SalesInvoice,
   PurchaseInvoice, SalesReturn, PurchaseReturn, CashReceipt, CashPayment, StockMovement,
   StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier,
   Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow
@@ -776,32 +776,96 @@ export function computeStockBalanceReport(
   });
 }
 
-export function computeTrialBalance(
-  accounts: Account[],
-  entries: JournalEntry[]
-): { rows: TrialBalanceRow[]; totalDebit: number; totalCredit: number; isBalanced: boolean } {
-  let grandDebit = 0;
-  let grandCredit = 0;
+export interface GeneralLedgerSummaryRow {
+  accountCode: string;
+  accountNameAr: string;
+  accountNameEn: string;
+  accountType: AccountType;
+  level: number;
+  nature: "debit" | "credit";
+  openingDebit: number;
+  openingCredit: number;
+  periodDebit: number;
+  periodCredit: number;
+  endingDebit: number;
+  endingCredit: number;
+}
 
-  const rows: TrialBalanceRow[] = accounts.map(acc => {
+export function computeGeneralLedgerSummary(
+  accounts: Account[],
+  entries: JournalEntry[],
+  dateFrom?: string,
+  dateTo?: string
+): {
+  rows: GeneralLedgerSummaryRow[];
+  totalOpeningDebit: number;
+  totalOpeningCredit: number;
+  totalPeriodDebit: number;
+  totalPeriodCredit: number;
+  totalEndingDebit: number;
+  totalEndingCredit: number;
+} {
+  let totOpenDr = 0;
+  let totOpenCr = 0;
+  let totPerDr = 0;
+  let totPerCr = 0;
+  let totEndDr = 0;
+  let totEndCr = 0;
+
+  const rows: GeneralLedgerSummaryRow[] = accounts.map(acc => {
+    let openDr = 0;
+    let openCr = 0;
     let periodDr = 0;
     let periodCr = 0;
 
-    entries.forEach(entry => {
-      entry.lines.forEach(line => {
+    (entries || []).forEach(entry => {
+      const isOpening = entry.referenceType === "opening_entry" || entry.entryNumber?.startsWith("OPENING-") || entry.entryNumber?.startsWith("JV-OPENING-");
+      const isBeforePeriod = dateFrom ? entry.date < dateFrom : false;
+      const isInPeriod = (!dateFrom || entry.date >= dateFrom) && (!dateTo || entry.date <= dateTo);
+
+      entry.lines?.forEach(line => {
         if (line.accountId === acc.id || line.accountCode === acc.code) {
-          periodDr += Number(line.debit) || 0;
-          periodCr += Number(line.credit) || 0;
+          const dr = Number(line.debit) || 0;
+          const cr = Number(line.credit) || 0;
+
+          if (isOpening || isBeforePeriod) {
+            openDr += dr;
+            openCr += cr;
+          } else if (isInPeriod) {
+            periodDr += dr;
+            periodCr += cr;
+          }
         }
       });
     });
 
-    const net = periodDr - periodCr;
-    const endingDr = acc.nature === "debit" ? Math.max(0, net) : 0;
-    const endingCr = acc.nature === "credit" ? Math.max(0, -net) : 0;
+    // Compute net opening
+    const netOpen = openDr - openCr;
+    const openingDebit = netOpen > 0 ? netOpen : 0;
+    const openingCredit = netOpen < 0 ? Math.abs(netOpen) : 0;
 
-    grandDebit += endingDr;
-    grandCredit += endingCr;
+    // Ending balance = Opening Net + Period (Dr - Cr)
+    const totalNet = netOpen + (periodDr - periodCr);
+    let endingDebit = 0;
+    let endingCredit = 0;
+
+    if (acc.nature === "debit") {
+      endingDebit = totalNet >= 0 ? totalNet : 0;
+      endingCredit = totalNet < 0 ? Math.abs(totalNet) : 0;
+    } else {
+      endingCredit = totalNet <= 0 ? Math.abs(totalNet) : 0;
+      endingDebit = totalNet > 0 ? totalNet : 0;
+    }
+
+    const isLeaf = acc.level === 4 || !accounts.some(sub => sub.parentId === acc.id);
+    if (isLeaf) {
+      totOpenDr += openingDebit;
+      totOpenCr += openingCredit;
+      totPerDr += periodDr;
+      totPerCr += periodCr;
+      totEndDr += endingDebit;
+      totEndCr += endingCredit;
+    }
 
     return {
       accountCode: acc.code,
@@ -809,21 +873,145 @@ export function computeTrialBalance(
       accountNameEn: acc.nameEn,
       accountType: acc.type,
       level: acc.level,
-      isParent: acc.level === 1,
-      openingDebit: 0,
-      openingCredit: 0,
+      nature: acc.nature,
+      openingDebit,
+      openingCredit,
       periodDebit: periodDr,
       periodCredit: periodCr,
-      endingDebit: endingDr,
-      endingCredit: endingCr,
+      endingDebit,
+      endingCredit,
     };
   });
 
   return {
     rows,
-    totalDebit: grandDebit,
-    totalCredit: grandCredit,
-    isBalanced: Math.abs(grandDebit - grandCredit) < 0.01,
+    totalOpeningDebit: totOpenDr,
+    totalOpeningCredit: totOpenCr,
+    totalPeriodDebit: totPerDr,
+    totalPeriodCredit: totPerCr,
+    totalEndingDebit: totEndDr,
+    totalEndingCredit: totEndCr,
+  };
+}
+
+export function computeTrialBalance(
+  accounts: Account[],
+  entries: JournalEntry[],
+  filters?: { dateFrom?: string; dateTo?: string; level?: number | "all" }
+): {
+  rows: TrialBalanceRow[];
+  totalOpeningDebit: number;
+  totalOpeningCredit: number;
+  totalPeriodDebit: number;
+  totalPeriodCredit: number;
+  totalEndingDebit: number;
+  totalEndingCredit: number;
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+} {
+  const { dateFrom, dateTo, level } = filters || {};
+
+  // 1. Compute leaf / Level 4 data first
+  const summary = computeGeneralLedgerSummary(accounts, entries, dateFrom, dateTo);
+
+  let grandOpenDr = 0;
+  let grandOpenCr = 0;
+  let grandPerDr = 0;
+  let grandPerCr = 0;
+  let grandEndDr = 0;
+  let grandEndCr = 0;
+
+  // Level 4 leaf accounts determine the system balanced totals
+  const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
+  leafAccounts.forEach(leaf => {
+    const r = summary.rows.find(row => row.accountCode === leaf.code);
+    if (r) {
+      grandOpenDr += r.openingDebit;
+      grandOpenCr += r.openingCredit;
+      grandPerDr += r.periodDebit;
+      grandPerCr += r.periodCredit;
+      grandEndDr += r.endingDebit;
+      grandEndCr += r.endingCredit;
+    }
+  });
+
+  // 2. Build rows with parent rollups if requested
+  const rows: TrialBalanceRow[] = accounts
+    .filter(acc => {
+      if (level && level !== "all") {
+        return acc.level === Number(level);
+      }
+      return true;
+    })
+    .map(acc => {
+      // Find all descendant codes of this account (including itself)
+      const isLeaf = acc.level === 4 || !accounts.some(sub => sub.parentId === acc.id);
+      let openDr = 0;
+      let openCr = 0;
+      let perDr = 0;
+      let perCr = 0;
+      let endDr = 0;
+      let endCr = 0;
+
+      if (isLeaf) {
+        const r = summary.rows.find(row => row.accountCode === acc.code);
+        if (r) {
+          openDr = r.openingDebit;
+          openCr = r.openingCredit;
+          perDr = r.periodDebit;
+          perCr = r.periodCredit;
+          endDr = r.endingDebit;
+          endCr = r.endingCredit;
+        }
+      } else {
+        // Rollup from descendants
+        const descendants = accounts.filter(a => a.code.startsWith(acc.code) && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+        descendants.forEach(d => {
+          const r = summary.rows.find(row => row.accountCode === d.code);
+          if (r) {
+            openDr += r.openingDebit;
+            openCr += r.openingCredit;
+            perDr += r.periodDebit;
+            perCr += r.periodCredit;
+            endDr += r.endingDebit;
+            endCr += r.endingCredit;
+          }
+        });
+      }
+
+      return {
+        accountCode: acc.code,
+        accountNameAr: acc.nameAr,
+        accountNameEn: acc.nameEn,
+        accountType: acc.type,
+        level: acc.level,
+        isParent: acc.level < 4 && accounts.some(sub => sub.parentId === acc.id),
+        openingDebit: openDr,
+        openingCredit: openCr,
+        periodDebit: perDr,
+        periodCredit: perCr,
+        endingDebit: endDr,
+        endingCredit: endCr,
+      };
+    });
+
+  const isBalanced =
+    Math.abs(grandOpenDr - grandOpenCr) < 0.01 &&
+    Math.abs(grandPerDr - grandPerCr) < 0.01 &&
+    Math.abs(grandEndDr - grandEndCr) < 0.01;
+
+  return {
+    rows,
+    totalOpeningDebit: grandOpenDr,
+    totalOpeningCredit: grandOpenCr,
+    totalPeriodDebit: grandPerDr,
+    totalPeriodCredit: grandPerCr,
+    totalEndingDebit: grandEndDr,
+    totalEndingCredit: grandEndCr,
+    totalDebit: grandEndDr,
+    totalCredit: grandEndCr,
+    isBalanced,
   };
 }
 
@@ -834,10 +1022,14 @@ export function computeIncomeStatement(
   purchaseInvoices: PurchaseInvoice[] = [],
   stockMovements: StockMovement[] = []
 ) {
-  const getAccountEffectiveBalance = (acc: Account): number => {
+  const getAccountPeriodBalance = (acc: Account): number => {
     let dr = 0;
     let cr = 0;
     (entries || []).forEach(e => {
+      // Income statement accounts only reflect period activity (exclude opening balances)
+      const isOpening = e.referenceType === "opening_entry" || e.entryNumber?.startsWith("OPENING-") || e.entryNumber?.startsWith("JV-OPENING-");
+      if (isOpening) return;
+
       (e.lines || []).forEach(l => {
         if (l.accountId === acc.id || l.accountCode === acc.code) {
           dr += Number(l.debit) || 0;
@@ -846,18 +1038,18 @@ export function computeIncomeStatement(
       });
     });
     const entryBalance = acc.nature === "credit" ? (cr - dr) : (dr - cr);
-    if (entryBalance !== 0) return Math.max(0, entryBalance);
-    return Number(acc.balance) || 0;
+    return Math.max(0, entryBalance);
   };
 
-  const revenues = accounts.filter(a => a.type === "revenue" && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
-  const cogs = accounts.filter(a => a.type === "expense" && a.code.startsWith("51") && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
-  const expenses = accounts.filter(a => a.type === "expense" && !a.code.startsWith("51") && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+  const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
+  const revenues = leafAccounts.filter(a => a.type === "revenue");
+  const cogs = leafAccounts.filter(a => a.type === "expense" && a.code.startsWith("51"));
+  const expenses = leafAccounts.filter(a => a.type === "expense" && !a.code.startsWith("51"));
 
-  const totalRevenue = revenues.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
-  const totalCOGS = cogs.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
+  const totalRevenue = revenues.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
+  const totalCOGS = cogs.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
   const grossProfit = totalRevenue - totalCOGS;
-  const totalExpenses = expenses.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
+  const totalExpenses = expenses.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
   const netIncome = grossProfit - totalExpenses;
 
   // Periodic Inventory COGS Formulation: COGS = Opening Inventory + Purchases - Closing Inventory
@@ -894,7 +1086,7 @@ export function computeBalanceSheet(
   accounts: Account[],
   entries: JournalEntry[]
 ) {
-  const getAccountEffectiveBalance = (acc: Account): number => {
+  const getAccountCumulativeBalance = (acc: Account): number => {
     let dr = 0;
     let cr = 0;
     (entries || []).forEach(e => {
@@ -915,11 +1107,11 @@ export function computeBalanceSheet(
   const liabilities = leafAccounts.filter(a => a.type === "liabilities");
   const equity = leafAccounts.filter(a => a.type === "equity");
 
-  const totalAssets = assets.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
-  const totalLiabilities = liabilities.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
+  const totalAssets = assets.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
+  const totalLiabilities = liabilities.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
 
   const { netIncome } = computeIncomeStatement(accounts, entries);
-  const totalEquity = equity.reduce((s, a) => s + getAccountEffectiveBalance(a), 0) + netIncome;
+  const totalEquity = equity.reduce((s, a) => s + getAccountCumulativeBalance(a), 0) + netIncome;
 
   return {
     assets: accounts.filter(a => a.type === "assets"),

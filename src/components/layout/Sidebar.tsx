@@ -101,6 +101,7 @@ export default function Sidebar() {
       icon: BookOpen,
       children: [
         { titleAr: "شجرة الحسابات", titleEn: "Chart of Accounts", href: "/accounting/coa" },
+        { titleAr: "القيد الافتتاحي (قيد أول المدة)", titleEn: "Opening Entry", href: "/accounting/opening-balance" },
         { titleAr: "القيود اليومية", titleEn: "Journal Entries", href: "/accounting/journal" },
         { titleAr: "دفتر الأستاذ العام", titleEn: "General Ledger", href: "/accounting/ledger" },
         { titleAr: "ميزان المراجعة", titleEn: "Trial Balance", href: "/accounting/trial-balance" },

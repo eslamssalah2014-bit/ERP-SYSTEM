@@ -224,6 +224,7 @@ interface ERPContextType {
   deleteCostCenter: (id: string) => Promise<void>;
   addJournalEntry: (entry: Omit<JournalEntry, "id">) => Promise<JournalEntry>;
   deleteJournalEntry: (id: string) => Promise<void>;
+  postOpeningEntry: (entry: Omit<JournalEntry, "id">) => Promise<JournalEntry>;
 
   // Audit & Notifications
   auditLogs: AuditLog[];
@@ -447,24 +448,6 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
             notes: `رصيد أول المدة للصنف ${savedProduct.nameAr}`,
           });
         }
-      }
-    }
-
-    if (totalOpeningQty > 0 && savedProduct.costPrice > 0) {
-      const journalDraft = generateOpeningStockJournal(
-        organization.id,
-        activeBranchId,
-        savedProduct,
-        totalOpeningQty,
-        savedProduct.costPrice,
-        accounts,
-        currentUser.name
-      );
-
-      if (journalDraft) {
-        const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-        setJournalEntries(prev => [newJournal, ...prev]);
-        await persistJournalEntryDB(newJournal);
       }
     }
 
@@ -1666,6 +1649,61 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     showToast(locale === "ar" ? "تم حذف القيد اليومي بنجاح" : "Journal entry deleted", "success");
   };
 
+  const postOpeningEntry = async (entry: Omit<JournalEntry, "id">): Promise<JournalEntry> => {
+    // 1. Remove any previous opening entry from state and DB to prevent duplicates
+    const existingOpening = journalEntries.filter(e =>
+      e.referenceType === "opening_entry" ||
+      e.entryNumber?.startsWith("OPENING-") ||
+      e.entryNumber?.startsWith("JV-OPENING-")
+    );
+
+    for (const oldOpening of existingOpening) {
+      try {
+        await deleteJournalEntryDB(oldOpening.id);
+      } catch (err) {
+        console.warn("Cleaned old opening entry:", err);
+      }
+    }
+
+    // 2. Persist new official opening entry
+    const res = await persistJournalEntryDB(entry as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل ترحيل القيد الافتتاحي");
+    const saved = res.data;
+
+    // 3. Update in-memory state
+    setJournalEntries(prev => [
+      saved,
+      ...prev.filter(e => !existingOpening.some(old => old.id === e.id) && e.id !== saved.id)
+    ]);
+
+    // 4. Update account balances in accounts state
+    setAccounts(prevAccounts =>
+      prevAccounts.map(acc => {
+        const line = saved.lines.find(l => l.accountId === acc.id || l.accountCode === acc.code);
+        if (line) {
+          const dr = Number(line.debit) || 0;
+          const cr = Number(line.credit) || 0;
+          const net = acc.nature === "debit" ? (dr - cr) : (cr - dr);
+          return { ...acc, balance: net };
+        }
+        return acc;
+      })
+    );
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "OpeningEntry",
+      entityId: saved.id,
+      details: `ترحيل القيد الافتتاحي الرسمي (${saved.entryNumber}) بمبلغ ${saved.totalDebit} متزن`,
+    });
+
+    showToast(locale === "ar" ? `تم ترحيل القيد الافتتاحي (${saved.entryNumber}) بنجاح` : `Opening entry (${saved.entryNumber}) posted successfully`, "success");
+    return saved;
+  };
+
   const resetToDemoData = () => {
     setProducts(initialProducts);
     setCategories(initialCategories);
@@ -1719,7 +1757,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         addCheck, updateCheckStatus, deleteCheck,
         accounts, costCenters, journalEntries, addAccount, updateAccount, deleteAccount,
         addCostCenter, updateCostCenter, deleteCostCenter,
-        addJournalEntry, deleteJournalEntry,
+        addJournalEntry, deleteJournalEntry, postOpeningEntry,
         auditLogs, notifications, addAuditLog, markNotificationRead, resetToDemoData
       }}
     >
