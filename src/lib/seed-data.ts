@@ -122,46 +122,138 @@ export const initialCustomers: Customer[] = [
 // 9. Suppliers (Clean Production Baseline: 0 items)
 export const initialSuppliers: Supplier[] = [];
 
-// 10. Standard Chart of Accounts (COA) with 0.00 Balances (UUIDs)
+// 10. Standard Chart of Accounts (COA) with 0.00 Balances (Report #6 Standardized 57 Accounts)
 export const initialAccounts: Account[] = [
-  // Assets (1000)
-  { id: "00000000-0000-0000-0000-000000000100", organizationId: "00000000-0000-0000-0000-000000000001", code: "1000", nameAr: "الأصول (Assets)", nameEn: "Assets", type: "assets", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000110", organizationId: "00000000-0000-0000-0000-000000000001", code: "1100", nameAr: "الأصول المتداولة", nameEn: "Current Assets", type: "assets", parentId: "00000000-0000-0000-0000-000000000100", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000111", organizationId: "00000000-0000-0000-0000-000000000001", code: "1110", nameAr: "النقدية بالخزينة", nameEn: "Cash on Hand", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000115", organizationId: "00000000-0000-0000-0000-000000000001", code: "1115", nameAr: "النقدية بالبنوك", nameEn: "Cash at Banks", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000120", organizationId: "00000000-0000-0000-0000-000000000001", code: "1120", nameAr: "العملاء والمدينون (A/R)", nameEn: "Accounts Receivable", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000125", organizationId: "00000000-0000-0000-0000-000000000001", code: "1125", nameAr: "أوراق القبض (الشيكات الواردة)", nameEn: "Notes Receivable (Checks)", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000130", organizationId: "00000000-0000-0000-0000-000000000001", code: "1130", nameAr: "مخزون البضائع للبيع", nameEn: "Merchandise Inventory", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000140", organizationId: "00000000-0000-0000-0000-000000000001", code: "1140", nameAr: "ضريبة القيمة المضافة - مدخلات (VAT In)", nameEn: "VAT Input Tax", type: "assets", parentId: "00000000-0000-0000-0000-000000000110", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  // ==========================================
+  // 1. ASSETS (1)
+  // ==========================================
+  { id: "00000000-0000-0000-0001-000000000001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1", nameAr: "الأصول (Assets)", nameEn: "Assets", type: "assets", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  
+  // Current Assets (11)
+  { id: "00000000-0000-0000-0001-000000000011", organizationId: "00000000-0000-0000-0000-000000000001", code: "11", nameAr: "الأصول المتداولة", nameEn: "Current Assets", type: "assets", parentId: "00000000-0000-0000-0001-000000000001", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001101", organizationId: "00000000-0000-0000-0000-000000000001", code: "1101", nameAr: "النقدية وشبه النقدية", nameEn: "Cash & Treasury", type: "assets", parentId: "00000000-0000-0000-0001-000000000011", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001101001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1101001", nameAr: "صندوق رئيسي", nameEn: "Main Cash", type: "assets", parentId: "00000000-0000-0000-0001-000000001101", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001101002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1101002", nameAr: "النقدية بالبنوك", nameEn: "Bank Cash", type: "assets", parentId: "00000000-0000-0000-0001-000000001101", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 
-  // Liabilities (2000)
-  { id: "00000000-0000-0000-0000-000000000200", organizationId: "00000000-0000-0000-0000-000000000001", code: "2000", nameAr: "الخصوم والالتزامات (Liabilities)", nameEn: "Liabilities", type: "liabilities", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000210", organizationId: "00000000-0000-0000-0000-000000000001", code: "2100", nameAr: "الخصوم المتداولة", nameEn: "Current Liabilities", type: "liabilities", parentId: "00000000-0000-0000-0000-000000000200", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000211", organizationId: "00000000-0000-0000-0000-000000000001", code: "2110", nameAr: "الموردون والدائنون (A/P)", nameEn: "Accounts Payable", type: "liabilities", parentId: "00000000-0000-0000-0000-000000000210", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000212", organizationId: "00000000-0000-0000-0000-000000000001", code: "2120", nameAr: "أوراق الدفع (الشيكات الصادرة)", nameEn: "Notes Payable (Checks)", type: "liabilities", parentId: "00000000-0000-0000-0000-000000000210", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000213", organizationId: "00000000-0000-0000-0000-000000000001", code: "2130", nameAr: "ضريبة القيمة المضافة - مخرجات (VAT Out)", nameEn: "VAT Output Tax", type: "liabilities", parentId: "00000000-0000-0000-0000-000000000210", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001102", organizationId: "00000000-0000-0000-0000-000000000001", code: "1102", nameAr: "العملاء والمدينون", nameEn: "Accounts Receivable", type: "assets", parentId: "00000000-0000-0000-0001-000000000011", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001102001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1102001", nameAr: "العملاء", nameEn: "Customers", type: "assets", parentId: "00000000-0000-0000-0001-000000001102", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001102002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1102002", nameAr: "أوراق القبض", nameEn: "Notes Receivable", type: "assets", parentId: "00000000-0000-0000-0001-000000001102", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001102003", organizationId: "00000000-0000-0000-0000-000000000001", code: "1102003", nameAr: "شيكات تحت التحصيل", nameEn: "Checks Under Collection", type: "assets", parentId: "00000000-0000-0000-0001-000000001102", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 
-  // Equity (3000)
-  { id: "00000000-0000-0000-0000-000000000300", organizationId: "00000000-0000-0000-0000-000000000001", code: "3000", nameAr: "حقوق الملكية (Equity)", nameEn: "Equity", type: "equity", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000310", organizationId: "00000000-0000-0000-0000-000000000001", code: "3100", nameAr: "رأس المال المدفوع", nameEn: "Paid-in Capital", type: "equity", parentId: "00000000-0000-0000-0000-000000000300", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001103", organizationId: "00000000-0000-0000-0000-000000000001", code: "1103", nameAr: "المخزون", nameEn: "Inventory", type: "assets", parentId: "00000000-0000-0000-0001-000000000011", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001103001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1103001", nameAr: "مخزون بضاعة تامة", nameEn: "Finished Goods Inventory", type: "assets", parentId: "00000000-0000-0000-0001-000000001103", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001103002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1103002", nameAr: "بضاعة بالطريق", nameEn: "Goods In Transit", type: "assets", parentId: "00000000-0000-0000-0001-000000001103", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 
-  // Revenues (4000)
-  { id: "00000000-0000-0000-0000-000000000400", organizationId: "00000000-0000-0000-0000-000000000001", code: "4000", nameAr: "الإيرادات (Revenues)", nameEn: "Revenues", type: "revenue", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000410", organizationId: "00000000-0000-0000-0000-000000000001", code: "4100", nameAr: "إيرادات مبيعات البضائع والخدمات", nameEn: "Sales & Services Revenue", type: "revenue", parentId: "00000000-0000-0000-0000-000000000400", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001104", organizationId: "00000000-0000-0000-0000-000000000001", code: "1104", nameAr: "مدينون وأرصدة مدينة أخرى", nameEn: "Other Receivables", type: "assets", parentId: "00000000-0000-0000-0001-000000000011", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001104001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1104001", nameAr: "مصروفات مدفوعة مقدماً", nameEn: "Prepaid Expenses", type: "assets", parentId: "00000000-0000-0000-0001-000000001104", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001104002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1104002", nameAr: "سلف وعُهد العاملين", nameEn: "Employee Advances", type: "assets", parentId: "00000000-0000-0000-0001-000000001104", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 
-  // Expenses (5000)
-  { id: "00000000-0000-0000-0000-000000000500", organizationId: "00000000-0000-0000-0000-000000000001", code: "5000", nameAr: "المصروفات (Expenses)", nameEn: "Expenses", type: "expense", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000510", organizationId: "00000000-0000-0000-0000-000000000001", code: "5100", nameAr: "تكلفة البضاعة المباعة (COGS)", nameEn: "Cost of Goods Sold", type: "expense", parentId: "00000000-0000-0000-0000-000000000500", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
-  { id: "00000000-0000-0000-0000-000000000520", organizationId: "00000000-0000-0000-0000-000000000001", code: "5200", nameAr: "مصروفات إدارية وعمومية", nameEn: "General & Administrative Expenses", type: "expense", parentId: "00000000-0000-0000-0000-000000000500", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001105", organizationId: "00000000-0000-0000-0000-000000000001", code: "1105", nameAr: "الأرصدة الضريبية المدينة", nameEn: "Taxes", type: "assets", parentId: "00000000-0000-0000-0001-000000000011", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001105002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1105002", nameAr: "ضريبة القيمة المضافة مدخلات", nameEn: "VAT Input Tax", type: "assets", parentId: "00000000-0000-0000-0001-000000001105", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Non Current Assets (12)
+  { id: "00000000-0000-0000-0001-000000000012", organizationId: "00000000-0000-0000-0000-000000000001", code: "12", nameAr: "الأصول غير المتداولة", nameEn: "Non Current Assets", type: "assets", parentId: "00000000-0000-0000-0001-000000000001", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000001201", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201", nameAr: "الأصول الثابتة", nameEn: "Fixed Assets", type: "assets", parentId: "00000000-0000-0000-0001-000000000012", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201001", nameAr: "أراضي", nameEn: "Lands", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201002", nameAr: "مباني وإنشاءات", nameEn: "Buildings", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201003", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201003", nameAr: "سيارات ووسائل نقل", nameEn: "Vehicles", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201004", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201004", nameAr: "آلات ومعدات", nameEn: "Equipment", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201005", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201005", nameAr: "أجهزة حاسب وبرمجيات", nameEn: "Computers", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001201006", organizationId: "00000000-0000-0000-0000-000000000001", code: "1201006", nameAr: "أثاث وتجهيزات مكتبية", nameEn: "Furniture", type: "assets", parentId: "00000000-0000-0000-0001-000000001201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  { id: "00000000-0000-0000-0001-000000001202", organizationId: "00000000-0000-0000-0000-000000000001", code: "1202", nameAr: "مجمع الإهلاك للأصول الثابتة", nameEn: "Accumulated Depreciation", type: "assets", parentId: "00000000-0000-0000-0001-000000000012", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001202001", organizationId: "00000000-0000-0000-0000-000000000001", code: "1202001", nameAr: "مجمع إهلاك مباني", nameEn: "Building Depreciation", type: "assets", parentId: "00000000-0000-0000-0001-000000001202", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001202002", organizationId: "00000000-0000-0000-0000-000000000001", code: "1202002", nameAr: "مجمع إهلاك سيارات", nameEn: "Vehicle Depreciation", type: "assets", parentId: "00000000-0000-0000-0001-000000001202", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001202003", organizationId: "00000000-0000-0000-0000-000000000001", code: "1202003", nameAr: "مجمع إهلاك حاسبات", nameEn: "Computer Depreciation", type: "assets", parentId: "00000000-0000-0000-0001-000000001202", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000001202004", organizationId: "00000000-0000-0000-0000-000000000001", code: "1202004", nameAr: "مجمع إهلاك أثاث", nameEn: "Furniture Depreciation", type: "assets", parentId: "00000000-0000-0000-0001-000000001202", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // ==========================================
+  // 2. LIABILITIES (2)
+  // ==========================================
+  { id: "00000000-0000-0000-0001-000000000002", organizationId: "00000000-0000-0000-0000-000000000001", code: "2", nameAr: "الخصوم والالتزامات (Liabilities)", nameEn: "Liabilities", type: "liabilities", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  
+  // Current Liabilities (21)
+  { id: "00000000-0000-0000-0001-000000000021", organizationId: "00000000-0000-0000-0000-000000000001", code: "21", nameAr: "الخصوم المتداولة", nameEn: "Current Liabilities", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000002", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000002101", organizationId: "00000000-0000-0000-0000-000000000001", code: "2101", nameAr: "الموردون والدائنون", nameEn: "Accounts Payable", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000021", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002101001", organizationId: "00000000-0000-0000-0000-000000000001", code: "2101001", nameAr: "الموردون", nameEn: "Suppliers", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002101002", organizationId: "00000000-0000-0000-0000-000000000001", code: "2101002", nameAr: "أوراق الدفع", nameEn: "Notes Payable", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  { id: "00000000-0000-0000-0001-000000002102", organizationId: "00000000-0000-0000-0000-000000000001", code: "2102", nameAr: "الالتزامات الضريبية", nameEn: "Taxes Payable", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000021", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002102001", organizationId: "00000000-0000-0000-0000-000000000001", code: "2102001", nameAr: "ضريبة الدخل المستحقة", nameEn: "Income Tax Payable", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002102", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002102002", organizationId: "00000000-0000-0000-0000-000000000001", code: "2102002", nameAr: "ضريبة القيمة المضافة مخرجات", nameEn: "VAT Output Tax", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002102", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002102003", organizationId: "00000000-0000-0000-0000-000000000001", code: "2102003", nameAr: "ضريبة الخصم والتحصيل", nameEn: "Withholding Tax Payable", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002102", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  { id: "00000000-0000-0000-0001-000000002103", organizationId: "00000000-0000-0000-0000-000000000001", code: "2103", nameAr: "دائنون وأرصدة دائنة أخرى", nameEn: "Other Payables", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000021", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002103001", organizationId: "00000000-0000-0000-0000-000000000001", code: "2103001", nameAr: "مصروفات مستحقة", nameEn: "Accrued Expenses", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002103", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002103002", organizationId: "00000000-0000-0000-0000-000000000001", code: "2103002", nameAr: "أمانات ضرائب وتأمينات", nameEn: "Insurance & Tax Deposits", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002103", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Non Current Liabilities (22)
+  { id: "00000000-0000-0000-0001-000000000022", organizationId: "00000000-0000-0000-0000-000000000001", code: "22", nameAr: "الخصوم غير المتداولة", nameEn: "Non Current Liabilities", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000002", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000002201", organizationId: "00000000-0000-0000-0000-000000000001", code: "2201", nameAr: "قروض طويلة الأجل", nameEn: "Long-term Loans", type: "liabilities", parentId: "00000000-0000-0000-0001-000000000022", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000002201001", organizationId: "00000000-0000-0000-0000-000000000001", code: "2201001", nameAr: "قروض بنكية", nameEn: "Bank Loans", type: "liabilities", parentId: "00000000-0000-0000-0001-000000002201", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // ==========================================
+  // 3. EQUITY (3)
+  // ==========================================
+  { id: "00000000-0000-0000-0001-000000000003", organizationId: "00000000-0000-0000-0000-000000000001", code: "3", nameAr: "حقوق الملكية (Equity)", nameEn: "Equity", type: "equity", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  
+  // Capital & Reserves (31)
+  { id: "00000000-0000-0000-0001-000000000031", organizationId: "00000000-0000-0000-0000-000000000001", code: "31", nameAr: "رأس المال والاحتياطيات", nameEn: "Capital & Reserves", type: "equity", parentId: "00000000-0000-0000-0001-000000000003", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000003101", organizationId: "00000000-0000-0000-0000-000000000001", code: "3101", nameAr: "رأس المال المدفوع", nameEn: "Paid-in Capital", type: "equity", parentId: "00000000-0000-0000-0001-000000000031", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000003101001", organizationId: "00000000-0000-0000-0000-000000000001", code: "3101001", nameAr: "رأس المال", nameEn: "Capital", type: "equity", parentId: "00000000-0000-0000-0001-000000003101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000003101002", organizationId: "00000000-0000-0000-0000-000000000001", code: "3101002", nameAr: "أرباح / خسائر مرحلة", nameEn: "Retained Earnings", type: "equity", parentId: "00000000-0000-0000-0001-000000003101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000003101003", organizationId: "00000000-0000-0000-0000-000000000001", code: "3101003", nameAr: "أرباح العام الحالي", nameEn: "Current Year Profit", type: "equity", parentId: "00000000-0000-0000-0001-000000003101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000003101004", organizationId: "00000000-0000-0000-0000-000000000001", code: "3101004", nameAr: "جاري الشركاء", nameEn: "Partners Current Account", type: "equity", parentId: "00000000-0000-0000-0001-000000003101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // ==========================================
+  // 4. REVENUE (4)
+  // ==========================================
+  { id: "00000000-0000-0000-0001-000000000004", organizationId: "00000000-0000-0000-0000-000000000001", code: "4", nameAr: "الإيرادات (Revenue)", nameEn: "Revenue", type: "revenue", level: 1, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000000041", organizationId: "00000000-0000-0000-0000-000000000001", code: "41", nameAr: "إيرادات المبيعات والنشاط", nameEn: "Sales & Operating Revenue", type: "revenue", parentId: "00000000-0000-0000-0001-000000000004", level: 2, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  
+  // Sales Revenue & Other Revenue
+  { id: "00000000-0000-0000-0001-000000004101", organizationId: "00000000-0000-0000-0000-000000000001", code: "4101", nameAr: "إيرادات النشاط الرئيسي", nameEn: "Sales Revenue", type: "revenue", parentId: "00000000-0000-0000-0001-000000000041", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000004101001", organizationId: "00000000-0000-0000-0000-000000000001", code: "4101001", nameAr: "إيراد مبيعات بضائع", nameEn: "Goods Sales Revenue", type: "revenue", parentId: "00000000-0000-0000-0001-000000004101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000004101002", organizationId: "00000000-0000-0000-0000-000000000001", code: "4101002", nameAr: "مردودات ومسموحات مبيعات", nameEn: "Sales Returns & Allowances", type: "revenue", parentId: "00000000-0000-0000-0001-000000004101", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000004101003", organizationId: "00000000-0000-0000-0000-000000000001", code: "4101003", nameAr: "خصم مسموح به", nameEn: "Sales Discount Allowed", type: "revenue", parentId: "00000000-0000-0000-0001-000000004101", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  { id: "00000000-0000-0000-0001-000000004102", organizationId: "00000000-0000-0000-0000-000000000001", code: "4102", nameAr: "إيرادات أخرى", nameEn: "Other Revenues", type: "revenue", parentId: "00000000-0000-0000-0001-000000000041", level: 3, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000004102001", organizationId: "00000000-0000-0000-0000-000000000001", code: "4102001", nameAr: "إيرادات متنوعة", nameEn: "Miscellaneous Revenue", type: "revenue", parentId: "00000000-0000-0000-0001-000000004102", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // ==========================================
+  // 5. EXPENSES (5)
+  // ==========================================
+  { id: "00000000-0000-0000-0001-000000000005", organizationId: "00000000-0000-0000-0000-000000000001", code: "5", nameAr: "المصروفات والتكاليف (Expenses)", nameEn: "Expenses", type: "expense", level: 1, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  
+  // Cost of Operations (51)
+  { id: "00000000-0000-0000-0001-000000000051", organizationId: "00000000-0000-0000-0000-000000000001", code: "51", nameAr: "تكلفة النشاط والإنتاج", nameEn: "Cost of Operations", type: "expense", parentId: "00000000-0000-0000-0001-000000000005", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000005101", organizationId: "00000000-0000-0000-0000-000000000001", code: "5101", nameAr: "تكلفة المبيعات", nameEn: "Cost of Goods Sold", type: "expense", parentId: "00000000-0000-0000-0001-000000000051", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005101001", organizationId: "00000000-0000-0000-0000-000000000001", code: "5101001", nameAr: "تكلفة البضاعة المباعة", nameEn: "Cost of Goods Sold", type: "expense", parentId: "00000000-0000-0000-0001-000000005101", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005101002", organizationId: "00000000-0000-0000-0000-000000000001", code: "5101002", nameAr: "مردودات ومسموحات مشتريات", nameEn: "Purchase Returns & Allowances", type: "expense", parentId: "00000000-0000-0000-0001-000000005101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005101003", organizationId: "00000000-0000-0000-0000-000000000001", code: "5101003", nameAr: "خصم مكتسب", nameEn: "Purchase Discount Received", type: "expense", parentId: "00000000-0000-0000-0001-000000005101", level: 4, nature: "credit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // Operating Expenses (52)
+  { id: "00000000-0000-0000-0001-000000000052", organizationId: "00000000-0000-0000-0000-000000000001", code: "52", nameAr: "مصروفات تشغيلية وإدارية", nameEn: "Operating Expenses", type: "expense", parentId: "00000000-0000-0000-0001-000000000005", level: 2, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000000005201", organizationId: "00000000-0000-0000-0000-000000000001", code: "5201", nameAr: "مصروفات بيعية وتسويقية", nameEn: "Selling & Marketing Expenses", type: "expense", parentId: "00000000-0000-0000-0001-000000000052", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005201001", organizationId: "00000000-0000-0000-0000-000000000001", code: "5201001", nameAr: "عمولات بيع ونقل", nameEn: "Sales Commissions & Shipping", type: "expense", parentId: "00000000-0000-0000-0001-000000005201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005201002", organizationId: "00000000-0000-0000-0000-000000000001", code: "5201002", nameAr: "دعاية وإعلان", nameEn: "Advertising & Marketing", type: "expense", parentId: "00000000-0000-0000-0001-000000005201", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+
+  // General & Admin Expenses (5202)
+  { id: "00000000-0000-0000-0001-000000005202", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202", nameAr: "مصروفات عمومية وإدارية", nameEn: "General & Admin Expenses", type: "expense", parentId: "00000000-0000-0000-0001-000000000052", level: 3, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005202001", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202001", nameAr: "رواتب وأجور إدارية", nameEn: "Salaries & Wages", type: "expense", parentId: "00000000-0000-0000-0001-000000005202", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005202002", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202002", nameAr: "إيجار مقرات وفروع", nameEn: "Rent Expense", type: "expense", parentId: "00000000-0000-0000-0001-000000005202", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005202003", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202003", nameAr: "كهرباء ومياه ومرافق", nameEn: "Utilities Expense", type: "expense", parentId: "00000000-0000-0000-0001-000000005202", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005202004", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202004", nameAr: "صيانة ونظافة", nameEn: "Maintenance & Cleaning", type: "expense", parentId: "00000000-0000-0000-0001-000000005202", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
+  { id: "00000000-0000-0000-0001-000005202005", organizationId: "00000000-0000-0000-0000-000000000001", code: "5202005", nameAr: "إهلاك الأصول الثابتة", nameEn: "Depreciation Expense", type: "expense", parentId: "00000000-0000-0000-0001-000000005202", level: 4, nature: "debit", balance: 0, currency: "EGP", isActive: true, isSystem: true },
 ];
 
-// 11. Treasury Accounts with 0.00 Balances (UUIDs)
+// 11. Treasury Accounts with 0.00 Balances (Linked to Report #6 GL Accounts)
 export const initialTreasuryAccounts: TreasuryAccount[] = [
   {
     id: "00000000-0000-0000-0000-000000000301",
     organizationId: "00000000-0000-0000-0000-000000000001",
     branchId: "00000000-0000-0000-0000-000000000002",
-    glAccountId: "00000000-0000-0000-0000-000000000111",
+    glAccountId: "00000000-0000-0000-0001-000001101001", // Main Cash 1101001
     code: "SAFE-MAIN",
     nameAr: "الخزينة الرئيسية للمنشأة",
     nameEn: "Main Company Safe",
@@ -174,7 +266,7 @@ export const initialTreasuryAccounts: TreasuryAccount[] = [
     id: "00000000-0000-0000-0000-000000000302",
     organizationId: "00000000-0000-0000-0000-000000000001",
     branchId: "00000000-0000-0000-0000-000000000002",
-    glAccountId: "00000000-0000-0000-0000-000000000115",
+    glAccountId: "00000000-0000-0000-0001-000001101002", // Bank Cash 1101002
     code: "BANK-MAIN",
     nameAr: "الحساب البنكي الرئيسي",
     nameEn: "Primary Bank Account",

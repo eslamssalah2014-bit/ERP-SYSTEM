@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
+import { initialAccounts } from "@/lib/seed-data";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -107,14 +108,14 @@ async function autoPostDocumentJournal(
     // Grand Total = Net Amount + Tax
     const netAmount = Math.max(0, subtotal - discountTotal);
 
-    const arAcc = accounts.find((a: any) => a.code === "1120") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000120", code: "1120", name_ar: "العملاء والمدينون (A/R)" };
-    const salesAcc = accounts.find((a: any) => a.code === "4100") || accounts.find((a: any) => a.type === "revenue") || { id: "00000000-0000-0000-0000-000000000410", code: "4100", name_ar: "إيرادات مبيعات البضائع والخدمات" };
-    const vatOutAcc = accounts.find((a: any) => a.code === "2130") || accounts.find((a: any) => a.code === "2100") || { id: "00000000-0000-0000-0000-000000000213", code: "2130", name_ar: "ضريبة القيمة المضافة - مخرجات (VAT Out)" };
-    const cogsAcc = accounts.find((a: any) => a.code === "5100") || accounts.find((a: any) => a.type === "expense") || { id: "00000000-0000-0000-0000-000000000510", code: "5100", name_ar: "تكلفة البضاعة المباعة (COGS)" };
-    const invAcc = accounts.find((a: any) => a.code === "1130") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000130", code: "1130", name_ar: "مخزون البضائع للبيع" };
-    const vatInAcc = accounts.find((a: any) => a.code === "1140") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0000-000000000140", code: "1140", name_ar: "ضريبة القيمة المضافة - مدخلات (VAT In)" };
-    const apAcc = accounts.find((a: any) => a.code === "2110") || accounts.find((a: any) => a.type === "liabilities") || { id: "00000000-0000-0000-0000-000000000211", code: "2110", name_ar: "الموردون والدائنون (A/P)" };
-    const treasuryAcc = accounts.find((a: any) => a.code === "1110" || a.code === "1115") || { id: "00000000-0000-0000-0000-000000000111", code: "1110", name_ar: "النقدية بالخزينة" };
+    const arAcc = accounts.find((a: any) => a.code === "1102001" || a.code === "1102" || a.code === "1120") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0001-000001102001", code: "1102001", name_ar: "العملاء (Customers)" };
+    const salesAcc = accounts.find((a: any) => a.code === "4101001" || a.code === "4101" || a.code === "4100") || accounts.find((a: any) => a.type === "revenue") || { id: "00000000-0000-0000-0001-000004101001", code: "4101001", name_ar: "مبيعات جملة (Wholesale Sales)" };
+    const vatOutAcc = accounts.find((a: any) => a.code === "2102002" || a.code === "2102" || a.code === "2130" || a.code === "2100") || { id: "00000000-0000-0000-0001-000002102002", code: "2102002", name_ar: "ضرائب مستحقة (Taxes Payable / VAT Output)" };
+    const cogsAcc = accounts.find((a: any) => a.code === "5101001" || a.code === "5101" || a.code === "5100") || accounts.find((a: any) => a.type === "expense") || { id: "00000000-0000-0000-0001-000005101001", code: "5101001", name_ar: "مشتريات البضاعة (Purchases)" };
+    const invAcc = accounts.find((a: any) => a.code === "1103001" || a.code === "1103" || a.code === "1130") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0001-000001103001", code: "1103001", name_ar: "مخزون البضائع التامة (Finished Goods Inventory)" };
+    const vatInAcc = accounts.find((a: any) => a.code === "1105002" || a.code === "1105" || a.code === "1140") || accounts.find((a: any) => a.type === "assets") || { id: "00000000-0000-0000-0001-000001105002", code: "1105002", name_ar: "ضريبة القيمة المضافة - مدخلات (VAT Input Tax)" };
+    const apAcc = accounts.find((a: any) => a.code === "2101001" || a.code === "2101" || a.code === "2110") || accounts.find((a: any) => a.type === "liabilities") || { id: "00000000-0000-0000-0001-000002101001", code: "2101001", name_ar: "الموردون (Suppliers)" };
+    const treasuryAcc = accounts.find((a: any) => a.code === "1101001" || a.code === "1101002" || a.code === "1110" || a.code === "1115") || { id: "00000000-0000-0000-0001-000001101001", code: "1101001", name_ar: "صندوق رئيسي (Main Cash)" };
 
     if (docType === "sales_invoice") {
       entryNumber = `JV-SALES-${doc.invoice_number}`;
@@ -955,7 +956,7 @@ async function ensureBaselineEntities(supabase: any) {
       id: DEFAULT_TREASURY_ID,
       organization_id: DEFAULT_ORG_ID,
       branch_id: DEFAULT_BRANCH_ID,
-      gl_account_id: "00000000-0000-0000-0000-000000000101",
+      gl_account_id: "00000000-0000-0000-0001-000001101001",
       code: "SAFE-01",
       name_ar: "الخزينة الرئيسية - المقر العام",
       name_en: "Main HQ Safe",
@@ -964,6 +965,24 @@ async function ensureBaselineEntities(supabase: any) {
       balance: 150000,
       is_default: true,
     }], { onConflict: "id" });
+
+    // 10. Ensure default Report #6 Chart of Accounts
+    const formattedAccounts = initialAccounts.map(a => ({
+      id: a.id,
+      organization_id: DEFAULT_ORG_ID,
+      code: a.code,
+      name_ar: a.nameAr,
+      name_en: a.nameEn,
+      type: a.type,
+      parent_id: a.parentId || null,
+      level: a.level,
+      nature: a.nature,
+      balance: Number(a.balance) || 0,
+      currency: a.currency || "EGP",
+      is_active: a.isActive !== false,
+      is_system: a.isSystem !== false,
+    }));
+    await supabase.from("accounts").upsert(formattedAccounts, { onConflict: "id" });
 
     hasSeededBaseline = true;
   } catch (err) {
@@ -3297,19 +3316,51 @@ export async function POST(request: Request) {
         const { id, organizationId, code, nameAr, nameEn, type, parentId, level, nature, balance, currency, isActive, isSystem } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const cleanParentId = cleanUUID(parentId, null);
 
         let finalCode = (code || "").trim();
         if (!finalCode) finalCode = "ACC-" + Date.now().toString().slice(-4);
+
+        // 1. Validate Code Uniqueness
+        const { data: existingCode } = await supabaseAdmin
+          .from("accounts")
+          .select("id")
+          .eq("organization_id", validOrgId)
+          .eq("code", finalCode)
+          .maybeSingle();
+
+        if (existingCode) {
+          return noCacheResponse({ success: false, message: `كود الحساب (${finalCode}) مسجل مسبقاً، يرجى اختيار كود فريد.` }, 400);
+        }
+
+        // 2. Derive Level and Type from Parent if provided
+        let derivedLevel = Number(level) || 1;
+        let derivedType = type || "assets";
+        let derivedNature = nature || "debit";
+
+        if (cleanParentId) {
+          const { data: parentAcc } = await supabaseAdmin
+            .from("accounts")
+            .select("level, type, nature")
+            .eq("id", cleanParentId)
+            .maybeSingle();
+
+          if (parentAcc) {
+            derivedLevel = (Number(parentAcc.level) || 1) + 1;
+            if (!type) derivedType = parentAcc.type;
+            if (!nature) derivedNature = parentAcc.nature;
+          }
+        }
 
         const insertRow: any = {
           organization_id: validOrgId,
           code: finalCode,
           name_ar: nameAr || "حساب جديد",
           name_en: nameEn || nameAr || "New Account",
-          type: type || "assets",
-          parent_id: cleanUUID(parentId, null),
-          level: Number(level) || 1,
-          nature: nature || "debit",
+          type: derivedType,
+          parent_id: cleanParentId,
+          level: derivedLevel,
+          nature: derivedNature,
           balance: Number(balance) || 0,
           currency: currency || "EGP",
           is_active: isActive !== false,
@@ -3333,15 +3384,50 @@ export async function POST(request: Request) {
         if (!validId) return noCacheResponse({ success: false, message: "Valid account ID is required" }, 400);
 
         const updateRow: any = {};
-        if (code !== undefined) updateRow.code = code;
+        if (code !== undefined) {
+          const trimmedCode = (code || "").trim();
+          // Check uniqueness
+          const { data: existingCode } = await supabaseAdmin
+            .from("accounts")
+            .select("id")
+            .eq("code", trimmedCode)
+            .neq("id", validId)
+            .maybeSingle();
+
+          if (existingCode) {
+            return noCacheResponse({ success: false, message: `كود الحساب (${trimmedCode}) مسجل لحساب آخر.` }, 400);
+          }
+          updateRow.code = trimmedCode;
+        }
+
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
         if (nameEn !== undefined) updateRow.name_en = nameEn;
         if (type !== undefined) updateRow.type = type;
-        if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
-        if (level !== undefined) updateRow.level = Number(level);
         if (nature !== undefined) updateRow.nature = nature;
         if (balance !== undefined) updateRow.balance = Number(balance);
         if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
+
+        if (parentId !== undefined) {
+          const cleanParentId = cleanUUID(parentId, null);
+          updateRow.parent_id = cleanParentId;
+
+          if (cleanParentId) {
+            const { data: parentAcc } = await supabaseAdmin
+              .from("accounts")
+              .select("level, type")
+              .eq("id", cleanParentId)
+              .maybeSingle();
+
+            if (parentAcc) {
+              updateRow.level = (Number(parentAcc.level) || 1) + 1;
+              if (type === undefined) updateRow.type = parentAcc.type;
+            }
+          } else {
+            updateRow.level = 1;
+          }
+        } else if (level !== undefined) {
+          updateRow.level = Number(level);
+        }
 
         const { data: acc, error: accErr } = await supabaseAdmin
           .from("accounts")
@@ -3359,15 +3445,29 @@ export async function POST(request: Request) {
         const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid account ID is required" }, 400);
 
+        // 1. Check if account has subaccounts
+        const { data: children } = await supabaseAdmin
+          .from("accounts")
+          .select("id, name_ar")
+          .eq("parent_id", validId);
+
+        if (children && children.length > 0) {
+          return noCacheResponse({
+            success: false,
+            message: `لا يمكن حذف هذا الحساب لوجود (${children.length}) حسابات فرعية تابعة له. يرجى نقلها أو حذفها أولاً.`
+          }, 400);
+        }
+
         try {
           const { error: delErr } = await supabaseAdmin.from("accounts").delete().eq("id", validId);
           if (delErr && delErr.code === "23503") {
             await supabaseAdmin.from("accounts").update({ is_active: false }).eq("id", validId);
-            return noCacheResponse({ success: true, id: validId });
+            return noCacheResponse({ success: true, id: validId, note: "Account deactivated due to foreign key references" });
           }
           if (delErr) throw delErr;
         } catch (err: any) {
           if (err?.code === "23503") {
+            await supabaseAdmin.from("accounts").update({ is_active: false }).eq("id", validId);
             return noCacheResponse({ success: true, id: validId });
           }
           throw err;

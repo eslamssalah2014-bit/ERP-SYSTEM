@@ -50,10 +50,12 @@ import {
   updateSupplierDB,
   deleteSupplierDB,
   persistSalesInvoiceDB,
+  updateSalesInvoiceDB,
   deleteSalesInvoiceDB,
   persistSalesReturnDB,
   deleteSalesReturnDB,
   persistPurchaseInvoiceDB,
+  updatePurchaseInvoiceDB,
   deletePurchaseInvoiceDB,
   persistPurchaseReturnDB,
   deletePurchaseReturnDB,
@@ -162,10 +164,12 @@ interface ERPContextType {
   purchaseInvoices: PurchaseInvoice[];
   purchaseReturns: PurchaseReturn[];
   createSalesInvoice: (inv: Omit<SalesInvoice, "id">) => Promise<SalesInvoice>;
+  updateSalesInvoice: (id: string, inv: Partial<SalesInvoice>) => Promise<SalesInvoice>;
   deleteSalesInvoice: (id: string) => Promise<void>;
   addSalesReturn: (ret: Omit<SalesReturn, "id">) => Promise<SalesReturn>;
   deleteSalesReturn: (id: string) => Promise<void>;
   createPurchaseInvoice: (inv: Omit<PurchaseInvoice, "id">) => Promise<PurchaseInvoice>;
+  updatePurchaseInvoice: (id: string, pinv: Partial<PurchaseInvoice>) => Promise<PurchaseInvoice>;
   deletePurchaseInvoice: (id: string) => Promise<void>;
   addPurchaseReturn: (ret: Omit<PurchaseReturn, "id">) => Promise<PurchaseReturn>;
   deletePurchaseReturn: (id: string) => Promise<void>;
@@ -977,6 +981,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return savedInvoice;
   };
 
+  const updateSalesInvoice = async (id: string, inv: Partial<SalesInvoice>): Promise<SalesInvoice> => {
+    const res = await updateSalesInvoiceDB(id, inv);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل تعديل فاتورة المبيعات في قاعدة البيانات");
+    }
+    const savedInvoice = res.data;
+    setSalesInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
+    showToast(locale === "ar" ? `تم تحديث فاتورة المبيعات (${savedInvoice.invoiceNumber}) بنجاح` : `Sales invoice updated`, "success");
+    return savedInvoice;
+  };
+
   const deleteSalesInvoice = async (id: string) => {
     const res = await deleteSalesInvoiceDB(id);
     if (!res.success) {
@@ -1062,6 +1077,17 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     });
 
     showToast(locale === "ar" ? `تم تسجيل فاتورة المشتريات (${savedInvoice.invoiceNumber}) وتوريد المخزون بنجاح` : `Purchase invoice (${savedInvoice.invoiceNumber}) registered & posted successfully`, "success");
+    return savedInvoice;
+  };
+
+  const updatePurchaseInvoice = async (id: string, pinv: Partial<PurchaseInvoice>): Promise<PurchaseInvoice> => {
+    const res = await updatePurchaseInvoiceDB(id, pinv);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "فشل تعديل فاتورة المشتريات في قاعدة البيانات");
+    }
+    const savedInvoice = res.data;
+    setPurchaseInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
+    showToast(locale === "ar" ? `تم تحديث فاتورة المشتريات (${savedInvoice.invoiceNumber}) بنجاح` : `Purchase invoice updated`, "success");
     return savedInvoice;
   };
 
@@ -1684,8 +1710,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         customers, suppliers, addCustomer, updateCustomer, deleteCustomer,
         addSupplier, updateSupplier, deleteSupplier,
         salesInvoices, salesReturns, purchaseInvoices, purchaseReturns,
-        createSalesInvoice, deleteSalesInvoice, addSalesReturn, deleteSalesReturn,
-        createPurchaseInvoice, deletePurchaseInvoice, addPurchaseReturn, deletePurchaseReturn,
+        createSalesInvoice, updateSalesInvoice, deleteSalesInvoice, addSalesReturn, deleteSalesReturn,
+        createPurchaseInvoice, updatePurchaseInvoice, deletePurchaseInvoice, addPurchaseReturn, deletePurchaseReturn,
         getCustomerStatement, getSupplierStatement, getCustomerBalancesReport, getSupplierBalancesReport,
         treasuryAccounts, cashReceipts, cashPayments, checks,
         addTreasuryAccount, updateTreasuryAccount, deleteTreasuryAccount,

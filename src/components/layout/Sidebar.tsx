@@ -59,7 +59,8 @@ export default function Sidebar() {
       href: "/sales",
       icon: ShoppingCart,
       children: [
-        { titleAr: "فواتير وعروض المبيعات", titleEn: "Sales Invoices & Offers", href: "/sales" },
+        { titleAr: "فواتير المبيعات الضريبية", titleEn: "Sales Invoices", href: "/sales" },
+        { titleAr: "عروض الأسعار (Quotations)", titleEn: "Sales Quotations", href: "/sales/quotations" },
         { titleAr: "مرتجعات المبيعات (إشعار دائن)", titleEn: "Sales Returns", href: "/sales/returns" },
         { titleAr: "نقطة البيع السريعة (POS)", titleEn: "POS Terminal", href: "/pos" },
         { titleAr: "سجل العملاء", titleEn: "Customers Directory", href: "/customers" },
@@ -73,7 +74,8 @@ export default function Sidebar() {
       href: "/purchases",
       icon: ShoppingBag,
       children: [
-        { titleAr: "فواتير وأوامر الشراء", titleEn: "Purchase Invoices & Orders", href: "/purchases" },
+        { titleAr: "فواتير المشتريات", titleEn: "Purchase Invoices", href: "/purchases" },
+        { titleAr: "أوامر الشراء (Purchase Orders)", titleEn: "Purchase Orders", href: "/purchases/orders" },
         { titleAr: "مرتجعات المشتريات (إشعار مدين)", titleEn: "Purchase Returns", href: "/purchases/returns" },
         { titleAr: "سجل الموردين", titleEn: "Suppliers Directory", href: "/suppliers" },
         { titleAr: "كشف حساب مورد", titleEn: "Supplier Statement", href: "/suppliers/statement" },

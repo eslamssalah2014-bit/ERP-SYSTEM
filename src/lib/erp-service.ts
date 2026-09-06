@@ -213,6 +213,9 @@ export async function deleteCashPaymentDB(id: string) {
 export async function persistSalesInvoiceDB(inv: SalesInvoice | Omit<SalesInvoice, "id">) {
   return mutateERP<SalesInvoice>("create_sales_invoice", inv);
 }
+export async function updateSalesInvoiceDB(id: string, inv: Partial<SalesInvoice>) {
+  return mutateERP<SalesInvoice>("create_sales_invoice", { id, ...inv });
+}
 export async function deleteSalesInvoiceDB(id: string) {
   return mutateERP("delete_sales_invoice", { id });
 }
@@ -220,6 +223,9 @@ export async function deleteSalesInvoiceDB(id: string) {
 // Purchase Invoices CRUD
 export async function persistPurchaseInvoiceDB(inv: PurchaseInvoice | Omit<PurchaseInvoice, "id">) {
   return mutateERP<PurchaseInvoice>("create_purchase_invoice", inv);
+}
+export async function updatePurchaseInvoiceDB(id: string, pinv: Partial<PurchaseInvoice>) {
+  return mutateERP<PurchaseInvoice>("create_purchase_invoice", { id, ...pinv });
 }
 export async function deletePurchaseInvoiceDB(id: string) {
   return mutateERP("delete_purchase_invoice", { id });

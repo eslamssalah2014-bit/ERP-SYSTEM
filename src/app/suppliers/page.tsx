@@ -19,9 +19,9 @@ export default function SuppliersPage() {
   // Dynamic Bank Accounts derived 100% exclusively from Chart of Accounts (COA)
   const coaBankAccounts = useMemo(() => {
     return (accounts || []).filter(a =>
-      (a.code.startsWith("1115") || a.code.startsWith("1112") || a.parentId === "00000000-0000-0000-0000-000000000115" ||
+      (a.code.startsWith("1101002") || a.code.startsWith("1115") || a.code.startsWith("1112") || a.parentId === "00000000-0000-0000-0001-000001101002" ||
        (a.type === "assets" && (a.nameAr.includes("بنك") || a.nameEn?.toLowerCase().includes("bank")))) &&
-      a.code !== "1000" && a.code !== "1100"
+      a.code !== "1000" && a.code !== "1100" && a.code !== "1" && a.code !== "11" && a.code !== "1101"
     );
   }, [accounts]);
 

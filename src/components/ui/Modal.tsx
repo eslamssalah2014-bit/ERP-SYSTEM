@@ -9,6 +9,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
 }
 
 export default function Modal({
@@ -16,8 +17,10 @@ export default function Modal({
   onClose,
   title,
   children,
-  maxWidth = "lg"
+  maxWidth,
+  size
 }: ModalProps) {
+  const finalSize = size || maxWidth || "lg";
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -41,7 +44,7 @@ export default function Modal({
     xl: "max-w-xl",
     "2xl": "max-w-2xl",
     "4xl": "max-w-4xl",
-  }[maxWidth];
+  }[finalSize];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">

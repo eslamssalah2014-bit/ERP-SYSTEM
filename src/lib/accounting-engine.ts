@@ -5,16 +5,44 @@ import {
   Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow
 } from "@/types/erp";
 
+// Helper: Resolve account by primary codes with backward compatibility
+function findAccount(accounts: Account[], candidateCodes: string[], fallbackType?: string): Account {
+  for (const c of candidateCodes) {
+    const found = accounts.find(a => a.code === c);
+    if (found) return found;
+  }
+  if (fallbackType) {
+    const byType = accounts.find(a => a.type === fallbackType && a.level >= 3);
+    if (byType) return byType;
+    const byTypeAny = accounts.find(a => a.type === fallbackType);
+    if (byTypeAny) return byTypeAny;
+  }
+  return accounts[0] || {
+    id: "00000000-0000-0000-0001-000001101001",
+    organizationId: "00000000-0000-0000-0000-000000000001",
+    code: "1101001",
+    nameAr: "صندوق رئيسي",
+    nameEn: "Main Cash",
+    type: "assets",
+    level: 4,
+    nature: "debit",
+    balance: 0,
+    currency: "EGP",
+    isActive: true,
+    isSystem: true
+  };
+}
+
 export function generateSalesInvoiceJournal(
   invoice: SalesInvoice,
   accounts: Account[],
   cogsAmount: number = 0
 ): Omit<JournalEntry, "id"> {
-  const arAccount = accounts.find(a => a.code === "1120") || accounts.find(a => a.type === "assets") || accounts[0];
-  const salesAccount = accounts.find(a => a.code === "4100") || accounts.find(a => a.type === "revenue") || accounts[0];
-  const vatOutAccount = accounts.find(a => a.code === "2130") || accounts.find(a => a.code === "2100") || accounts[0];
-  const cogsAccount = accounts.find(a => a.code === "5100") || accounts.find(a => a.type === "expense") || accounts[0];
-  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+  const arAccount = findAccount(accounts, ["1102001", "1102", "1120"], "assets");
+  const salesAccount = findAccount(accounts, ["4101001", "4101", "4100"], "revenue");
+  const vatOutAccount = findAccount(accounts, ["2102002", "2102", "2130", "2100"], "liabilities");
+  const cogsAccount = findAccount(accounts, ["5101001", "5101", "5100"], "expense");
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
 
   // Net Amount = Amount Before Discount - Discount
   // Tax Base = Net Amount
@@ -99,9 +127,9 @@ export function generatePurchaseInvoiceJournal(
   invoice: PurchaseInvoice,
   accounts: Account[]
 ): Omit<JournalEntry, "id"> {
-  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
-  const vatInAccount = accounts.find(a => a.code === "1140") || accounts.find(a => a.type === "assets") || accounts[0];
-  const apAccount = accounts.find(a => a.code === "2110") || accounts.find(a => a.type === "liabilities") || accounts[0];
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
+  const vatInAccount = findAccount(accounts, ["1105002", "1105", "1140"], "assets");
+  const apAccount = findAccount(accounts, ["2101001", "2101", "2110"], "liabilities");
 
   // Net Stock Cost = Amount Before Discount - Discount
   // Tax Base = Net Stock Cost
@@ -164,12 +192,12 @@ export function generateSalesReturnJournal(
   accounts: Account[],
   cogsAmount: number = 0
 ): Omit<JournalEntry, "id"> {
-  const salesAccount = accounts.find(a => a.code === "4100") || accounts.find(a => a.type === "revenue") || accounts[0];
-  const vatOutAccount = accounts.find(a => a.code === "2130") || accounts.find(a => a.code === "2100") || accounts[0];
-  const arAccount = accounts.find(a => a.code === "1120") || accounts.find(a => a.type === "assets") || accounts[0];
-  const treasuryAccount = accounts.find(a => a.code === "1110" || a.code === "1115") || accounts[0];
-  const cogsAccount = accounts.find(a => a.code === "5100") || accounts.find(a => a.type === "expense") || accounts[0];
-  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
+  const salesAccount = findAccount(accounts, ["4102001", "4102", "4100"], "revenue");
+  const vatOutAccount = findAccount(accounts, ["2102002", "2102", "2130", "2100"], "liabilities");
+  const arAccount = findAccount(accounts, ["1102001", "1102", "1120"], "assets");
+  const treasuryAccount = findAccount(accounts, ["1101001", "1101002", "1101", "1110", "1115"], "assets");
+  const cogsAccount = findAccount(accounts, ["5101001", "5101", "5100"], "expense");
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
 
   const creditAcc = salesReturn.refundMethod === "treasury" || salesReturn.refundMethod === "cash"
     ? treasuryAccount
@@ -252,10 +280,10 @@ export function generatePurchaseReturnJournal(
   purchaseReturn: PurchaseReturn,
   accounts: Account[]
 ): Omit<JournalEntry, "id"> {
-  const apAccount = accounts.find(a => a.code === "2110") || accounts.find(a => a.type === "liabilities") || accounts[0];
-  const treasuryAccount = accounts.find(a => a.code === "1110" || a.code === "1115") || accounts[0];
-  const invAccount = accounts.find(a => a.code === "1130") || accounts.find(a => a.type === "assets") || accounts[0];
-  const vatInAccount = accounts.find(a => a.code === "1140") || accounts.find(a => a.type === "assets") || accounts[0];
+  const apAccount = findAccount(accounts, ["2101001", "2101", "2110"], "liabilities");
+  const treasuryAccount = findAccount(accounts, ["1101001", "1101002", "1101", "1110", "1115"], "assets");
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
+  const vatInAccount = findAccount(accounts, ["1105002", "1105", "1140"], "assets");
 
   const debitAcc = purchaseReturn.refundMethod === "treasury" || purchaseReturn.refundMethod === "cash"
     ? treasuryAccount
@@ -323,8 +351,8 @@ export function generateOpeningStockJournal(
   const totalValue = totalOpeningQty * costPrice;
   if (totalValue <= 0) return null;
 
-  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
-  const equityAccount = accounts.find(a => a.code === "3100" || a.code === "3200") || accounts.find(a => a.type === "equity") || accounts[0];
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
+  const equityAccount = findAccount(accounts, ["3101", "3100", "3000"], "equity");
 
   const lines: JournalLine[] = [
     {
@@ -374,8 +402,8 @@ export function generateStockAdjustmentJournal(
   createdBy: string,
   notes?: string
 ): Omit<JournalEntry, "id"> {
-  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
-  const cogsAccount = accounts.find(a => a.code === "5100") || accounts[0];
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
+  const cogsAccount = findAccount(accounts, ["5101001", "5101", "5100"], "expense");
   const totalAmount = Math.abs(quantityDiff) * unitCost;
 
   const isAddition = quantityDiff > 0;
@@ -431,8 +459,8 @@ export function generatePeriodClosingJournal(
   accounts: Account[],
   createdBy: string
 ): Omit<JournalEntry, "id"> {
-  const invAccount = accounts.find(a => a.code === "1130") || accounts[0];
-  const cogsAccount = accounts.find(a => a.code === "5100") || accounts[0];
+  const invAccount = findAccount(accounts, ["1103001", "1103", "1130"], "assets");
+  const cogsAccount = findAccount(accounts, ["5101001", "5101", "5100"], "expense");
   const amount = Math.abs(cogsAdjustmentAmount);
 
   const lines: JournalLine[] = [
@@ -806,14 +834,30 @@ export function computeIncomeStatement(
   purchaseInvoices: PurchaseInvoice[] = [],
   stockMovements: StockMovement[] = []
 ) {
-  const revenues = accounts.filter(a => a.type === "revenue");
-  const cogs = accounts.filter(a => a.code.startsWith("51"));
-  const expenses = accounts.filter(a => a.type === "expense" && !a.code.startsWith("51"));
+  const getAccountEffectiveBalance = (acc: Account): number => {
+    let dr = 0;
+    let cr = 0;
+    (entries || []).forEach(e => {
+      (e.lines || []).forEach(l => {
+        if (l.accountId === acc.id || l.accountCode === acc.code) {
+          dr += Number(l.debit) || 0;
+          cr += Number(l.credit) || 0;
+        }
+      });
+    });
+    const entryBalance = acc.nature === "credit" ? (cr - dr) : (dr - cr);
+    if (entryBalance !== 0) return Math.max(0, entryBalance);
+    return Number(acc.balance) || 0;
+  };
 
-  const totalRevenue = revenues.reduce((s, a) => s + a.balance, 0);
-  const totalCOGS = cogs.reduce((s, a) => s + a.balance, 0);
+  const revenues = accounts.filter(a => a.type === "revenue" && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+  const cogs = accounts.filter(a => a.type === "expense" && a.code.startsWith("51") && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+  const expenses = accounts.filter(a => a.type === "expense" && !a.code.startsWith("51") && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+
+  const totalRevenue = revenues.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
+  const totalCOGS = cogs.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
   const grossProfit = totalRevenue - totalCOGS;
-  const totalExpenses = expenses.reduce((s, a) => s + a.balance, 0);
+  const totalExpenses = expenses.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
   const netIncome = grossProfit - totalExpenses;
 
   // Periodic Inventory COGS Formulation: COGS = Opening Inventory + Purchases - Closing Inventory
@@ -831,9 +875,9 @@ export function computeIncomeStatement(
   const periodicCOGS = Math.max(0, openingInventoryValue + purchasesValue - closingInventoryValue);
 
   return {
-    revenues,
-    cogs,
-    expenses,
+    revenues: accounts.filter(a => a.type === "revenue"),
+    cogs: accounts.filter(a => a.code.startsWith("51")),
+    expenses: accounts.filter(a => a.type === "expense" && !a.code.startsWith("51")),
     totalRevenue,
     totalCOGS,
     grossProfit,
@@ -850,20 +894,37 @@ export function computeBalanceSheet(
   accounts: Account[],
   entries: JournalEntry[]
 ) {
-  const assets = accounts.filter(a => a.type === "assets");
-  const liabilities = accounts.filter(a => a.type === "liabilities");
-  const equity = accounts.filter(a => a.type === "equity");
+  const getAccountEffectiveBalance = (acc: Account): number => {
+    let dr = 0;
+    let cr = 0;
+    (entries || []).forEach(e => {
+      (e.lines || []).forEach(l => {
+        if (l.accountId === acc.id || l.accountCode === acc.code) {
+          dr += Number(l.debit) || 0;
+          cr += Number(l.credit) || 0;
+        }
+      });
+    });
+    const entryBalance = acc.nature === "credit" ? (cr - dr) : (dr - cr);
+    if (entryBalance !== 0) return Math.max(0, entryBalance);
+    return Number(acc.balance) || 0;
+  };
 
-  const totalAssets = assets.reduce((s, a) => s + a.balance, 0);
-  const totalLiabilities = liabilities.reduce((s, a) => s + a.balance, 0);
+  const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
+  const assets = leafAccounts.filter(a => a.type === "assets");
+  const liabilities = leafAccounts.filter(a => a.type === "liabilities");
+  const equity = leafAccounts.filter(a => a.type === "equity");
+
+  const totalAssets = assets.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
+  const totalLiabilities = liabilities.reduce((s, a) => s + getAccountEffectiveBalance(a), 0);
 
   const { netIncome } = computeIncomeStatement(accounts, entries);
-  const totalEquity = equity.reduce((s, a) => s + a.balance, 0) + netIncome;
+  const totalEquity = equity.reduce((s, a) => s + getAccountEffectiveBalance(a), 0) + netIncome;
 
   return {
-    assets,
-    liabilities,
-    equity,
+    assets: accounts.filter(a => a.type === "assets"),
+    liabilities: accounts.filter(a => a.type === "liabilities"),
+    equity: accounts.filter(a => a.type === "equity"),
     totalAssets,
     totalLiabilities,
     totalEquity,

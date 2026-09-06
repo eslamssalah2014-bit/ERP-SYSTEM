@@ -45,7 +45,7 @@ export default function TreasuryPage() {
   const handleOpenReceiptModal = () => {
     setFormError(null);
     setRcpTreasuryId(treasuryAccounts[0]?.id || "");
-    setRcpCreditAccId(accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "");
+    setRcpCreditAccId(accounts.find(a => a.code === "1102001" || a.code === "1120")?.id || accounts[0]?.id || "");
     setRcpAmount(0);
     setRcpReceivedFrom("");
     setRcpCustomerId("");
@@ -56,7 +56,7 @@ export default function TreasuryPage() {
   const handleOpenPaymentModal = () => {
     setFormError(null);
     setPayTreasuryId(treasuryAccounts[0]?.id || "");
-    setPayDebitAccId(accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "");
+    setPayDebitAccId(accounts.find(a => a.code === "2101001" || a.code === "2110")?.id || accounts[0]?.id || "");
     setPayAmount(0);
     setPayPaidTo("");
     setPaySupplierId("");
@@ -76,7 +76,7 @@ export default function TreasuryPage() {
     try {
       const receiptNumber = "RCP-" + Date.now().toString().slice(-6);
       const targetTreasury = rcpTreasuryId || treasuryAccounts[0]?.id || "";
-      const targetCreditAcc = rcpCreditAccId || accounts.find(a => a.code === "1120")?.id || accounts[0]?.id || "";
+      const targetCreditAcc = rcpCreditAccId || accounts.find(a => a.code === "1102001" || a.code === "1120")?.id || accounts[0]?.id || "";
 
       await createCashReceipt({
         organizationId: organization.id,
@@ -118,7 +118,7 @@ export default function TreasuryPage() {
     try {
       const paymentNumber = "PAY-" + Date.now().toString().slice(-6);
       const targetTreasury = payTreasuryId || treasuryAccounts[0]?.id || "";
-      const targetDebitAcc = payDebitAccId || accounts.find(a => a.code === "2110")?.id || accounts[0]?.id || "";
+      const targetDebitAcc = payDebitAccId || accounts.find(a => a.code === "2101001" || a.code === "2110")?.id || accounts[0]?.id || "";
 
       await createCashPayment({
         organizationId: organization.id,
@@ -378,6 +378,21 @@ export default function TreasuryPage() {
           </div>
 
           <div>
+            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الحساب المقابل في شجرة الحسابات (دائن) *" : "Credit Account (COA) *"}</label>
+            <select
+              value={rcpCreditAccId}
+              onChange={(e) => setRcpCreditAccId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+            >
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {isAr ? a.nameAr : a.nameEn}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-slate-400 font-semibold mb-1">{isAr ? "استلمنا من السيد / الجهة" : "Received From"}</label>
             <input
               type="text"
@@ -478,6 +493,21 @@ export default function TreasuryPage() {
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.nameAr}</option>)}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الحساب المقابل في شجرة الحسابات (مدين) *" : "Debit Account (COA) *"}</label>
+            <select
+              value={payDebitAccId}
+              onChange={(e) => setPayDebitAccId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-rose-500"
+            >
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {isAr ? a.nameAr : a.nameEn}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
