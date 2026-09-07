@@ -29,11 +29,11 @@ export default function Dashboard() {
   const isAr = locale === "ar";
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
 
-  // Financial KPI calculations
-  const totalSales = useMemo(() => salesInvoices.reduce((sum, inv) => sum + inv.grandTotal, 0), [salesInvoices]);
-  const totalPurchases = useMemo(() => purchaseInvoices.reduce((sum, inv) => sum + inv.grandTotal, 0), [purchaseInvoices]);
-  const totalTreasuryBalance = useMemo(() => treasuryAccounts.reduce((sum, t) => sum + t.balance, 0), [treasuryAccounts]);
-  const totalReceivables = useMemo(() => customers.reduce((sum, c) => sum + c.currentBalance, 0), [customers]);
+  // Financial KPI calculations (Strictly dynamic from live state, 0.00 on empty DB)
+  const totalSales = useMemo(() => salesInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0), [salesInvoices]);
+  const totalPurchases = useMemo(() => purchaseInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0), [purchaseInvoices]);
+  const totalTreasuryBalance = useMemo(() => treasuryAccounts.reduce((sum, t) => sum + (Number(t.balance) || 0), 0), [treasuryAccounts]);
+  const totalReceivables = useMemo(() => customers.reduce((sum, c) => sum + (Number(c.currentBalance) || 0), 0), [customers]);
   const estimatedGrossProfit = totalSales - totalPurchases;
 
   // Low stock products

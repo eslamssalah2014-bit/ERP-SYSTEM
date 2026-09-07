@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
-import { initialAccounts } from "@/lib/seed-data";
+import { initialAccounts, initialTreasuryAccounts } from "@/lib/seed-data";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -951,38 +951,49 @@ async function ensureBaselineEntities(supabase: any) {
       { id: "00000000-0000-0000-0000-000000000034", organization_id: DEFAULT_ORG_ID, code: "CUST-CORP", name_ar: "شركات ومؤسسات", name_en: "Corporate", description: "الشركات والمؤسسات والجهات الحكومية" },
     ], { onConflict: "id" });
 
-    // 9. Ensure default Main Treasury Account
-    await supabase.from("treasury_accounts").upsert([{
-      id: DEFAULT_TREASURY_ID,
-      organization_id: DEFAULT_ORG_ID,
-      branch_id: DEFAULT_BRANCH_ID,
-      gl_account_id: "00000000-0000-0000-0001-000001101001",
-      code: "SAFE-01",
-      name_ar: "الخزينة الرئيسية - المقر العام",
-      name_en: "Main HQ Safe",
-      type: "cash",
-      currency: "EGP",
-      balance: 150000,
-      is_default: true,
-    }], { onConflict: "id" });
+    // 9. Ensure default Treasury Accounts (SAFE-MAIN & BANK-MAIN with 0.00 initial balance)
+    const { data: existingTreasuries } = await supabase.from("treasury_accounts").select("id");
+    const existingTreasuryIds = new Set((existingTreasuries || []).map((t: any) => t.id));
+    const missingTreasuries = initialTreasuryAccounts.filter(t => !existingTreasuryIds.has(t.id));
+    if (missingTreasuries.length > 0) {
+      const formattedTreasuries = missingTreasuries.map(t => ({
+        id: t.id,
+        organization_id: DEFAULT_ORG_ID,
+        branch_id: DEFAULT_BRANCH_ID,
+        gl_account_id: t.glAccountId,
+        code: t.code,
+        name_ar: t.nameAr,
+        name_en: t.nameEn,
+        type: t.type,
+        currency: t.currency || "EGP",
+        balance: 0,
+        bank_name: t.bankName || null,
+        account_number: t.accountNumber || null,
+        is_default: t.isDefault !== false,
+      }));
+      await supabase.from("treasury_accounts").insert(formattedTreasuries);
+    }
 
     // 10. Ensure default Report #6 Chart of Accounts
-    const formattedAccounts = initialAccounts.map(a => ({
-      id: a.id,
-      organization_id: DEFAULT_ORG_ID,
-      code: a.code,
-      name_ar: a.nameAr,
-      name_en: a.nameEn,
-      type: a.type,
-      parent_id: a.parentId || null,
-      level: a.level,
-      nature: a.nature,
-      balance: Number(a.balance) || 0,
-      currency: a.currency || "EGP",
-      is_active: a.isActive !== false,
-      is_system: a.isSystem !== false,
-    }));
-    await supabase.from("accounts").upsert(formattedAccounts, { onConflict: "id" });
+    const { count: accCount } = await supabase.from("accounts").select("*", { count: "exact", head: true });
+    if (!accCount || accCount === 0) {
+      const formattedAccounts = initialAccounts.map(a => ({
+        id: a.id,
+        organization_id: DEFAULT_ORG_ID,
+        code: a.code,
+        name_ar: a.nameAr,
+        name_en: a.nameEn,
+        type: a.type,
+        parent_id: a.parentId || null,
+        level: a.level,
+        nature: a.nature,
+        balance: Number(a.balance) || 0,
+        currency: a.currency || "EGP",
+        is_active: a.isActive !== false,
+        is_system: a.isSystem !== false,
+      }));
+      await supabase.from("accounts").upsert(formattedAccounts, { onConflict: "id" });
+    }
 
     hasSeededBaseline = true;
   } catch (err) {

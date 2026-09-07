@@ -1576,7 +1576,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
     const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
     if (!res.success) throw new Error(res.error || "فشل تحديث حالة الشيك");
-    setChecks(prev => prev.map(c => c.id === checkId ? { ...c, status: newStatus } : c));
+    const chk = checks.find(c => c.id === checkId);
+    if (newStatus === "collected" && targetTreasuryId && chk) {
+      const checkAmount = Number(chk.amount) || 0;
+      const delta = chk.type === "incoming" ? checkAmount : -checkAmount;
+      setTreasuryAccounts(prev => prev.map(t => t.id === targetTreasuryId ? { ...t, balance: (Number(t.balance) || 0) + delta } : t));
+    }
+    setChecks(prev => prev.map(c => c.id === checkId ? { ...c, status: newStatus, targetTreasuryId } : c));
     showToast(locale === "ar" ? "تم تحديث حالة الشيك بنجاح" : "Check status updated", "success");
   };
 
@@ -1687,6 +1693,21 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
           return { ...acc, balance: net };
         }
         return acc;
+      })
+    );
+
+    // 5. Update treasury account balances if linked to GL accounts in opening entry
+    setTreasuryAccounts(prevTreasuries =>
+      prevTreasuries.map(t => {
+        const line = saved.lines.find(l => l.accountId === t.glAccountId || (l.accountCode === "1101001" && t.code === "SAFE-MAIN") || (l.accountCode === "1101002" && t.code === "BANK-MAIN"));
+        if (line) {
+          const dr = Number(line.debit) || 0;
+          const cr = Number(line.credit) || 0;
+          const net = dr - cr;
+          updateTreasuryAccountDB(t.id, { balance: net }).catch(err => console.warn("Failed to sync treasury opening balance:", err));
+          return { ...t, balance: net };
+        }
+        return t;
       })
     );
 
