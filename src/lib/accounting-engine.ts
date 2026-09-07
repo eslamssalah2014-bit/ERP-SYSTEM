@@ -2,7 +2,8 @@ import {
   Account, AccountType, JournalEntry, JournalLine, SalesInvoice,
   PurchaseInvoice, SalesReturn, PurchaseReturn, CashReceipt, CashPayment, StockMovement,
   StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier,
-  Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow
+  Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow,
+  CheckRecord, TreasuryAccount, TreasuryStatementRow
 } from "@/types/erp";
 
 // Helper: Resolve account by primary codes with backward compatibility
@@ -593,6 +594,407 @@ export function generatePaymentJournal(
     isBalanced: true,
     status: "posted",
     createdBy: payment.createdBy,
+  };
+}
+
+export function generateReceivableCheckJournal(
+  check: CheckRecord,
+  accounts: Account[]
+): Omit<JournalEntry, "id"> {
+  const notesRecAccount = check.accountId 
+    ? (accounts.find(a => a.id === check.accountId) || findAccount(accounts, ["1102002", "1102", "1120"], "assets"))
+    : findAccount(accounts, ["1102002", "1102", "1120"], "assets");
+  const arAccount = findAccount(accounts, ["1102001", "1102", "1120"], "assets");
+  const amount = Number(check.amount) || 0;
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_chk_dr",
+      accountId: notesRecAccount.id,
+      accountCode: notesRecAccount.code,
+      accountName: notesRecAccount.nameAr,
+      debit: amount,
+      credit: 0,
+      costCenterId: check.costCenterId,
+      description: `استلام ورقة قبض شيك رقم ${check.checkNumber} - ${check.bankName || check.draweeBank || "مسحوب"}`,
+    },
+    {
+      id: "jl_chk_cr",
+      accountId: arAccount.id,
+      accountCode: arAccount.code,
+      accountName: arAccount.nameAr,
+      debit: 0,
+      credit: amount,
+      costCenterId: check.costCenterId,
+      description: `سداد عميل بورقة قبض ${check.checkNumber} - ${check.partyName}`,
+    },
+  ];
+
+  return {
+    organizationId: check.organizationId,
+    branchId: check.branchId,
+    entryNumber: "JV-CHK-IN-" + check.checkNumber,
+    date: check.issueDate || new Date().toISOString().split("T")[0],
+    referenceType: "receivable_check",
+    referenceId: check.id,
+    description: `إثبات استلام ورقة قبض شيك ${check.checkNumber} من ${check.partyName}`,
+    lines,
+    totalDebit: amount,
+    totalCredit: amount,
+    isBalanced: true,
+    status: "posted",
+    createdBy: check.createdBy || "النظام",
+  };
+}
+
+export function generateCheckStatusJournal(
+  check: CheckRecord,
+  newStatus: string,
+  targetTreasuryOrBankId: string | undefined,
+  accounts: Account[],
+  treasuries: TreasuryAccount[] = []
+): Omit<JournalEntry, "id"> | null {
+  const amount = Number(check.amount) || 0;
+  if (amount <= 0) return null;
+
+  const notesRecAcc = findAccount(accounts, ["1102002", "1102"], "assets");
+  const underCollAcc = findAccount(accounts, ["1102003", "1102"], "assets");
+  const bankCashAcc = targetTreasuryOrBankId
+    ? (accounts.find(a => a.id === treasuries.find(t => t.id === targetTreasuryOrBankId)?.glAccountId) || findAccount(accounts, ["1101002", "1101"], "assets"))
+    : findAccount(accounts, ["1101002", "1101"], "assets");
+  const arAccount = findAccount(accounts, ["1102001", "1102"], "assets");
+
+  const today = new Date().toISOString().split("T")[0];
+
+  if (newStatus === "under_collection") {
+    const lines: JournalLine[] = [
+      {
+        id: "jl_stat_dr",
+        accountId: underCollAcc.id,
+        accountCode: underCollAcc.code,
+        accountName: underCollAcc.nameAr,
+        debit: amount,
+        credit: 0,
+        costCenterId: check.costCenterId,
+        description: `إرسال شيك رقم ${check.checkNumber} للتحصيل بالبنك (برسم التحصيل)`,
+      },
+      {
+        id: "jl_stat_cr",
+        accountId: notesRecAcc.id,
+        accountCode: notesRecAcc.code,
+        accountName: notesRecAcc.nameAr,
+        debit: 0,
+        credit: amount,
+        costCenterId: check.costCenterId,
+        description: `إخراج ورقة قبض ${check.checkNumber} من الخزينة للتحصيل`,
+      },
+    ];
+
+    return {
+      organizationId: check.organizationId,
+      branchId: check.branchId,
+      entryNumber: "JV-CHK-COLL-" + check.checkNumber,
+      date: today,
+      referenceType: "check_under_collection",
+      referenceId: check.id,
+      description: `إثبات إرسال شيك ${check.checkNumber} برسم التحصيل`,
+      lines,
+      totalDebit: amount,
+      totalCredit: amount,
+      isBalanced: true,
+      status: "posted",
+      createdBy: "النظام",
+    };
+  }
+
+  if (newStatus === "collected") {
+    const lines: JournalLine[] = [
+      {
+        id: "jl_stat_dr",
+        accountId: bankCashAcc.id,
+        accountCode: bankCashAcc.code,
+        accountName: bankCashAcc.nameAr,
+        debit: amount,
+        credit: 0,
+        costCenterId: check.costCenterId,
+        description: `إيداع قيمة شيك محصل رقم ${check.checkNumber} في الحساب البنكي`,
+      },
+      {
+        id: "jl_stat_cr",
+        accountId: underCollAcc.id,
+        accountCode: underCollAcc.code,
+        accountName: underCollAcc.nameAr,
+        debit: 0,
+        credit: amount,
+        costCenterId: check.costCenterId,
+        description: `إقفال شيك برسم التحصيل رقم ${check.checkNumber} بعد نجاح التحصيل`,
+      },
+    ];
+
+    return {
+      organizationId: check.organizationId,
+      branchId: check.branchId,
+      entryNumber: "JV-CHK-PAID-" + check.checkNumber,
+      date: today,
+      referenceType: "check_collected",
+      referenceId: check.id,
+      description: `إثبات تحصيل وإيداع الشيك رقم ${check.checkNumber} بالبنك`,
+      lines,
+      totalDebit: amount,
+      totalCredit: amount,
+      isBalanced: true,
+      status: "posted",
+      createdBy: "النظام",
+    };
+  }
+
+  if (newStatus === "bounced" || newStatus === "returned") {
+    const lines: JournalLine[] = [
+      {
+        id: "jl_stat_dr",
+        accountId: arAccount.id,
+        accountCode: arAccount.code,
+        accountName: arAccount.nameAr,
+        debit: amount,
+        credit: 0,
+        costCenterId: check.costCenterId,
+        description: `إعادة إثبات مديونية العميل لارتداد الشيك رقم ${check.checkNumber}`,
+      },
+      {
+        id: "jl_stat_cr",
+        accountId: underCollAcc.id,
+        accountCode: underCollAcc.code,
+        accountName: underCollAcc.nameAr,
+        debit: 0,
+        credit: amount,
+        costCenterId: check.costCenterId,
+        description: `إلغاء شيك برسم التحصيل لارتداده رقم ${check.checkNumber}`,
+      },
+    ];
+
+    return {
+      organizationId: check.organizationId,
+      branchId: check.branchId,
+      entryNumber: "JV-CHK-RET-" + check.checkNumber,
+      date: today,
+      referenceType: "check_bounced",
+      referenceId: check.id,
+      description: `إثبات ارتداد ورفض الشيك رقم ${check.checkNumber} وإعادة قيده على العميل`,
+      lines,
+      totalDebit: amount,
+      totalCredit: amount,
+      isBalanced: true,
+      status: "posted",
+      createdBy: "النظام",
+    };
+  }
+
+  return null;
+}
+
+export function generatePayableCheckJournal(
+  check: CheckRecord,
+  accounts: Account[]
+): Omit<JournalEntry, "id"> {
+  const amount = Number(check.amount) || 0;
+  const apAccount = findAccount(accounts, ["2101001", "2101", "2110"], "liabilities");
+  const notesPayableAccount = check.accountId
+    ? (accounts.find(a => a.id === check.accountId) || findAccount(accounts, ["2101002", "2101"], "liabilities"))
+    : findAccount(accounts, ["2101002", "2101"], "liabilities");
+
+  const lines: JournalLine[] = [
+    {
+      id: "jl_pchk_dr",
+      accountId: apAccount.id,
+      accountCode: apAccount.code,
+      accountName: apAccount.nameAr,
+      debit: amount,
+      credit: 0,
+      costCenterId: check.costCenterId,
+      description: `سداد مستحقات مورد بشيك ورقة دفع ${check.checkNumber} - ${check.partyName}`,
+    },
+    {
+      id: "jl_pchk_cr",
+      accountId: notesPayableAccount.id,
+      accountCode: notesPayableAccount.code,
+      accountName: notesPayableAccount.nameAr,
+      debit: 0,
+      credit: amount,
+      costCenterId: check.costCenterId,
+      description: `إثبات ورقة دفع شيك آجل رقم ${check.checkNumber} مسحوب على ${check.bankName}`,
+    },
+  ];
+
+  return {
+    organizationId: check.organizationId,
+    branchId: check.branchId,
+    entryNumber: "JV-PCHK-" + check.checkNumber,
+    date: check.issueDate || new Date().toISOString().split("T")[0],
+    referenceType: "payable_check",
+    referenceId: check.id,
+    description: `إثبات إصدار ورقة دفع شيك ${check.checkNumber} للمورد ${check.partyName}`,
+    lines,
+    totalDebit: amount,
+    totalCredit: amount,
+    isBalanced: true,
+    status: "posted",
+    createdBy: check.createdBy || "النظام",
+  };
+}
+
+export function computeTreasuryStatement(
+  treasuryAccountId: string,
+  fromDate: string | undefined,
+  toDate: string | undefined,
+  treasuryAccounts: TreasuryAccount[] = [],
+  cashReceipts: CashReceipt[] = [],
+  cashPayments: CashPayment[] = [],
+  salesInvoices: SalesInvoice[] = [],
+  purchaseInvoices: PurchaseInvoice[] = [],
+  checks: CheckRecord[] = [],
+  journalEntries: JournalEntry[] = [],
+  accounts: Account[] = []
+): {
+  openingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+  rows: TreasuryStatementRow[];
+} {
+  const isAll = !treasuryAccountId || treasuryAccountId === "all";
+  const targetTreasury = treasuryAccounts.find(t => t.id === treasuryAccountId);
+  const targetGlAccountId = targetTreasury?.glAccountId;
+
+  // 1. Calculate opening balance from official Opening Entry for Main Cash / Treasury
+  let openingBal = 0;
+  const openingEntry = journalEntries.find(e =>
+    e.referenceType === "opening_entry" ||
+    e.entryNumber?.startsWith("OPENING-") ||
+    e.entryNumber?.startsWith("JV-OPENING-")
+  );
+
+  if (openingEntry) {
+    openingEntry.lines.forEach(line => {
+      const match = isAll
+        ? (line.accountCode === "1101001" || line.accountCode === "1101002" || line.accountCode?.startsWith("1101"))
+        : (line.accountId === targetGlAccountId || (targetTreasury?.code === "SAFE-MAIN" && line.accountCode === "1101001") || (targetTreasury?.code === "BANK-MAIN" && line.accountCode === "1101002"));
+      if (match) {
+        openingBal += (Number(line.debit) || 0) - (Number(line.credit) || 0);
+      }
+    });
+  }
+
+  const allTx: TreasuryStatementRow[] = [];
+
+  // 2. Cash Receipts (Debit / Inflow)
+  cashReceipts.forEach(rcp => {
+    if (!isAll && rcp.treasuryAccountId !== treasuryAccountId) return;
+    const creditAcc = accounts.find(a => a.id === rcp.creditAccountId);
+    const debit = Number(rcp.amount) || 0;
+    allTx.push({
+      id: rcp.id,
+      date: rcp.date,
+      referenceNumber: rcp.receiptNumber,
+      accountName: creditAcc?.nameAr || rcp.receivedFrom || "سند قبض",
+      description: `سند قبض نقدي (${rcp.receivedFrom}) ${rcp.notes ? "- " + rcp.notes : ""}`,
+      debit,
+      credit: 0,
+      inflow: debit,
+      outflow: 0,
+      runningBalance: 0,
+      balance: 0,
+      type: "receipt",
+    });
+  });
+
+  // 3. Cash Payments (Credit / Outflow)
+  cashPayments.forEach(pay => {
+    if (!isAll && pay.treasuryAccountId !== treasuryAccountId) return;
+    const debitAcc = accounts.find(a => a.id === pay.debitAccountId);
+    const credit = Number(pay.amount) || 0;
+    allTx.push({
+      id: pay.id,
+      date: pay.date,
+      referenceNumber: pay.paymentNumber,
+      accountName: debitAcc?.nameAr || pay.paidTo || "سند صرف",
+      description: `سند صرف نقدي (${pay.paidTo}) ${pay.notes ? "- " + pay.notes : ""}`,
+      debit: 0,
+      credit,
+      inflow: 0,
+      outflow: credit,
+      runningBalance: 0,
+      balance: 0,
+      type: "payment",
+    });
+  });
+
+  // 4. Check Collections (Debit / Inflow)
+  checks.filter(c => c.status === "collected").forEach(chk => {
+    if (!isAll && chk.targetTreasuryId !== treasuryAccountId) return;
+    const debit = Number(chk.amount) || 0;
+    allTx.push({
+      id: chk.id,
+      date: chk.collectionDate || chk.dueDate || chk.issueDate,
+      referenceNumber: chk.checkNumber,
+      accountName: chk.partyName || "شيك محصل",
+      description: `تحصيل شيك ورقة قبض رقم ${chk.checkNumber} مسحوب على ${chk.bankName}`,
+      debit,
+      credit: 0,
+      inflow: debit,
+      outflow: 0,
+      runningBalance: 0,
+      balance: 0,
+      type: "check_collection",
+    });
+  });
+
+  // Sort chronologically
+  allTx.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Compute Running Balance before filtering dates
+  let running = openingBal;
+  const processedTx: TreasuryStatementRow[] = [];
+
+  // Add Opening Balance as first row
+  processedTx.push({
+    id: "opening-row",
+    date: fromDate || "2026-01-01",
+    referenceNumber: "OPENING",
+    accountName: isAll ? "كافة الخزائن والبنوك" : (targetTreasury?.nameAr || "الخزينة الرئيسية"),
+    description: "رصيد أول المدة الافتتاحي الدفتري",
+    debit: openingBal > 0 ? openingBal : 0,
+    credit: openingBal < 0 ? Math.abs(openingBal) : 0,
+    inflow: openingBal > 0 ? openingBal : 0,
+    outflow: openingBal < 0 ? Math.abs(openingBal) : 0,
+    runningBalance: openingBal,
+    balance: openingBal,
+    type: "opening",
+  });
+
+  allTx.forEach(tx => {
+    running += (tx.debit - tx.credit);
+    tx.runningBalance = running;
+    tx.balance = running;
+  });
+
+  // Filter by Date Range
+  const filteredTx = allTx.filter(tx => {
+    if (fromDate && tx.date < fromDate) return false;
+    if (toDate && tx.date > toDate) return false;
+    return true;
+  });
+
+  const finalRows = [processedTx[0], ...filteredTx];
+  const totalDebit = filteredTx.reduce((sum, r) => sum + r.debit, 0);
+  const totalCredit = filteredTx.reduce((sum, r) => sum + r.credit, 0);
+  const closingBalance = running;
+
+  return {
+    openingBalance: openingBal,
+    totalDebit,
+    totalCredit,
+    closingBalance,
+    rows: finalRows,
   };
 }
 

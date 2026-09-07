@@ -497,6 +497,8 @@ export function mapCostCenter(cc: any) {
     code: cc.code,
     nameAr: cc.name_ar,
     nameEn: cc.name_en || cc.name_ar,
+    type: cc.cost_center_type || cc.type || "expense",
+    costCenterType: cc.cost_center_type || cc.type || "expense",
     parentId: cc.parent_id || undefined,
     level: Number(cc.level) || 1,
     isActive: Boolean(cc.is_active),
@@ -590,18 +592,26 @@ export function mapCheck(chk: any) {
     organizationId: chk.organization_id,
     branchId: chk.branch_id,
     checkNumber: chk.check_number,
-    bankName: chk.bank_name,
+    bankName: chk.bank_name || chk.drawee_bank || "البنك الأهلي المصري",
     type: chk.type,
     partyName: chk.party_name,
     customerId: chk.customer_id || undefined,
     supplierId: chk.supplier_id || undefined,
+    accountId: chk.account_id || undefined,
+    costCenterId: chk.cost_center_id || undefined,
     amount: Number(chk.amount) || 0,
     issueDate: chk.issue_date,
     dueDate: chk.due_date,
     collectionDate: chk.collection_date || undefined,
-    status: chk.status,
+    status: chk.status || "pending",
     targetTreasuryId: chk.target_treasury_id || undefined,
+    draweeBank: chk.drawee_bank || chk.bank_name || undefined,
+    collectionBank: chk.collection_bank || undefined,
+    voucherNumber: chk.voucher_number || undefined,
+    receiptVoucherId: chk.receipt_voucher_id || undefined,
     notes: chk.notes || "",
+    createdBy: chk.created_by || "",
+    createdAt: chk.created_at,
   };
 }
 
@@ -2112,7 +2122,7 @@ export async function POST(request: Request) {
       // COST CENTERS (CREATE, UPDATE, DELETE)
       // ==========================================
       case "create_cost_center": {
-        const { id, organizationId, code, nameAr, nameEn, parentId, level, isActive } = payload;
+        const { id, organizationId, code, nameAr, nameEn, parentId, level, isActive, type, costCenterType } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
 
@@ -2127,6 +2137,7 @@ export async function POST(request: Request) {
           parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           is_active: isActive !== false,
+          cost_center_type: costCenterType || type || "expense",
         };
         if (validId) insertRow.id = validId;
 
@@ -2141,7 +2152,7 @@ export async function POST(request: Request) {
       }
 
       case "update_cost_center": {
-        const { id, code, nameAr, nameEn, parentId, level, isActive } = payload;
+        const { id, code, nameAr, nameEn, parentId, level, isActive, type, costCenterType } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
@@ -2152,6 +2163,9 @@ export async function POST(request: Request) {
         if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
         if (level !== undefined) updateRow.level = Number(level);
         if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
+        if (costCenterType !== undefined || type !== undefined) {
+          updateRow.cost_center_type = costCenterType || type || "expense";
+        }
 
         const { data: cc, error: ccErr } = await supabaseAdmin
           .from("cost_centers")
@@ -3072,6 +3086,34 @@ export async function POST(request: Request) {
         return noCacheResponse({ success: true, data: mapCashReceipt(rcp) });
       }
 
+      case "update_cash_receipt": {
+        const { id, receiptNumber, date, treasuryAccountId, amount, currency, receivedFrom, customerId, creditAccountId, costCenterId, notes } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cash receipt ID is required" }, 400);
+
+        const updateRow: any = {};
+        if (receiptNumber !== undefined) updateRow.receipt_number = receiptNumber;
+        if (date !== undefined) updateRow.date = date;
+        if (treasuryAccountId !== undefined) updateRow.treasury_account_id = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
+        if (amount !== undefined) updateRow.amount = Number(amount);
+        if (currency !== undefined) updateRow.currency = currency;
+        if (receivedFrom !== undefined) updateRow.received_from = receivedFrom;
+        if (customerId !== undefined) updateRow.customer_id = cleanUUID(customerId, null);
+        if (creditAccountId !== undefined) updateRow.credit_account_id = cleanUUID(creditAccountId, "00000000-0000-0000-0000-000000000111");
+        if (costCenterId !== undefined) updateRow.cost_center_id = cleanUUID(costCenterId, null);
+        if (notes !== undefined) updateRow.notes = notes;
+
+        const { data: rcp, error: rcpErr } = await supabaseAdmin
+          .from("cash_receipts")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (rcpErr) throw rcpErr;
+        return noCacheResponse({ success: true, data: mapCashReceipt(rcp) });
+      }
+
       case "delete_cash_receipt": {
         const rawId = extractEntityId(payload);
         const validId = cleanUUID(rawId, rawId || null);
@@ -3084,7 +3126,7 @@ export async function POST(request: Request) {
       }
 
       // ==========================================
-      // CASH PAYMENTS (CREATE, DELETE)
+      // CASH PAYMENTS (CREATE, UPDATE, DELETE)
       // ==========================================
       case "create_cash_payment": {
         const { id, organizationId, branchId, paymentNumber, date, treasuryAccountId, amount, currency, paidTo, supplierId, debitAccountId, costCenterId, notes, createdBy } = payload;
@@ -3144,6 +3186,34 @@ export async function POST(request: Request) {
         return noCacheResponse({ success: true, data: mapCashPayment(pay) });
       }
 
+      case "update_cash_payment": {
+        const { id, paymentNumber, date, treasuryAccountId, amount, currency, paidTo, supplierId, debitAccountId, costCenterId, notes } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid cash payment ID is required" }, 400);
+
+        const updateRow: any = {};
+        if (paymentNumber !== undefined) updateRow.payment_number = paymentNumber;
+        if (date !== undefined) updateRow.date = date;
+        if (treasuryAccountId !== undefined) updateRow.treasury_account_id = cleanUUID(treasuryAccountId, DEFAULT_TREASURY_ID);
+        if (amount !== undefined) updateRow.amount = Number(amount);
+        if (currency !== undefined) updateRow.currency = currency;
+        if (paidTo !== undefined) updateRow.paid_to = paidTo;
+        if (supplierId !== undefined) updateRow.supplier_id = cleanUUID(supplierId, null);
+        if (debitAccountId !== undefined) updateRow.debit_account_id = cleanUUID(debitAccountId, "00000000-0000-0000-0000-000000000211");
+        if (costCenterId !== undefined) updateRow.cost_center_id = cleanUUID(costCenterId, null);
+        if (notes !== undefined) updateRow.notes = notes;
+
+        const { data: pay, error: payErr } = await supabaseAdmin
+          .from("cash_payments")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (payErr) throw payErr;
+        return noCacheResponse({ success: true, data: mapCashPayment(pay) });
+      }
+
       case "delete_cash_payment": {
         const rawId = extractEntityId(payload);
         const validId = cleanUUID(rawId, rawId || null);
@@ -3156,10 +3226,14 @@ export async function POST(request: Request) {
       }
 
       // ==========================================
-      // CHECK RECORDS (CREATE, UPDATE STATUS, DELETE)
+      // CHECK RECORDS (CREATE, UPDATE, STATUS, DELETE)
       // ==========================================
       case "create_check": {
-        const { id, organizationId, branchId, checkNumber, bankName, type, partyName, customerId, supplierId, amount, issueDate, dueDate, status, notes } = payload;
+        const {
+          id, organizationId, branchId, checkNumber, bankName, type, partyName,
+          customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
+          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, receiptVoucherId, notes, createdBy
+        } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
@@ -3168,22 +3242,69 @@ export async function POST(request: Request) {
           organization_id: validOrgId,
           branch_id: validBranchId,
           check_number: checkNumber || ("CHK-" + Date.now().toString().slice(-6)),
-          bank_name: bankName || "البنك الأهلي المصري",
+          bank_name: bankName || draweeBank || "البنك الأهلي المصري",
           type: type || "incoming",
           party_name: partyName || "جهة الشيك",
           customer_id: cleanUUID(customerId, null),
           supplier_id: cleanUUID(supplierId, null),
+          account_id: cleanUUID(accountId, null),
+          cost_center_id: cleanUUID(costCenterId, null),
           amount: Number(amount) || 0,
           issue_date: issueDate || new Date().toISOString().split("T")[0],
           due_date: dueDate || issueDate || new Date().toISOString().split("T")[0],
-          status: status || "pending",
+          status: status || (type === "outgoing" ? "pending" : "in_treasury"),
+          target_treasury_id: cleanUUID(targetTreasuryId, null),
+          drawee_bank: draweeBank || bankName || null,
+          collection_bank: collectionBank || null,
+          voucher_number: voucherNumber || null,
+          receipt_voucher_id: cleanUUID(receiptVoucherId, null),
           notes: notes || null,
+          created_by: createdBy || null,
         };
         if (validId) insertRow.id = validId;
 
         const { data: chk, error: chkErr } = await supabaseAdmin
           .from("check_records")
           .insert([insertRow])
+          .select()
+          .single();
+
+        if (chkErr) throw chkErr;
+        return noCacheResponse({ success: true, data: mapCheck(chk) });
+      }
+
+      case "update_check": {
+        const {
+          id, checkNumber, bankName, type, partyName,
+          customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
+          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, notes
+        } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid check ID is required" }, 400);
+
+        const updateRow: any = {};
+        if (checkNumber !== undefined) updateRow.check_number = checkNumber;
+        if (bankName !== undefined) updateRow.bank_name = bankName;
+        if (type !== undefined) updateRow.type = type;
+        if (partyName !== undefined) updateRow.party_name = partyName;
+        if (customerId !== undefined) updateRow.customer_id = cleanUUID(customerId, null);
+        if (supplierId !== undefined) updateRow.supplier_id = cleanUUID(supplierId, null);
+        if (accountId !== undefined) updateRow.account_id = cleanUUID(accountId, null);
+        if (costCenterId !== undefined) updateRow.cost_center_id = cleanUUID(costCenterId, null);
+        if (amount !== undefined) updateRow.amount = Number(amount);
+        if (issueDate !== undefined) updateRow.issue_date = issueDate;
+        if (dueDate !== undefined) updateRow.due_date = dueDate;
+        if (status !== undefined) updateRow.status = status;
+        if (targetTreasuryId !== undefined) updateRow.target_treasury_id = cleanUUID(targetTreasuryId, null);
+        if (draweeBank !== undefined) updateRow.drawee_bank = draweeBank;
+        if (collectionBank !== undefined) updateRow.collection_bank = collectionBank;
+        if (voucherNumber !== undefined) updateRow.voucher_number = voucherNumber;
+        if (notes !== undefined) updateRow.notes = notes;
+
+        const { data: chk, error: chkErr } = await supabaseAdmin
+          .from("check_records")
+          .update(updateRow)
+          .eq("id", validId)
           .select()
           .single();
 

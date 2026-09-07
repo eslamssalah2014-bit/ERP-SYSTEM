@@ -25,6 +25,9 @@ import {
   generatePurchaseReturnJournal,
   generateReceiptJournal,
   generatePaymentJournal,
+  generateReceivableCheckJournal,
+  generateCheckStatusJournal,
+  generatePayableCheckJournal,
   generateOpeningStockJournal,
   generateStockAdjustmentJournal,
   generatePeriodClosingJournal
@@ -72,10 +75,13 @@ import {
   updateTreasuryAccountDB,
   deleteTreasuryAccountDB,
   persistCashReceiptDB,
+  updateCashReceiptDB,
   deleteCashReceiptDB,
   persistCashPaymentDB,
+  updateCashPaymentDB,
   deleteCashPaymentDB,
   persistCheckDB,
+  updateCheckDB,
   persistCheckStatusDB,
   deleteCheckDB,
   persistJournalEntryDB,
@@ -205,10 +211,15 @@ interface ERPContextType {
   updateTreasuryAccount: (id: string, t: Partial<TreasuryAccount>) => Promise<void>;
   deleteTreasuryAccount: (id: string) => Promise<void>;
   createCashReceipt: (rcp: Omit<CashReceipt, "id">) => Promise<CashReceipt>;
+  addCashReceipt: (rcp: Omit<CashReceipt, "id">) => Promise<CashReceipt>;
+  updateCashReceipt: (id: string, rcp: Partial<CashReceipt>) => Promise<CashReceipt>;
   deleteCashReceipt: (id: string) => Promise<void>;
   createCashPayment: (pay: Omit<CashPayment, "id">) => Promise<CashPayment>;
+  addCashPayment: (pay: Omit<CashPayment, "id">) => Promise<CashPayment>;
+  updateCashPayment: (id: string, pay: Partial<CashPayment>) => Promise<CashPayment>;
   deleteCashPayment: (id: string) => Promise<void>;
   addCheck: (chk: Omit<CheckRecord, "id">) => Promise<CheckRecord>;
+  updateCheck: (id: string, chk: Partial<CheckRecord>) => Promise<CheckRecord>;
   updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => Promise<void>;
   deleteCheck: (id: string) => Promise<void>;
 
@@ -1529,11 +1540,36 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.data) throw new Error(res.error || "فشل إنشاء سند القبض");
     const saved = res.data;
     setCashReceipts(prev => [saved, ...prev]);
-    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: t.balance + saved.amount } : t));
+    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: (Number(t.balance) || 0) + saved.amount } : t));
     if (saved.customerId) {
-      setCustomers(prev => prev.map(c => c.id === saved.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - saved.amount) } : c));
+      setCustomers(prev => prev.map(c => c.id === saved.customerId ? { ...c, currentBalance: Math.max(0, (Number(c.currentBalance) || 0) - saved.amount) } : c));
+    }
+    // Auto generate Journal Entry
+    try {
+      const tr = treasuryAccounts.find(t => t.id === saved.treasuryAccountId);
+      const trGlId = tr?.glAccountId || accounts.find(a => a.code === "1101001")?.id || accounts[0]?.id;
+      if (trGlId && accounts.length > 0) {
+        const je = generateReceiptJournal(saved, trGlId, accounts);
+        await persistJournalEntryDB(je as any).then(jr => {
+          if (jr.success && jr.data) {
+            const savedJE = jr.data;
+            setJournalEntries(prev => [savedJE, ...prev]);
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Auto JE for cash receipt error:", e);
     }
     showToast(locale === "ar" ? `تم تسجيل سند القبض (${saved.receiptNumber}) بنجاح` : "Cash receipt created", "success");
+    return saved;
+  };
+
+  const updateCashReceipt = async (id: string, rcp: Partial<CashReceipt>): Promise<CashReceipt> => {
+    const res = await updateCashReceiptDB(id, rcp);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل سند القبض");
+    const saved = res.data;
+    setCashReceipts(prev => prev.map(r => r.id === id ? saved : r));
+    showToast(locale === "ar" ? `تم تعديل سند القبض (${saved.receiptNumber}) بنجاح` : "Cash receipt updated", "success");
     return saved;
   };
 
@@ -1549,11 +1585,36 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.data) throw new Error(res.error || "فشل إنشاء سند الصرف");
     const saved = res.data;
     setCashPayments(prev => [saved, ...prev]);
-    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: t.balance - saved.amount } : t));
+    setTreasuryAccounts(prev => prev.map(t => t.id === saved.treasuryAccountId ? { ...t, balance: (Number(t.balance) || 0) - saved.amount } : t));
     if (saved.supplierId) {
-      setSuppliers(prev => prev.map(s => s.id === saved.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - saved.amount) } : s));
+      setSuppliers(prev => prev.map(s => s.id === saved.supplierId ? { ...s, currentBalance: Math.max(0, (Number(s.currentBalance) || 0) - saved.amount) } : s));
+    }
+    // Auto generate Journal Entry
+    try {
+      const tr = treasuryAccounts.find(t => t.id === saved.treasuryAccountId);
+      const trGlId = tr?.glAccountId || accounts.find(a => a.code === "1101001")?.id || accounts[0]?.id;
+      if (trGlId && accounts.length > 0) {
+        const je = generatePaymentJournal(saved, trGlId, accounts);
+        await persistJournalEntryDB(je as any).then(jr => {
+          if (jr.success && jr.data) {
+            const savedJE = jr.data;
+            setJournalEntries(prev => [savedJE, ...prev]);
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Auto JE for cash payment error:", e);
     }
     showToast(locale === "ar" ? `تم تسجيل سند الصرف (${saved.paymentNumber}) بنجاح` : "Cash payment created", "success");
+    return saved;
+  };
+
+  const updateCashPayment = async (id: string, pay: Partial<CashPayment>): Promise<CashPayment> => {
+    const res = await updateCashPaymentDB(id, pay);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل سند الصرف");
+    const saved = res.data;
+    setCashPayments(prev => prev.map(p => p.id === id ? saved : p));
+    showToast(locale === "ar" ? `تم تعديل سند الصرف (${saved.paymentNumber}) بنجاح` : "Cash payment updated", "success");
     return saved;
   };
 
@@ -1569,7 +1630,37 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     if (!res.success || !res.data) throw new Error(res.error || "فشل حفظ الشيك");
     const saved = res.data;
     setChecks(prev => [saved, ...prev]);
+    // Auto generate Journal Entry
+    try {
+      if (accounts.length > 0) {
+        let jeData = null;
+        if (saved.type === "incoming") {
+          jeData = generateReceivableCheckJournal(saved, accounts);
+        } else if (saved.type === "outgoing") {
+          jeData = generatePayableCheckJournal(saved, accounts);
+        }
+        if (jeData) {
+          await persistJournalEntryDB(jeData as any).then(jr => {
+            if (jr.success && jr.data) {
+              const savedJE = jr.data;
+              setJournalEntries(prev => [savedJE, ...prev]);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Auto JE for check error:", e);
+    }
     showToast(locale === "ar" ? `تم تسجيل الشيك (${saved.checkNumber}) بنجاح` : "Check added", "success");
+    return saved;
+  };
+
+  const updateCheck = async (id: string, chk: Partial<CheckRecord>): Promise<CheckRecord> => {
+    const res = await updateCheckDB(id, chk);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل الشيك");
+    const saved = res.data;
+    setChecks(prev => prev.map(c => c.id === id ? saved : c));
+    showToast(locale === "ar" ? `تم تعديل الشيك (${saved.checkNumber}) بنجاح` : "Check updated", "success");
     return saved;
   };
 
@@ -1583,6 +1674,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       setTreasuryAccounts(prev => prev.map(t => t.id === targetTreasuryId ? { ...t, balance: (Number(t.balance) || 0) + delta } : t));
     }
     setChecks(prev => prev.map(c => c.id === checkId ? { ...c, status: newStatus, targetTreasuryId } : c));
+    // Auto generate Journal Entry for Check Status Lifecycle
+    try {
+      if (chk && accounts.length > 0) {
+        const jeData = generateCheckStatusJournal(chk, newStatus, targetTreasuryId, accounts, treasuryAccounts);
+        if (jeData) {
+          await persistJournalEntryDB(jeData as any).then(jr => {
+            if (jr.success && jr.data) {
+              const savedJE = jr.data;
+              setJournalEntries(prev => [savedJE, ...prev]);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Auto JE for check status update error:", e);
+    }
     showToast(locale === "ar" ? "تم تحديث حالة الشيك بنجاح" : "Check status updated", "success");
   };
 
@@ -1774,8 +1881,9 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         getCustomerStatement, getSupplierStatement, getCustomerBalancesReport, getSupplierBalancesReport,
         treasuryAccounts, cashReceipts, cashPayments, checks,
         addTreasuryAccount, updateTreasuryAccount, deleteTreasuryAccount,
-        createCashReceipt, deleteCashReceipt, createCashPayment, deleteCashPayment,
-        addCheck, updateCheckStatus, deleteCheck,
+        createCashReceipt, addCashReceipt: createCashReceipt, updateCashReceipt, deleteCashReceipt,
+        createCashPayment, addCashPayment: createCashPayment, updateCashPayment, deleteCashPayment,
+        addCheck, updateCheck, updateCheckStatus, deleteCheck,
         accounts, costCenters, journalEntries, addAccount, updateAccount, deleteAccount,
         addCostCenter, updateCostCenter, deleteCostCenter,
         addJournalEntry, deleteJournalEntry, postOpeningEntry,

@@ -197,6 +197,9 @@ export async function deleteTreasuryAccountDB(id: string) {
 export async function persistCashReceiptDB(rcp: CashReceipt | Omit<CashReceipt, "id">) {
   return mutateERP<CashReceipt>("create_cash_receipt", rcp);
 }
+export async function updateCashReceiptDB(id: string, rcp: Partial<CashReceipt>) {
+  return mutateERP<CashReceipt>("update_cash_receipt", { id, ...rcp });
+}
 export async function deleteCashReceiptDB(id: string) {
   return mutateERP("delete_cash_receipt", { id });
 }
@@ -204,6 +207,9 @@ export async function deleteCashReceiptDB(id: string) {
 // Cash Payments CRUD
 export async function persistCashPaymentDB(pay: CashPayment | Omit<CashPayment, "id">) {
   return mutateERP<CashPayment>("create_cash_payment", pay);
+}
+export async function updateCashPaymentDB(id: string, pay: Partial<CashPayment>) {
+  return mutateERP<CashPayment>("update_cash_payment", { id, ...pay });
 }
 export async function deleteCashPaymentDB(id: string) {
   return mutateERP("delete_cash_payment", { id });
@@ -252,6 +258,9 @@ export async function persistPeriodClosingDB(closing: PeriodClosing | Omit<Perio
 // Checks CRUD
 export async function persistCheckDB(chk: CheckRecord | Omit<CheckRecord, "id">) {
   return mutateERP<CheckRecord>("create_check", chk);
+}
+export async function updateCheckDB(id: string, chk: Partial<CheckRecord>) {
+  return mutateERP<CheckRecord>("update_check", { id, ...chk });
 }
 export async function persistCheckStatusDB(checkId: string, newStatus: string, targetTreasuryId?: string) {
   return mutateERP<CheckRecord>("update_check_status", { checkId, newStatus, targetTreasuryId });

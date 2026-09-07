@@ -434,7 +434,7 @@ export interface CashPayment {
   createdAt?: string;
 }
 
-export type CheckStatus = 'pending' | 'collected' | 'cleared' | 'bounced' | 'cancelled';
+export type CheckStatus = 'pending' | 'in_treasury' | 'under_collection' | 'collected' | 'cleared' | 'paid' | 'bounced' | 'returned' | 'cancelled';
 
 export interface CheckRecord {
   id: string;
@@ -442,17 +442,75 @@ export interface CheckRecord {
   branchId: string;
   checkNumber: string;
   bankName: string;
-  type: 'incoming' | 'outgoing';
+  type: 'incoming' | 'outgoing'; // incoming = أوراق قبض, outgoing = أوراق دفع
   partyName: string;
   customerId?: string;
   supplierId?: string;
+  accountId?: string;
+  accountCode?: string;
+  costCenterId?: string;
   amount: number;
   issueDate: string;
   dueDate: string;
   collectionDate?: string;
   status: CheckStatus;
   targetTreasuryId?: string;
+  draweeBank?: string;
+  collectionBank?: string;
+  voucherNumber?: string;
+  receiptVoucherId?: string;
   notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface CheckVoucherItem {
+  id: string;
+  checkNumber: string;
+  amount: number;
+  bankName: string;
+  dueDate: string;
+  partyName?: string;
+  customerId?: string;
+  supplierId?: string;
+  accountId?: string;
+  costCenterId?: string;
+  notes?: string;
+}
+
+export interface CheckVoucher {
+  id: string;
+  organizationId: string;
+  branchId: string;
+  voucherNumber: string;
+  voucherType: 'receivable_check' | 'payable_check';
+  date: string;
+  totalAmount: number;
+  partyName: string;
+  customerId?: string;
+  supplierId?: string;
+  accountId?: string;
+  costCenterId?: string;
+  treasuryAccountId?: string;
+  items: CheckVoucherItem[];
+  notes?: string;
+  createdBy: string;
+  createdAt?: string;
+}
+
+export interface TreasuryStatementRow {
+  id: string;
+  date: string;
+  referenceNumber: string;
+  accountName: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+  inflow?: number;
+  outflow?: number;
+  balance?: number;
+  type: 'opening' | 'receipt' | 'payment' | 'sales_cash' | 'purchase_cash' | 'check_collection' | 'return';
 }
 
 export type AccountType = 'assets' | 'liabilities' | 'equity' | 'revenue' | 'expense';
@@ -473,12 +531,16 @@ export interface Account {
   isSystem: boolean;
 }
 
+export type CostCenterType = 'revenue' | 'expense';
+
 export interface CostCenter {
   id: string;
   organizationId: string;
   code: string;
   nameAr: string;
   nameEn: string;
+  type?: CostCenterType;
+  costCenterType?: CostCenterType;
   parentId?: string;
   level: number;
   isActive: boolean;

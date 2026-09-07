@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Package, Warehouse, FileSpreadsheet, ShoppingCart,
   ShoppingBag, Users, Truck, Wallet, CheckSquare, BookOpen,
   FileText, BarChart3, ShieldCheck, Settings, MonitorPlay, ChevronDown,
-  Layers, CircleDollarSign, ArrowLeftRight
+  Layers, CircleDollarSign, ArrowLeftRight, Landmark, Receipt, CreditCard
 } from "lucide-react";
 
 interface NavItem {
@@ -28,6 +28,8 @@ export default function Sidebar() {
     inventory: true,
     sales: true,
     purchases: true,
+    treasury: true,
+    checks: true,
     accounting: true,
   });
 
@@ -83,16 +85,31 @@ export default function Sidebar() {
       ]
     },
     {
-      titleAr: "الخزينة والبنوك",
+      titleAr: "الخزينة النقدية",
       titleEn: "Treasury & Cash",
       href: "/treasury",
       icon: Wallet,
+      children: [
+        { titleAr: "سند قبض نقدي", titleEn: "Cash Receipt Voucher", href: "/treasury/receipts" },
+        { titleAr: "سند صرف نقدي", titleEn: "Cash Payment Voucher", href: "/treasury/payments" },
+        { titleAr: "سجل السندات", titleEn: "Vouchers Register", href: "/treasury/vouchers" },
+        { titleAr: "كشف حساب الخزينة", titleEn: "Treasury Statement", href: "/treasury/statement" },
+        { titleAr: "إدارة الخزائن النقدية", titleEn: "Treasuries Directory", href: "/treasury" },
+      ]
     },
     {
-      titleAr: "حافظة الشيكات",
-      titleEn: "Checks Portfolio",
+      titleAr: "البنوك والشيكات",
+      titleEn: "Banks & Checks",
       href: "/checks",
-      icon: CheckSquare,
+      icon: Landmark,
+      children: [
+        { titleAr: "شيكات القبض (استلام)", titleEn: "Receivable Checks", href: "/checks/receivable" },
+        { titleAr: "شيكات الدفع (إصدار)", titleEn: "Payable Checks", href: "/checks/payable" },
+        { titleAr: "حركة وحالات الشيكات", titleEn: "Check Status Manager", href: "/checks/status" },
+        { titleAr: "تقرير شيكات القبض", titleEn: "Receivable Checks Report", href: "/checks/report-receivable" },
+        { titleAr: "تقرير الشيكات الصادرة", titleEn: "Payable Checks Report", href: "/checks/report-payable" },
+        { titleAr: "محفظة الشيكات العامة", titleEn: "Checks Portfolio", href: "/checks" },
+      ]
     },
     {
       titleAr: "الحسابات العامة",

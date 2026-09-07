@@ -21,6 +21,7 @@ export default function CostCentersPage() {
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [parentId, setParentId] = useState("");
+  const [costCenterType, setCostCenterType] = useState<"expense" | "revenue">("expense");
 
   // Edit / Delete Modal State
   const [editCostCenter, setEditCostCenter] = useState<CostCenter | null>(null);
@@ -31,6 +32,7 @@ export default function CostCentersPage() {
   const [editNameAr, setEditNameAr] = useState("");
   const [editNameEn, setEditNameEn] = useState("");
   const [editParentId, setEditParentId] = useState("");
+  const [editCostCenterType, setEditCostCenterType] = useState<"expense" | "revenue">("expense");
 
   const handleCreateCostCenter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +52,8 @@ export default function CostCentersPage() {
         parentId: parentId || undefined,
         level: parentId ? 2 : 1,
         isActive: true,
+        costCenterType: costCenterType,
+        type: costCenterType
       });
 
       setIsAddModalOpen(false);
@@ -57,6 +61,7 @@ export default function CostCentersPage() {
       setNameAr("");
       setNameEn("");
       setParentId("");
+      setCostCenterType("expense");
     } catch (err: any) {
       console.error("Failed to add cost center:", err);
       const errMsg = err?.message || (isAr ? "فشل حفظ مركز التكلفة" : "Failed to add cost center");
@@ -74,6 +79,7 @@ export default function CostCentersPage() {
     setEditNameAr(cc.nameAr);
     setEditNameEn(cc.nameEn);
     setEditParentId(cc.parentId || "");
+    setEditCostCenterType(cc.costCenterType || cc.type || "expense");
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -89,6 +95,8 @@ export default function CostCentersPage() {
         nameEn: editNameEn || editNameAr,
         parentId: editParentId || undefined,
         level: editParentId ? 2 : 1,
+        costCenterType: editCostCenterType,
+        type: editCostCenterType
       });
 
       setEditCostCenter(null);
@@ -154,6 +162,7 @@ export default function CostCentersPage() {
               <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
                 <th className="p-3.5 rounded-r-lg font-mono">{isAr ? "كود المركز" : "Code"}</th>
                 <th className="p-3.5">{isAr ? "اسم مركز التكلفة" : "Cost Center Name"}</th>
+                <th className="p-3.5 text-center">{isAr ? "طبيعة المركز" : "Type"}</th>
                 <th className="p-3.5 text-center font-mono">{isAr ? "المستوى" : "Level"}</th>
                 <th className="p-3.5 text-center">{isAr ? "الحالة" : "Status"}</th>
                 <th className="p-3.5 rounded-l-lg text-center">{isAr ? "الإجراءات" : "Actions"}</th>
@@ -171,6 +180,17 @@ export default function CostCentersPage() {
                       {cc.level > 1 && <span className="text-slate-500 font-normal ml-1">↳</span>}
                       <span>{isAr ? cc.nameAr : cc.nameEn}</span>
                     </div>
+                  </td>
+                  <td className="p-3.5 text-center">
+                    {cc.costCenterType === "revenue" || cc.type === "revenue" ? (
+                      <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
+                        {isAr ? "إيرادي" : "Revenue"}
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-xl font-bold border border-blue-500/20 text-[10px]">
+                        {isAr ? "تكاليف ومصروفات" : "Expense"}
+                      </span>
+                    )}
                   </td>
                   <td className="p-3.5 text-center font-mono text-slate-400">L{cc.level}</td>
                   <td className="p-3.5 text-center">
@@ -228,18 +248,30 @@ export default function CostCentersPage() {
               />
             </div>
             <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "طبيعة المركز *" : "Center Type *"}</label>
               <select
-                value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                value={costCenterType}
+                onChange={(e) => setCostCenterType(e.target.value as "expense" | "revenue")}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
-                {costCenters.filter(c => c.level === 1).map(c => (
-                  <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
-                ))}
+                <option value="expense">{isAr ? "مركز تكاليف ومصروفات" : "Expense Cost Center"}</option>
+                <option value="revenue">{isAr ? "مركز إيرادات وأرباح" : "Revenue Center"}</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+            >
+              <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
+              {costCenters.filter(c => c.level === 1).map(c => (
+                <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -316,18 +348,30 @@ export default function CostCentersPage() {
                 />
               </div>
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "طبيعة المركز *" : "Center Type *"}</label>
                 <select
-                  value={editParentId}
-                  onChange={(e) => setEditParentId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  value={editCostCenterType}
+                  onChange={(e) => setEditCostCenterType(e.target.value as "expense" | "revenue")}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
-                  {costCenters.filter(c => c.level === 1 && c.id !== editCostCenter.id).map(c => (
-                    <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
-                  ))}
+                  <option value="expense">{isAr ? "مركز تكاليف ومصروفات" : "Expense Cost Center"}</option>
+                  <option value="revenue">{isAr ? "مركز إيرادات وأرباح" : "Revenue Center"}</option>
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+              <select
+                value={editParentId}
+                onChange={(e) => setEditParentId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+              >
+                <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
+                {costCenters.filter(c => c.level === 1 && c.id !== editCostCenter.id).map(c => (
+                  <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
+                ))}
+              </select>
             </div>
 
             <div>
