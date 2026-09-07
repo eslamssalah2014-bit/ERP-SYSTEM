@@ -71,9 +71,14 @@ export default function IncomeStatementPage() {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
-            <span className="text-slate-400 block text-[11px] font-medium">{isAr ? "مخزون أول المدة:" : "Opening Stock Value:"}</span>
-            <span className="text-sm font-black font-mono text-white mt-1 block">
+            <span className="text-slate-400 block text-[11px] font-medium">
+              {isAr ? "مخزون أول المدة (من القيد الافتتاحي):" : "Opening Stock (from Opening Entry):"}
+            </span>
+            <span className="text-sm font-black font-mono text-emerald-400 mt-1 block">
               {formatCurrency(openingInventoryValue, organization.currency, locale)}
+            </span>
+            <span className="text-[10px] text-slate-500 block mt-0.5">
+              {isAr ? "حساب 1103 (قيد أول المدة)" : "GL 1103 Opening Entry"}
             </span>
           </div>
 

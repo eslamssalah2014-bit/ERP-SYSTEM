@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
 import { JournalEntry, JournalLine, Account, AccountType } from "@/types/erp";
+import { buildHierarchicalAccountTree } from "@/lib/accounting-engine";
 import {
   Scale, CheckCircle2, AlertTriangle, Printer, Download, Save,
   RotateCcw, Lock, Unlock, Search, Layers, FileSpreadsheet,
@@ -227,9 +228,10 @@ export default function OpeningBalancePage() {
     document.body.removeChild(link);
   };
 
-  // Filter accounts for UI table
+  // Filter accounts for UI table (preserving hierarchical depth-first accounting order)
   const filteredAccounts = useMemo(() => {
-    return accounts.filter((acc) => {
+    const tree = buildHierarchicalAccountTree(accounts);
+    return tree.filter((acc) => {
       if (selectedTypeTab !== "all" && acc.type !== selectedTypeTab) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();

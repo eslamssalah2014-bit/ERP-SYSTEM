@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
 import { Account, AccountType } from "@/types/erp";
+import { buildHierarchicalAccountTree } from "@/lib/accounting-engine";
 import {
   BookOpen, Plus, Search, Loader2, AlertCircle, Edit2, Trash2,
   FolderTree, ChevronRight, ChevronDown, Layers, ShieldCheck,
@@ -199,21 +200,20 @@ export default function ChartOfAccountsPage() {
   };
 
   const filteredAccounts = useMemo(() => {
-    return accounts
-      .filter(acc => {
-        if (selectedType !== "all" && acc.type !== selectedType) return false;
-        if (selectedLevel !== "all" && acc.level !== Number(selectedLevel)) return false;
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
-          return (
-            acc.nameAr.toLowerCase().includes(q) ||
-            acc.nameEn.toLowerCase().includes(q) ||
-            acc.code.toLowerCase().includes(q)
-          );
-        }
-        return true;
-      })
-      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    const tree = buildHierarchicalAccountTree(accounts);
+    return tree.filter(acc => {
+      if (selectedType !== "all" && acc.type !== selectedType) return false;
+      if (selectedLevel !== "all" && acc.level !== Number(selectedLevel)) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        return (
+          acc.nameAr.toLowerCase().includes(q) ||
+          acc.nameEn.toLowerCase().includes(q) ||
+          acc.code.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
   }, [accounts, selectedType, selectedLevel, searchQuery]);
 
   const stats = useMemo(() => {

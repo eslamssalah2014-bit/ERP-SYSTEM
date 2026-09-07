@@ -812,7 +812,9 @@ export function computeGeneralLedgerSummary(
   let totEndDr = 0;
   let totEndCr = 0;
 
-  const rows: GeneralLedgerSummaryRow[] = accounts.map(acc => {
+  const orderedAccounts = buildHierarchicalAccountTree(accounts);
+
+  const rows: GeneralLedgerSummaryRow[] = orderedAccounts.map(acc => {
     let openDr = 0;
     let openCr = 0;
     let periodDr = 0;
@@ -857,7 +859,7 @@ export function computeGeneralLedgerSummary(
       endingDebit = totalNet > 0 ? totalNet : 0;
     }
 
-    const isLeaf = acc.level === 4 || !accounts.some(sub => sub.parentId === acc.id);
+    const isLeaf = acc.level === 4 || !orderedAccounts.some(sub => sub.parentId === acc.id);
     if (isLeaf) {
       totOpenDr += openingDebit;
       totOpenCr += openingCredit;
@@ -922,8 +924,10 @@ export function computeTrialBalance(
   let grandEndDr = 0;
   let grandEndCr = 0;
 
+  const orderedAccounts = buildHierarchicalAccountTree(accounts);
+
   // Level 4 leaf accounts determine the system balanced totals
-  const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
+  const leafAccounts = orderedAccounts.filter(a => a.level === 4 || !orderedAccounts.some(sub => sub.parentId === a.id));
   leafAccounts.forEach(leaf => {
     const r = summary.rows.find(row => row.accountCode === leaf.code);
     if (r) {
@@ -937,7 +941,7 @@ export function computeTrialBalance(
   });
 
   // 2. Build rows with parent rollups if requested
-  const rows: TrialBalanceRow[] = accounts
+  const rows: TrialBalanceRow[] = orderedAccounts
     .filter(acc => {
       if (level && level !== "all") {
         return acc.level === Number(level);
@@ -1015,6 +1019,63 @@ export function computeTrialBalance(
   };
 }
 
+/**
+ * Builds a strict recursive depth-first tree traversal ordered by standard accounting classification:
+ * 1. Assets (1)
+ * 2. Liabilities (2)
+ * 3. Equity (3)
+ * 4. Revenue (4)
+ * 5. Expenses (5)
+ */
+export function buildHierarchicalAccountTree(accounts: Account[]): Account[] {
+  const typeOrder: Record<AccountType, number> = {
+    assets: 1,
+    liabilities: 2,
+    equity: 3,
+    revenue: 4,
+    expense: 5,
+  };
+
+  // Find root accounts (level 1 or accounts without parentId)
+  const roots = accounts
+    .filter(a => a.level === 1 || !a.parentId)
+    .sort((a, b) => {
+      const orderA = typeOrder[a.type] || 99;
+      const orderB = typeOrder[b.type] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.code.localeCompare(b.code, undefined, { numeric: true });
+    });
+
+  const result: Account[] = [];
+  const visited = new Set<string>();
+
+  function traverse(parent: Account) {
+    if (visited.has(parent.id)) return;
+    visited.add(parent.id);
+    result.push(parent);
+
+    const children = accounts
+      .filter(a => a.parentId === parent.id || (!a.parentId && a.code.startsWith(parent.code) && a.level === parent.level + 1))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
+    children.forEach(child => traverse(child));
+  }
+
+  roots.forEach(root => traverse(root));
+
+  // If there are any unvisited accounts, append in standard order
+  const remaining = accounts
+    .filter(a => !visited.has(a.id))
+    .sort((a, b) => {
+      const orderA = typeOrder[a.type] || 99;
+      const orderB = typeOrder[b.type] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.code.localeCompare(b.code, undefined, { numeric: true });
+    });
+
+  return [...result, ...remaining];
+}
+
 export function computeIncomeStatement(
   accounts: Account[],
   entries: JournalEntry[],
@@ -1042,34 +1103,50 @@ export function computeIncomeStatement(
   };
 
   const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
-  const revenues = leafAccounts.filter(a => a.type === "revenue");
-  const cogs = leafAccounts.filter(a => a.type === "expense" && a.code.startsWith("51"));
-  const expenses = leafAccounts.filter(a => a.type === "expense" && !a.code.startsWith("51"));
+  const revenues = leafAccounts.filter(a => a.type === "revenue").map(a => ({
+    ...a,
+    balance: getAccountPeriodBalance(a),
+  }));
+  const cogs = leafAccounts.filter(a => a.type === "expense" && a.code.startsWith("51")).map(a => ({
+    ...a,
+    balance: getAccountPeriodBalance(a),
+  }));
+  const expenses = leafAccounts.filter(a => a.type === "expense" && !a.code.startsWith("51")).map(a => ({
+    ...a,
+    balance: getAccountPeriodBalance(a),
+  }));
 
-  const totalRevenue = revenues.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
-  const totalCOGS = cogs.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
+  const totalRevenue = revenues.reduce((s, a) => s + a.balance, 0);
+  const totalCOGS = cogs.reduce((s, a) => s + a.balance, 0);
   const grossProfit = totalRevenue - totalCOGS;
-  const totalExpenses = expenses.reduce((s, a) => s + getAccountPeriodBalance(a), 0);
+  const totalExpenses = expenses.reduce((s, a) => s + a.balance, 0);
   const netIncome = grossProfit - totalExpenses;
 
-  // Periodic Inventory COGS Formulation: COGS = Opening Inventory + Purchases - Closing Inventory
-  const openingInventoryValue = stockMovements
-    .filter(m => m.movementType === "opening_balance")
-    .reduce((sum, m) => sum + (m.quantity * m.unitCost), 0);
+  // Single Source of Truth: Opening Inventory strictly from Opening Journal Entry (1103xxx accounts)
+  let openingInventoryValue = 0;
+  (entries || []).forEach(e => {
+    const isOpening = e.referenceType === "opening_entry" || e.entryNumber?.startsWith("OPENING-") || e.entryNumber?.startsWith("JV-OPENING-");
+    if (isOpening) {
+      (e.lines || []).forEach(l => {
+        if (l.accountCode?.startsWith("1103")) {
+          openingInventoryValue += (Number(l.debit) || 0) - (Number(l.credit) || 0);
+        }
+      });
+    }
+  });
+  openingInventoryValue = Math.max(0, openingInventoryValue);
 
-  const purchasesValue = purchaseInvoices.reduce((sum, pinv) => sum + pinv.subtotal, 0);
+  // Period Purchases
+  const purchasesValue = (purchaseInvoices || []).reduce((sum, pinv) => sum + (Number(pinv.subtotal) || 0), 0);
 
-  const closingInventoryValue = products.reduce((sum, p) => {
-    const qty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
-    return sum + (qty * p.costPrice);
-  }, 0);
-
+  // Closing Inventory Value = Opening Inventory + Purchases - COGS
+  const closingInventoryValue = Math.max(0, openingInventoryValue + purchasesValue - totalCOGS);
   const periodicCOGS = Math.max(0, openingInventoryValue + purchasesValue - closingInventoryValue);
 
   return {
-    revenues: accounts.filter(a => a.type === "revenue"),
-    cogs: accounts.filter(a => a.code.startsWith("51")),
-    expenses: accounts.filter(a => a.type === "expense" && !a.code.startsWith("51")),
+    revenues,
+    cogs,
+    expenses,
     totalRevenue,
     totalCOGS,
     grossProfit,
@@ -1080,6 +1157,19 @@ export function computeIncomeStatement(
     closingInventoryValue,
     periodicCOGS,
   };
+}
+
+export interface FixedAssetCategoryRow {
+  key: string;
+  nameAr: string;
+  nameEn: string;
+  costCode: string;
+  costNameAr: string;
+  costBalance: number;
+  depreciationCode?: string;
+  depreciationNameAr?: string;
+  depreciationBalance: number;
+  netBookValue: number;
 }
 
 export function computeBalanceSheet(
@@ -1097,31 +1187,149 @@ export function computeBalanceSheet(
         }
       });
     });
-    const entryBalance = acc.nature === "credit" ? (cr - dr) : (dr - cr);
-    if (entryBalance !== 0) return Math.max(0, entryBalance);
+    // For debit accounts: net balance = dr - cr
+    // For credit accounts (including contra assets): net balance = cr - dr
+    const net = acc.nature === "credit" ? (cr - dr) : (dr - cr);
+    if (dr > 0 || cr > 0) return Math.max(0, net);
     return Number(acc.balance) || 0;
   };
 
   const leafAccounts = accounts.filter(a => a.level === 4 || !accounts.some(sub => sub.parentId === a.id));
-  const assets = leafAccounts.filter(a => a.type === "assets");
-  const liabilities = leafAccounts.filter(a => a.type === "liabilities");
-  const equity = leafAccounts.filter(a => a.type === "equity");
 
-  const totalAssets = assets.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
-  const totalLiabilities = liabilities.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
+  // 1. Current Assets (11...)
+  const currentAssets = leafAccounts
+    .filter(a => a.type === "assets" && a.code.startsWith("11"))
+    .map(a => ({
+      ...a,
+      balance: getAccountCumulativeBalance(a),
+    }));
+  const totalCurrentAssets = currentAssets.reduce((s, a) => s + a.balance, 0);
+
+  // 2. Fixed Assets Cost (1201...) & Contra Accumulated Depreciation (1202...)
+  const fixedCostAccounts = leafAccounts.filter(a => a.type === "assets" && a.code.startsWith("1201"));
+  const deprAccounts = leafAccounts.filter(a => a.type === "assets" && a.code.startsWith("1202"));
+
+  // Depreciation mapping dictionary by fixed asset code suffix
+  const fixedAssetGroups: FixedAssetCategoryRow[] = [
+    { key: "lands", nameAr: "الأراضي", nameEn: "Lands", costCode: "1201001", costNameAr: "أراضي", costBalance: 0, depreciationBalance: 0, netBookValue: 0 },
+    { key: "buildings", nameAr: "المباني والإنشاءات", nameEn: "Buildings", costCode: "1201002", costNameAr: "مباني وإنشاءات", costBalance: 0, depreciationCode: "1202001", depreciationNameAr: "مجمع إهلاك مباني", depreciationBalance: 0, netBookValue: 0 },
+    { key: "vehicles", nameAr: "السيارات ووسائل النقل", nameEn: "Vehicles", costCode: "1201003", costNameAr: "سيارات ووسائل نقل", costBalance: 0, depreciationCode: "1202002", depreciationNameAr: "مجمع إهلاك سيارات", depreciationBalance: 0, netBookValue: 0 },
+    { key: "equipment", nameAr: "الآلات والمعدات", nameEn: "Equipment", costCode: "1201004", costNameAr: "آلات ومعدات", costBalance: 0, depreciationBalance: 0, netBookValue: 0 },
+    { key: "computers", nameAr: "أجهزة الحاسب والبرمجيات", nameEn: "Computers", costCode: "1201005", costNameAr: "أجهزة حاسب وبرمجيات", costBalance: 0, depreciationCode: "1202003", depreciationNameAr: "مجمع إهلاك حاسبات", depreciationBalance: 0, netBookValue: 0 },
+    { key: "furniture", nameAr: "الأثاث والتجهيزات المكتبية", nameEn: "Furniture", costCode: "1201006", costNameAr: "أثاث وتجهيزات مكتبية", costBalance: 0, depreciationCode: "1202004", depreciationNameAr: "مجمع إهلاك أثاث", depreciationBalance: 0, netBookValue: 0 },
+  ];
+
+  // Populate known groups
+  fixedAssetGroups.forEach(g => {
+    const costAcc = fixedCostAccounts.find(a => a.code === g.costCode);
+    if (costAcc) {
+      g.costBalance = getAccountCumulativeBalance(costAcc);
+      g.costNameAr = costAcc.nameAr;
+    }
+    if (g.depreciationCode) {
+      const deprAcc = deprAccounts.find(a => a.code === g.depreciationCode);
+      if (deprAcc) {
+        g.depreciationBalance = getAccountCumulativeBalance(deprAcc);
+        g.depreciationNameAr = deprAcc.nameAr;
+      }
+    }
+    g.netBookValue = g.costBalance - g.depreciationBalance;
+  });
+
+  // Handle any other fixed asset accounts outside the standard 6
+  fixedCostAccounts.forEach(fa => {
+    if (!fixedAssetGroups.some(g => g.costCode === fa.code)) {
+      const costBal = getAccountCumulativeBalance(fa);
+      fixedAssetGroups.push({
+        key: `fa_${fa.code}`,
+        nameAr: fa.nameAr,
+        nameEn: fa.nameEn,
+        costCode: fa.code,
+        costNameAr: fa.nameAr,
+        costBalance: costBal,
+        depreciationBalance: 0,
+        netBookValue: costBal,
+      });
+    }
+  });
+
+  // Calculate Fixed Asset Totals
+  const totalFixedAssetsCost = fixedCostAccounts.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
+  const totalAccumulatedDepreciation = deprAccounts.reduce((s, a) => s + getAccountCumulativeBalance(a), 0);
+  const totalNetFixedAssets = totalFixedAssetsCost - totalAccumulatedDepreciation;
+
+  // Other non-current assets (if any)
+  const otherNonCurrentAssets = leafAccounts
+    .filter(a => a.type === "assets" && a.code.startsWith("12") && !a.code.startsWith("1201") && !a.code.startsWith("1202"))
+    .map(a => ({
+      ...a,
+      balance: getAccountCumulativeBalance(a),
+    }));
+  const totalOtherNonCurrentAssets = otherNonCurrentAssets.reduce((s, a) => s + a.balance, 0);
+
+  // Total Net Assets = Current Assets + Net Fixed Assets + Other Non Current
+  const totalAssets = totalCurrentAssets + totalNetFixedAssets + totalOtherNonCurrentAssets;
+
+  // 3. Liabilities (Current 21... and Non-Current 22...)
+  const currentLiabilities = leafAccounts
+    .filter(a => a.type === "liabilities" && a.code.startsWith("21"))
+    .map(a => ({
+      ...a,
+      balance: getAccountCumulativeBalance(a),
+    }));
+  const totalCurrentLiabilities = currentLiabilities.reduce((s, a) => s + a.balance, 0);
+
+  const nonCurrentLiabilities = leafAccounts
+    .filter(a => a.type === "liabilities" && a.code.startsWith("22"))
+    .map(a => ({
+      ...a,
+      balance: getAccountCumulativeBalance(a),
+    }));
+  const totalNonCurrentLiabilities = nonCurrentLiabilities.reduce((s, a) => s + a.balance, 0);
+
+  const totalLiabilities = totalCurrentLiabilities + totalNonCurrentLiabilities;
+
+  // 4. Equity & Net Income
+  const equityAccounts = leafAccounts
+    .filter(a => a.type === "equity")
+    .map(a => ({
+      ...a,
+      balance: getAccountCumulativeBalance(a),
+    }));
+  const totalEquityBeforeProfit = equityAccounts.reduce((s, a) => s + a.balance, 0);
 
   const { netIncome } = computeIncomeStatement(accounts, entries);
-  const totalEquity = equity.reduce((s, a) => s + getAccountCumulativeBalance(a), 0) + netIncome;
+  const totalEquity = totalEquityBeforeProfit + netIncome;
+  const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+
+  const isBalanced = Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01;
 
   return {
+    currentAssets,
+    totalCurrentAssets,
+    fixedAssetGroups,
+    fixedCostAccounts: fixedCostAccounts.map(a => ({ ...a, balance: getAccountCumulativeBalance(a) })),
+    deprAccounts: deprAccounts.map(a => ({ ...a, balance: getAccountCumulativeBalance(a) })),
+    totalFixedAssetsCost,
+    totalAccumulatedDepreciation,
+    totalNetFixedAssets,
+    otherNonCurrentAssets,
+    totalOtherNonCurrentAssets,
+    totalAssets,
+    currentLiabilities,
+    totalCurrentLiabilities,
+    nonCurrentLiabilities,
+    totalNonCurrentLiabilities,
+    totalLiabilities,
+    equity: equityAccounts,
+    totalEquityBeforeProfit,
+    netIncome,
+    totalEquity,
+    totalLiabilitiesAndEquity,
+    isBalanced,
+    // Backward compatibility aliases
     assets: accounts.filter(a => a.type === "assets"),
     liabilities: accounts.filter(a => a.type === "liabilities"),
-    equity: accounts.filter(a => a.type === "equity"),
-    totalAssets,
-    totalLiabilities,
-    totalEquity,
-    netIncome,
-    isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1.0,
   };
 }
 
