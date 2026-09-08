@@ -46,11 +46,40 @@ export default function IncomeStatementPage() {
         </button>
       </div>
 
-      {/* Net Income Highlight Card */}
-      <div className="bg-gradient-to-r from-slate-900 to-emerald-950/40 p-6 rounded-3xl border border-slate-800 flex items-center justify-between">
+      {/* Net Profit / Loss Highlight Card */}
+      <div className={`p-6 rounded-3xl border flex items-center justify-between transition-all ${
+        netIncome > 0
+          ? "bg-gradient-to-r from-slate-900 to-emerald-950/40 border-emerald-500/30"
+          : netIncome < 0
+          ? "bg-gradient-to-r from-slate-900 to-rose-950/40 border-rose-500/30"
+          : "bg-slate-900 border-slate-800"
+      }`}>
         <div>
-          <span className="text-xs font-bold text-slate-400 block">{isAr ? "صافي الربح للفترة (Net Income):" : "Net Operating Profit:"}</span>
-          <span className="text-3xl font-black text-emerald-400 font-mono mt-1 block">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 block">
+              {isAr ? "صافي الربح / الخسارة (Net Profit / Loss):" : "Net Profit / Loss:"}
+            </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+              netIncome > 0
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : netIncome < 0
+                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                : "bg-slate-800 text-slate-400 border-slate-700"
+            }`}>
+              {netIncome > 0
+                ? (isAr ? "ربح / Profit" : "Profit")
+                : netIncome < 0
+                ? (isAr ? "خسارة / Loss" : "Loss")
+                : (isAr ? "متعادل / Neutral" : "Neutral")}
+            </span>
+          </div>
+          <span className={`text-3xl font-black font-mono mt-1.5 block ${
+            netIncome > 0
+              ? "text-emerald-400"
+              : netIncome < 0
+              ? "text-rose-400"
+              : "text-slate-300"
+          }`}>
             {formatCurrency(netIncome, organization.currency, locale)}
           </span>
         </div>

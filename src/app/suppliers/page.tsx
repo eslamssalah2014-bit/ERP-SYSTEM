@@ -151,10 +151,10 @@ export default function SuppliersPage() {
   const handleOpenEdit = (s: Supplier) => {
     setFormError(null);
     setEditSupplier(s);
-    setEditNameAr(s.nameAr);
-    setEditNameEn(s.nameEn);
-    setEditCode(s.code);
-    setEditOpeningBalance(s.openingBalance || 0);
+    setEditNameAr(s.nameAr || "");
+    setEditNameEn(s.nameEn || "");
+    setEditCode(s.code || "");
+    setEditOpeningBalance(s.openingBalance !== undefined && s.openingBalance !== null ? Number(s.openingBalance) : 0);
     setEditMobile(s.mobile || "");
     setEditEmail(s.email || "");
     setEditAddress(s.address || "");

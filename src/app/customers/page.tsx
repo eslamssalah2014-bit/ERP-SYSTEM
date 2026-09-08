@@ -155,18 +155,18 @@ export default function CustomersPage() {
   const handleOpenEdit = (c: Customer) => {
     setFormError(null);
     setEditCustomer(c);
-    setEditNameAr(c.nameAr);
-    setEditNameEn(c.nameEn);
-    setEditCode(c.code);
+    setEditNameAr(c.nameAr || "");
+    setEditNameEn(c.nameEn || "");
+    setEditCode(c.code || "");
     setEditCategoryId(c.categoryId || customerCategories[0]?.id || "");
-    setEditOpeningBalance(c.openingBalance || 0);
+    setEditOpeningBalance(c.openingBalance !== undefined && c.openingBalance !== null ? Number(c.openingBalance) : 0);
     setEditMobile(c.mobile || "");
     setEditEmail(c.email || "");
     setEditAddress(c.address || "");
     setEditCity(c.city || "");
     setEditTaxNumber(c.taxNumber || "");
-    setEditCreditLimit(c.creditLimit);
-    setEditPaymentTermsDays(c.paymentTermsDays);
+    setEditCreditLimit(c.creditLimit !== undefined && c.creditLimit !== null ? Number(c.creditLimit) : 0);
+    setEditPaymentTermsDays(c.paymentTermsDays !== undefined && c.paymentTermsDays !== null ? Number(c.paymentTermsDays) : 30);
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {

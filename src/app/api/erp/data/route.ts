@@ -1716,7 +1716,9 @@ export async function POST(request: Request) {
         if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister;
         if (creditLimit !== undefined) updateRow.credit_limit = Number(creditLimit);
         if (paymentTermsDays !== undefined) updateRow.payment_terms_days = Number(paymentTermsDays);
+        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
+        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, null);
         if (status !== undefined) updateRow.status = status;
 
         const { data: cust, error: custErr } = await supabaseAdmin
@@ -1727,7 +1729,7 @@ export async function POST(request: Request) {
           .single();
 
         if (custErr) throw custErr;
-        return noCacheResponse({ success: true, data: mapCustomer(cust) });
+        return noCacheResponse({ success: true, data: mapCustomer(cust, payload.categoryName) });
       }
 
       case "delete_customer": {
@@ -1996,6 +1998,7 @@ export async function POST(request: Request) {
         if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
         if (bankName !== undefined) updateRow.bank_name = bankName;
         if (bankIban !== undefined) updateRow.bank_iban = bankIban;
+        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
         if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
         if (status !== undefined) updateRow.status = status;
 
@@ -2129,6 +2132,7 @@ export async function POST(request: Request) {
         let finalCode = (code || "").trim();
         if (!finalCode) finalCode = "CC-" + Date.now().toString().slice(-4);
 
+        const chosenType = costCenterType || type || "expense";
         const insertRow: any = {
           organization_id: validOrgId,
           code: finalCode,
@@ -2137,17 +2141,30 @@ export async function POST(request: Request) {
           parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           is_active: isActive !== false,
-          cost_center_type: costCenterType || type || "expense",
+          cost_center_type: chosenType,
         };
         if (validId) insertRow.id = validId;
 
-        const { data: cc, error: ccErr } = await supabaseAdmin
+        let { data: cc, error: ccErr } = await supabaseAdmin
           .from("cost_centers")
           .insert([insertRow])
           .select()
           .single();
 
-        if (ccErr) throw ccErr;
+        if (ccErr && (ccErr.message?.includes("cost_center_type") || ccErr.code === "PGRST204" || ccErr.message?.includes("schema cache"))) {
+          delete insertRow.cost_center_type;
+          const retryRes = await supabaseAdmin
+            .from("cost_centers")
+            .insert([insertRow])
+            .select()
+            .single();
+          if (retryRes.error) throw retryRes.error;
+          cc = retryRes.data;
+          if (cc) cc.cost_center_type = chosenType;
+        } else if (ccErr) {
+          throw ccErr;
+        }
+
         return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 
@@ -2156,6 +2173,7 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
+        const chosenType = costCenterType || type;
         const updateRow: any = {};
         if (code !== undefined) updateRow.code = code;
         if (nameAr !== undefined) updateRow.name_ar = nameAr;
@@ -2163,18 +2181,32 @@ export async function POST(request: Request) {
         if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
         if (level !== undefined) updateRow.level = Number(level);
         if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
-        if (costCenterType !== undefined || type !== undefined) {
-          updateRow.cost_center_type = costCenterType || type || "expense";
+        if (chosenType !== undefined) {
+          updateRow.cost_center_type = chosenType;
         }
 
-        const { data: cc, error: ccErr } = await supabaseAdmin
+        let { data: cc, error: ccErr } = await supabaseAdmin
           .from("cost_centers")
           .update(updateRow)
           .eq("id", validId)
           .select()
           .single();
 
-        if (ccErr) throw ccErr;
+        if (ccErr && (ccErr.message?.includes("cost_center_type") || ccErr.code === "PGRST204" || ccErr.message?.includes("schema cache"))) {
+          delete updateRow.cost_center_type;
+          const retryRes = await supabaseAdmin
+            .from("cost_centers")
+            .update(updateRow)
+            .eq("id", validId)
+            .select()
+            .single();
+          if (retryRes.error) throw retryRes.error;
+          cc = retryRes.data;
+          if (cc && chosenType) cc.cost_center_type = chosenType;
+        } else if (ccErr) {
+          throw ccErr;
+        }
+
         return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 
@@ -3367,14 +3399,49 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validRefId = cleanUUID(referenceId, null);
+        const finalEntryNum = entryNumber || ("JE-" + Date.now().toString().slice(-6));
+
+        // Idempotency: Deduplicate if an entry with the same reference_type and reference_id already exists
+        if (validRefId && referenceType && referenceType !== "manual") {
+          const { data: existingRefJE } = await supabaseAdmin
+            .from("journal_entries")
+            .select("id")
+            .eq("reference_type", referenceType)
+            .eq("reference_id", validRefId)
+            .maybeSingle();
+
+          if (existingRefJE) {
+            const { data: existingLines } = await supabaseAdmin
+              .from("journal_lines")
+              .select("*")
+              .eq("journal_entry_id", existingRefJE.id);
+            const { data: fullJE } = await supabaseAdmin
+              .from("journal_entries")
+              .select("*")
+              .eq("id", existingRefJE.id)
+              .single();
+            const mappedLines = (existingLines || []).map((l: any) => ({
+              id: l.id,
+              accountId: l.account_id,
+              accountCode: l.account_code,
+              accountName: l.account_name,
+              debit: Number(l.debit) || 0,
+              credit: Number(l.credit) || 0,
+              costCenterId: l.cost_center_id,
+              description: l.description,
+            }));
+            return noCacheResponse({ success: true, data: mapJournalEntry(fullJE, mappedLines) });
+          }
+        }
 
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          entry_number: entryNumber || ("JE-" + Date.now().toString().slice(-6)),
+          entry_number: finalEntryNum,
           date: date || new Date().toISOString().split("T")[0],
           reference_type: referenceType || "manual",
-          reference_id: cleanUUID(referenceId, null),
+          reference_id: validRefId,
           description: description || "قيد يومية عام",
           total_debit: Number(totalDebit) || 0,
           total_credit: Number(totalCredit) || 0,

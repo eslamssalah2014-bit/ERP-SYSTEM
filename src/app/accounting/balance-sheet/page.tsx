@@ -152,7 +152,9 @@ export default function BalanceSheetPage() {
                       <span className="font-mono text-slate-500 ml-2">{acc.code}</span>
                       <span>{isAr ? acc.nameAr : acc.nameEn}</span>
                     </span>
-                    <span className="font-mono font-bold text-white">{formatCurrency(acc.balance, organization.currency, locale)}</span>
+                    <span className={"font-mono font-bold " + (acc.balance < 0 ? "text-rose-400" : "text-white")}>
+                      {formatCurrency(acc.balance, organization.currency, locale)}
+                    </span>
                   </div>
                 ))
               )}
@@ -284,7 +286,9 @@ export default function BalanceSheetPage() {
                       <span className="font-mono text-slate-500 ml-2">{acc.code}</span>
                       <span>{isAr ? acc.nameAr : acc.nameEn}</span>
                     </span>
-                    <span className="font-mono font-bold text-white">{formatCurrency(acc.balance, organization.currency, locale)}</span>
+                    <span className={"font-mono font-bold " + (acc.balance < 0 ? "text-amber-400" : "text-white")}>
+                      {formatCurrency(acc.balance, organization.currency, locale)}
+                    </span>
                   </div>
                 ))
               )}
@@ -304,7 +308,9 @@ export default function BalanceSheetPage() {
                       <span className="font-mono text-slate-500 ml-2">{acc.code}</span>
                       <span>{isAr ? acc.nameAr : acc.nameEn}</span>
                     </span>
-                    <span className="font-mono font-bold text-white">{formatCurrency(acc.balance, organization.currency, locale)}</span>
+                    <span className={"font-mono font-bold " + (acc.balance < 0 ? "text-amber-400" : "text-white")}>
+                      {formatCurrency(acc.balance, organization.currency, locale)}
+                    </span>
                   </div>
                 ))}
                 <div className="flex justify-between font-bold pt-1 text-rose-400 text-xs">
@@ -339,7 +345,9 @@ export default function BalanceSheetPage() {
                     <span className="font-mono text-slate-500 ml-2">{acc.code}</span>
                     <span>{isAr ? acc.nameAr : acc.nameEn}</span>
                   </span>
-                  <span className="font-mono font-bold text-white">{formatCurrency(acc.balance, organization.currency, locale)}</span>
+                  <span className={"font-mono font-bold " + (acc.balance < 0 ? "text-amber-400" : "text-white")}>
+                    {formatCurrency(acc.balance, organization.currency, locale)}
+                  </span>
                 </div>
               ))}
 

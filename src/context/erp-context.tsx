@@ -954,9 +954,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
     const journalDraft = generateSalesInvoiceJournal(savedInvoice, accounts, totalCogs);
     if (journalDraft) {
-      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-      setJournalEntries(prev => [newJournal, ...prev]);
-      await persistJournalEntryDB(newJournal);
+      const newJournal: JournalEntry = {
+        ...journalDraft,
+        id: generateId(),
+        entryNumber: `JV-SALES-${savedInvoice.invoiceNumber}`,
+        referenceId: savedInvoice.id,
+        referenceType: "sales_invoice",
+      };
+      setJournalEntries(prev => [newJournal, ...prev.filter(j => j.referenceId !== savedInvoice.id && j.entryNumber !== newJournal.entryNumber)]);
     }
 
     setSalesInvoices(prev => [savedInvoice, ...prev.filter(x => x.id !== savedInvoice.id)]);
@@ -1053,9 +1058,14 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
 
     const journalDraft = generatePurchaseInvoiceJournal(savedInvoice, accounts);
     if (journalDraft) {
-      const newJournal: JournalEntry = { ...journalDraft, id: generateId() };
-      setJournalEntries(prev => [newJournal, ...prev]);
-      await persistJournalEntryDB(newJournal);
+      const newJournal: JournalEntry = {
+        ...journalDraft,
+        id: generateId(),
+        entryNumber: `JV-PURCHASE-${savedInvoice.invoiceNumber}`,
+        referenceId: savedInvoice.id,
+        referenceType: "purchase_invoice",
+      };
+      setJournalEntries(prev => [newJournal, ...prev.filter(j => j.referenceId !== savedInvoice.id && j.entryNumber !== newJournal.entryNumber)]);
     }
 
     setPurchaseInvoices(prev => [savedInvoice, ...prev.filter(x => x.id !== savedInvoice.id)]);

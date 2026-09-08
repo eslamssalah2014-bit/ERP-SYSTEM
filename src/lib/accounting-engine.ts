@@ -1592,7 +1592,7 @@ export function computeBalanceSheet(
     // For debit accounts: net balance = dr - cr
     // For credit accounts (including contra assets): net balance = cr - dr
     const net = acc.nature === "credit" ? (cr - dr) : (dr - cr);
-    if (dr > 0 || cr > 0) return Math.max(0, net);
+    if (dr > 0 || cr > 0) return net;
     return Number(acc.balance) || 0;
   };
 
