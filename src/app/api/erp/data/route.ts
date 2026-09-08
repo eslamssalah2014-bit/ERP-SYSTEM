@@ -70,6 +70,148 @@ function noCacheResponse(payload: any, status = 200) {
 }
 
 // ==========================================
+// PHYSICAL SCHEMA VALIDATION & SANITIZATION LAYER
+// Protects PostgreSQL from undefined/non-existent columns across all CRUD actions
+// ==========================================
+export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
+  organizations: [
+    "id", "name_ar", "name_en", "tax_number", "commercial_register",
+    "country", "currency", "default_vat_rate", "address", "logo_url",
+    "plan_tier", "created_at", "updated_at"
+  ],
+  branches: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "city", "address", "phone", "is_headquarters", "created_at"
+  ],
+  users: [
+    "id", "organization_id", "email", "name", "role",
+    "branch_id", "avatar_url", "is_active", "created_at"
+  ],
+  customers: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "mobile", "email", "address", "city", "tax_number",
+    "commercial_register", "credit_limit", "payment_terms_days",
+    "current_balance", "status", "created_at"
+  ],
+  suppliers: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "mobile", "email", "address", "tax_number", "bank_name",
+    "bank_iban", "current_balance", "status", "created_at"
+  ],
+  warehouses: [
+    "id", "organization_id", "branch_id", "code", "name_ar",
+    "name_en", "location", "manager_name", "manager_phone",
+    "is_default", "created_at"
+  ],
+  product_categories: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "parent_id", "created_at"
+  ],
+  product_units: [
+    "id", "organization_id", "code", "name_ar", "name_en", "symbol"
+  ],
+  products: [
+    "id", "organization_id", "sku", "barcode", "name_ar",
+    "name_en", "description", "category_id", "unit_id",
+    "cost_price", "selling_price", "tax_rate", "min_stock_level",
+    "max_stock_level", "status", "created_at", "updated_at"
+  ],
+  product_warehouse_stock: [
+    "product_id", "warehouse_id", "quantity", "reserved_quantity"
+  ],
+  cost_centers: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "parent_id", "level", "is_active", "created_at"
+  ],
+  accounts: [
+    "id", "organization_id", "code", "name_ar", "name_en",
+    "type", "parent_id", "level", "nature", "balance",
+    "currency", "is_active", "is_system", "created_at"
+  ],
+  treasury_accounts: [
+    "id", "organization_id", "branch_id", "gl_account_id",
+    "code", "name_ar", "name_en", "type", "currency",
+    "balance", "bank_name", "account_number", "is_default", "created_at"
+  ],
+  cash_receipts: [
+    "id", "organization_id", "branch_id", "receipt_number", "date",
+    "treasury_account_id", "amount", "currency", "received_from",
+    "customer_id", "credit_account_id", "cost_center_id", "notes",
+    "created_by", "created_at"
+  ],
+  cash_payments: [
+    "id", "organization_id", "branch_id", "payment_number", "date",
+    "treasury_account_id", "amount", "currency", "paid_to",
+    "supplier_id", "debit_account_id", "cost_center_id", "notes",
+    "created_by", "created_at"
+  ],
+  check_records: [
+    "id", "organization_id", "branch_id", "check_number", "type",
+    "party_name", "customer_id", "supplier_id", "account_id",
+    "cost_center_id", "amount", "issue_date", "due_date",
+    "collection_date", "status", "target_treasury_id", "drawee_bank",
+    "collection_bank", "voucher_number", "receipt_voucher_id",
+    "notes", "created_by", "created_at"
+  ],
+  sales_invoices: [
+    "id", "organization_id", "branch_id", "invoice_number", "date",
+    "due_date", "customer_id", "customer_name", "customer_tax_number",
+    "sales_rep_id", "sales_rep_name", "warehouse_id", "status",
+    "subtotal", "discount_total", "tax_total", "grand_total",
+    "paid_amount", "due_amount", "qr_code_payload", "notes",
+    "created_by", "created_at"
+  ],
+  sales_invoice_items: [
+    "id", "sales_invoice_id", "product_id", "product_name",
+    "warehouse_id", "quantity", "unit_price", "cost_price",
+    "discount_percent", "discount_amount", "tax_rate", "tax_amount", "total"
+  ],
+  purchase_invoices: [
+    "id", "organization_id", "branch_id", "invoice_number",
+    "supplier_invoice_ref", "date", "due_date", "supplier_id",
+    "supplier_name", "supplier_tax_number", "warehouse_id", "status",
+    "subtotal", "discount_total", "tax_total", "grand_total",
+    "paid_amount", "due_amount", "notes", "created_by", "created_at"
+  ],
+  purchase_invoice_items: [
+    "id", "purchase_invoice_id", "product_id", "product_name",
+    "warehouse_id", "quantity", "unit_cost", "discount_percent",
+    "discount_amount", "tax_rate", "tax_amount", "total"
+  ],
+  journal_entries: [
+    "id", "organization_id", "branch_id", "entry_number", "date",
+    "reference_type", "reference_id", "description", "total_debit",
+    "total_credit", "is_balanced", "status", "created_by", "created_at"
+  ],
+  journal_lines: [
+    "id", "journal_entry_id", "account_id", "account_code",
+    "account_name", "debit", "credit", "cost_center_id", "description"
+  ],
+  stock_movements: [
+    "id", "organization_id", "product_id", "warehouse_id",
+    "movement_type", "reference_id", "reference_number", "date",
+    "quantity", "unit_cost", "total_cost", "balance_quantity",
+    "partner_id", "partner_name", "partner_type", "notes", "created_at"
+  ],
+  audit_logs: [
+    "id", "organization_id", "user_id", "user_name", "action",
+    "entity_type", "entity_id", "details", "created_at"
+  ]
+};
+
+export function sanitizeRowForTable<T = any>(tableName: string, row: Record<string, any>): T {
+  const allowed = PHYSICAL_TABLE_COLUMNS[tableName];
+  if (!allowed) return { ...row } as T;
+  const sanitized: Record<string, any> = {};
+  for (const col of allowed) {
+    if (col in row && row[col] !== undefined) {
+      sanitized[col] = row[col];
+    }
+  }
+  return sanitized as T;
+}
+
+// ==========================================
 // AUTOMATIC JOURNAL POSTING HELPER (GL / TRIAL BALANCE PERSISTENCE)
 // ==========================================
 async function autoPostDocumentJournal(
@@ -1628,7 +1770,8 @@ export async function POST(request: Request) {
         const numCurr = Number(currentBalance) || 0;
         const finalBalance = numCurr !== 0 ? numCurr : numOpening;
 
-        const insertRow: any = {
+        const insertRow: any = sanitizeRowForTable("customers", {
+          id: validId || undefined,
           organization_id: validOrgId,
           code: finalCode,
           name_ar: trimmedNameAr || "عميل جديد",
@@ -1636,15 +1779,14 @@ export async function POST(request: Request) {
           mobile: trimmedMobile || null,
           email: email || null,
           address: address || null,
-          city: city || null,
+          city: city || "الرياض",
           tax_number: trimmedTax || null,
           commercial_register: commercialRegister || null,
           credit_limit: Number(creditLimit) || 0,
           payment_terms_days: Number(paymentTermsDays) || 30,
           current_balance: finalBalance,
           status: status || "active",
-        };
-        if (validId) insertRow.id = validId;
+        });
 
         const { data: cust, error: custErr } = await supabaseAdmin
           .from("customers")
@@ -1657,7 +1799,7 @@ export async function POST(request: Request) {
       }
 
       case "update_customer": {
-        const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, openingBalance, currentBalance, categoryId, status } = payload;
+        const { id, code, nameAr, nameEn, mobile, email, address, city, taxNumber, commercialRegister, creditLimit, paymentTermsDays, openingBalance, currentBalance, status } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid customer ID is required" }, 400);
 
@@ -1704,22 +1846,23 @@ export async function POST(request: Request) {
           }
         }
 
-        const updateRow: any = {};
-        if (code !== undefined) updateRow.code = code;
-        if (nameAr !== undefined) updateRow.name_ar = nameAr;
-        if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (mobile !== undefined) updateRow.mobile = mobile;
-        if (email !== undefined) updateRow.email = email;
-        if (address !== undefined) updateRow.address = address;
-        if (city !== undefined) updateRow.city = city;
-        if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
-        if (commercialRegister !== undefined) updateRow.commercial_register = commercialRegister;
-        if (creditLimit !== undefined) updateRow.credit_limit = Number(creditLimit);
-        if (paymentTermsDays !== undefined) updateRow.payment_terms_days = Number(paymentTermsDays);
-        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
-        if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
-        if (categoryId !== undefined) updateRow.category_id = cleanUUID(categoryId, null);
-        if (status !== undefined) updateRow.status = status;
+        const rawUpdate: any = {};
+        if (code !== undefined) rawUpdate.code = code;
+        if (nameAr !== undefined) rawUpdate.name_ar = nameAr;
+        if (nameEn !== undefined) rawUpdate.name_en = nameEn;
+        if (mobile !== undefined) rawUpdate.mobile = mobile;
+        if (email !== undefined) rawUpdate.email = email;
+        if (address !== undefined) rawUpdate.address = address;
+        if (city !== undefined) rawUpdate.city = city;
+        if (taxNumber !== undefined) rawUpdate.tax_number = taxNumber;
+        if (commercialRegister !== undefined) rawUpdate.commercial_register = commercialRegister;
+        if (creditLimit !== undefined) rawUpdate.credit_limit = Number(creditLimit);
+        if (paymentTermsDays !== undefined) rawUpdate.payment_terms_days = Number(paymentTermsDays);
+        if (currentBalance !== undefined) rawUpdate.current_balance = Number(currentBalance);
+        else if (openingBalance !== undefined) rawUpdate.current_balance = Number(openingBalance);
+        if (status !== undefined) rawUpdate.status = status;
+
+        const updateRow = sanitizeRowForTable("customers", rawUpdate);
 
         const { data: cust, error: custErr } = await supabaseAdmin
           .from("customers")
@@ -1914,7 +2057,8 @@ export async function POST(request: Request) {
         const numCurr = Number(currentBalance) || 0;
         const finalBalance = numCurr !== 0 ? numCurr : numOpening;
 
-        const insertRow: any = {
+        const insertRow: any = sanitizeRowForTable("suppliers", {
+          id: validId || undefined,
           organization_id: validOrgId,
           code: finalCode,
           name_ar: trimmedNameAr || "مورد جديد",
@@ -1927,8 +2071,7 @@ export async function POST(request: Request) {
           bank_iban: bankIban || null,
           current_balance: finalBalance,
           status: status || "active",
-        };
-        if (validId) insertRow.id = validId;
+        });
 
         const { data: supp, error: suppErr } = await supabaseAdmin
           .from("suppliers")
@@ -1988,19 +2131,21 @@ export async function POST(request: Request) {
           }
         }
 
-        const updateRow: any = {};
-        if (code !== undefined) updateRow.code = code;
-        if (nameAr !== undefined) updateRow.name_ar = nameAr;
-        if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (mobile !== undefined) updateRow.mobile = mobile;
-        if (email !== undefined) updateRow.email = email;
-        if (address !== undefined) updateRow.address = address;
-        if (taxNumber !== undefined) updateRow.tax_number = taxNumber;
-        if (bankName !== undefined) updateRow.bank_name = bankName;
-        if (bankIban !== undefined) updateRow.bank_iban = bankIban;
-        if (openingBalance !== undefined) updateRow.opening_balance = Number(openingBalance);
-        if (currentBalance !== undefined) updateRow.current_balance = Number(currentBalance);
-        if (status !== undefined) updateRow.status = status;
+        const rawUpdate: any = {};
+        if (code !== undefined) rawUpdate.code = code;
+        if (nameAr !== undefined) rawUpdate.name_ar = nameAr;
+        if (nameEn !== undefined) rawUpdate.name_en = nameEn;
+        if (mobile !== undefined) rawUpdate.mobile = mobile;
+        if (email !== undefined) rawUpdate.email = email;
+        if (address !== undefined) rawUpdate.address = address;
+        if (taxNumber !== undefined) rawUpdate.tax_number = taxNumber;
+        if (bankName !== undefined) rawUpdate.bank_name = bankName;
+        if (bankIban !== undefined) rawUpdate.bank_iban = bankIban;
+        if (currentBalance !== undefined) rawUpdate.current_balance = Number(currentBalance);
+        else if (openingBalance !== undefined) rawUpdate.current_balance = Number(openingBalance);
+        if (status !== undefined) rawUpdate.status = status;
+
+        const updateRow = sanitizeRowForTable("suppliers", rawUpdate);
 
         const { data: supp, error: suppErr } = await supabaseAdmin
           .from("suppliers")
@@ -2133,7 +2278,8 @@ export async function POST(request: Request) {
         if (!finalCode) finalCode = "CC-" + Date.now().toString().slice(-4);
 
         const chosenType = costCenterType || type || "expense";
-        const insertRow: any = {
+        const rawInsert: any = {
+          id: validId || undefined,
           organization_id: validOrgId,
           code: finalCode,
           name_ar: nameAr || "مركز تكلفة جديد",
@@ -2141,30 +2287,18 @@ export async function POST(request: Request) {
           parent_id: cleanUUID(parentId, null),
           level: Number(level) || 1,
           is_active: isActive !== false,
-          cost_center_type: chosenType,
         };
-        if (validId) insertRow.id = validId;
 
-        let { data: cc, error: ccErr } = await supabaseAdmin
+        const insertRow = sanitizeRowForTable("cost_centers", rawInsert);
+
+        const { data: cc, error: ccErr } = await supabaseAdmin
           .from("cost_centers")
           .insert([insertRow])
           .select()
           .single();
 
-        if (ccErr && (ccErr.message?.includes("cost_center_type") || ccErr.code === "PGRST204" || ccErr.message?.includes("schema cache"))) {
-          delete insertRow.cost_center_type;
-          const retryRes = await supabaseAdmin
-            .from("cost_centers")
-            .insert([insertRow])
-            .select()
-            .single();
-          if (retryRes.error) throw retryRes.error;
-          cc = retryRes.data;
-          if (cc) cc.cost_center_type = chosenType;
-        } else if (ccErr) {
-          throw ccErr;
-        }
-
+        if (ccErr) throw ccErr;
+        if (cc) cc.cost_center_type = chosenType;
         return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 
@@ -2174,39 +2308,25 @@ export async function POST(request: Request) {
         if (!validId) return noCacheResponse({ success: false, message: "Valid cost center ID is required" }, 400);
 
         const chosenType = costCenterType || type;
-        const updateRow: any = {};
-        if (code !== undefined) updateRow.code = code;
-        if (nameAr !== undefined) updateRow.name_ar = nameAr;
-        if (nameEn !== undefined) updateRow.name_en = nameEn;
-        if (parentId !== undefined) updateRow.parent_id = cleanUUID(parentId, null);
-        if (level !== undefined) updateRow.level = Number(level);
-        if (isActive !== undefined) updateRow.is_active = Boolean(isActive);
-        if (chosenType !== undefined) {
-          updateRow.cost_center_type = chosenType;
-        }
+        const rawUpdate: any = {};
+        if (code !== undefined) rawUpdate.code = code;
+        if (nameAr !== undefined) rawUpdate.name_ar = nameAr;
+        if (nameEn !== undefined) rawUpdate.name_en = nameEn;
+        if (parentId !== undefined) rawUpdate.parent_id = cleanUUID(parentId, null);
+        if (level !== undefined) rawUpdate.level = Number(level);
+        if (isActive !== undefined) rawUpdate.is_active = Boolean(isActive);
 
-        let { data: cc, error: ccErr } = await supabaseAdmin
+        const updateRow = sanitizeRowForTable("cost_centers", rawUpdate);
+
+        const { data: cc, error: ccErr } = await supabaseAdmin
           .from("cost_centers")
           .update(updateRow)
           .eq("id", validId)
           .select()
           .single();
 
-        if (ccErr && (ccErr.message?.includes("cost_center_type") || ccErr.code === "PGRST204" || ccErr.message?.includes("schema cache"))) {
-          delete updateRow.cost_center_type;
-          const retryRes = await supabaseAdmin
-            .from("cost_centers")
-            .update(updateRow)
-            .eq("id", validId)
-            .select()
-            .single();
-          if (retryRes.error) throw retryRes.error;
-          cc = retryRes.data;
-          if (cc && chosenType) cc.cost_center_type = chosenType;
-        } else if (ccErr) {
-          throw ccErr;
-        }
-
+        if (ccErr) throw ccErr;
+        if (cc && chosenType) cc.cost_center_type = chosenType;
         return noCacheResponse({ success: true, data: mapCostCenter(cc) });
       }
 

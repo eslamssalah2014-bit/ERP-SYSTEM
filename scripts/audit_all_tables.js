@@ -1,48 +1,73 @@
-const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require("@supabase/supabase-js");
+const fs = require("fs");
+const path = require("path");
 
-const envPath = path.resolve(__dirname, '../.env.local');
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf8');
-  envContent.split('\n').forEach(line => {
-    const match = line.match(/^\s*([\w_]+)\s*=\s*(.*)?\s*$/);
-    if (match) {
-      const key = match[1];
-      let value = match[2] || '';
-      value = value.trim().replace(/^['"]|['"]$/g, '');
-      process.env[key] = value;
-    }
+function getEnvVars() {
+  const envPath = path.join(__dirname, "..", ".env.local");
+  const content = fs.readFileSync(envPath, "utf-8");
+  const env = {};
+  content.split("\n").forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const [k, ...v] = trimmed.split("=");
+    if (k && v) env[k.trim()] = v.join("=").trim().replace(/^["']|["']$/g, "");
   });
+  return env;
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+async function auditAllTables() {
+  const env = getEnvVars();
+  const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false }
+  });
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+  const tables = [
+    "organizations",
+    "branches",
+    "users",
+    "customers",
+    "customer_categories",
+    "suppliers",
+    "warehouses",
+    "product_categories",
+    "product_units",
+    "products",
+    "product_warehouse_stock",
+    "cost_centers",
+    "accounts",
+    "treasury_accounts",
+    "cash_receipts",
+    "cash_payments",
+    "check_records",
+    "sales_invoices",
+    "sales_invoice_items",
+    "sales_returns",
+    "purchase_invoices",
+    "purchase_invoice_items",
+    "purchase_returns",
+    "journal_entries",
+    "journal_lines",
+    "stock_movements",
+    "audit_logs"
+  ];
 
-const tables = [
-  'organizations', 'branches', 'users', 'accounts', 'cost_centers',
-  'warehouses', 'product_categories', 'product_units', 'products',
-  'product_warehouse_stock', 'stock_movements', 'customers', 'suppliers',
-  'sales_invoices', 'sales_invoice_items', 'purchase_invoices', 'purchase_invoice_items',
-  'treasury_accounts', 'cash_receipts', 'cash_payments', 'check_records',
-  'journal_entries', 'journal_lines', 'audit_logs', 'product_change_history', 'period_closings'
-];
+  const schemaMap = {};
 
-async function auditAll() {
-  console.log("=== SUPABASE DATABASE PHYSICAL TABLES & COLUMNS AUDIT ===");
-  for (const table of tables) {
-    const { data, error } = await supabase.from(table).select('*').limit(1);
-    if (error) {
-      console.log(`❌ Table [${table}]: ERROR -> ${error.message}`);
-    } else if (data.length > 0) {
-      console.log(`✅ Table [${table}]: (${Object.keys(data[0]).length} cols) -> ${Object.keys(data[0]).join(', ')}`);
-    } else {
-      // test columns by trying an empty match
-      console.log(`✅ Table [${table}]: (empty table)`);
+  for (const t of tables) {
+    try {
+      const { data, error } = await supabase.from(t).select("*").limit(1);
+      if (error) {
+        schemaMap[t] = { exists: false, error: error.message };
+      } else {
+        const cols = data && data[0] ? Object.keys(data[0]) : [];
+        schemaMap[t] = { exists: true, columns: cols };
+      }
+    } catch (err) {
+      schemaMap[t] = { exists: false, error: err.message };
     }
   }
+
+  console.log(JSON.stringify(schemaMap, null, 2));
 }
 
-auditAll().catch(console.error);
+auditAllTables();

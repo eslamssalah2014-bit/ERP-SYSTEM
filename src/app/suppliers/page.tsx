@@ -187,8 +187,9 @@ export default function SuppliersPage() {
       await updateSupplier(editSupplier.id, {
         nameAr: trimmedNameAr,
         nameEn: editNameEn.trim() || trimmedNameAr,
-        code: editCode,
+        code: editCode.trim(),
         openingBalance: Number(editOpeningBalance) || 0,
+        currentBalance: Number(editOpeningBalance) || 0,
         mobile: editMobile.trim(),
         email: editEmail.trim(),
         address: editAddress.trim(),

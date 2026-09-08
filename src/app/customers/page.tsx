@@ -206,9 +206,10 @@ export default function CustomersPage() {
       await updateCustomer(editCustomer.id, {
         nameAr: trimmedNameAr,
         nameEn: editNameEn.trim() || trimmedNameAr,
-        code: editCode,
+        code: editCode.trim(),
         categoryId: editCategoryId || undefined,
         categoryName: selectedCat?.nameAr || undefined,
+        currentBalance: Number(editOpeningBalance) || 0,
         openingBalance: Number(editOpeningBalance) || 0,
         mobile: editMobile.trim(),
         email: editEmail.trim(),
