@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import { computeAging } from "@/lib/accounting-engine";
@@ -17,7 +18,8 @@ export default function CustomersPage() {
   const {
     customers, customerCategories, salesInvoices,
     addCustomer, updateCustomer, deleteCustomer,
-    organization, locale, showToast, isLoadingData
+    organization, locale, showToast, isLoadingData,
+    getCustomerStatement
   } = useERP();
 
   const isAr = locale === "ar";
@@ -266,7 +268,15 @@ export default function CustomersPage() {
     return true;
   });
 
-  const totalReceivables = customers.reduce((sum, c) => sum + (c.currentBalance || 0), 0);
+  const getCustomerBalance = (c: Customer) => {
+    try {
+      const stmt = getCustomerStatement(c.id);
+      if (stmt) return stmt.closingBalance;
+    } catch (e) {}
+    return Number(c.currentBalance) || 0;
+  };
+
+  const totalReceivables = customers.reduce((sum, c) => sum + getCustomerBalance(c), 0);
 
   if (isLoadingData) {
     return <TableSkeleton rows={6} columns={8} summaryCards={4} isAr={isAr} />;
@@ -289,21 +299,21 @@ export default function CustomersPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <a
+          <Link
             href="/customers/statement"
             className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer"
           >
             <FileText className="w-4 h-4 text-emerald-400" />
             <span>{isAr ? "كشف حساب عميل" : "Statement"}</span>
-          </a>
+          </Link>
 
-          <a
+          <Link
             href="/customers/report"
             className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-sky-400" />
             <span>{isAr ? "تقرير أرصدة العملاء" : "Balances Report"}</span>
-          </a>
+          </Link>
 
           <button
             onClick={handleOpenAddModal}
@@ -410,17 +420,17 @@ export default function CustomersPage() {
                         {formatCurrency(c.openingBalance || 0, organization.currency, locale)}
                       </td>
                       <td className="p-3.5 text-center font-mono font-black text-rose-400">
-                        {formatCurrency(c.currentBalance, organization.currency, locale)}
+                        {formatCurrency(getCustomerBalance(c), organization.currency, locale)}
                       </td>
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <a
+                          <Link
                             href={`/customers/statement?id=${c.id}`}
                             title={isAr ? "كشف الحساب" : "Statement"}
                             className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all cursor-pointer"
                           >
                             <FileText className="w-3.5 h-3.5" />
-                          </a>
+                          </Link>
                           <button
                             onClick={() => setViewCustomer(c)}
                             title={isAr ? "عرض التفاصيل" : "View"}
@@ -723,19 +733,19 @@ export default function CustomersPage() {
               <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800">
                 <span className="text-slate-500 block text-[11px]">{isAr ? "الرصيد المستحق" : "Current Balance"}</span>
                 <span className="text-xs font-mono font-black text-rose-400">
-                  {formatCurrency(viewCustomer.currentBalance, organization.currency, locale)}
+                  {formatCurrency(getCustomerBalance(viewCustomer), organization.currency, locale)}
                 </span>
               </div>
             </div>
 
             <div className="flex justify-between items-center pt-3 border-t border-slate-800">
-              <a
+              <Link
                 href={`/customers/statement?id=${viewCustomer.id}`}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>{isAr ? "عرض كشف الحساب الكامل" : "View Statement"}</span>
-              </a>
+              </Link>
 
               <button
                 onClick={() => setViewCustomer(null)}

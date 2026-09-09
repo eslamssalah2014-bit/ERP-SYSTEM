@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency } from "@/lib/utils";
 import TableSkeleton from "@/components/ui/TableSkeleton";
@@ -244,13 +245,13 @@ export default function CustomerBalancesReportPage() {
                     {formatCurrency(r.currentBalance, organization.currency, locale)}
                   </td>
                   <td className="p-3 text-center print:hidden">
-                    <a
+                    <Link
                       href={`/customers/statement?id=${r.customerId}`}
                       className="px-2.5 py-1 bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1 text-[11px] font-bold cursor-pointer"
                     >
                       <FileText className="w-3 h-3" />
                       <span>{isAr ? "كشف" : "View"}</span>
-                    </a>
+                    </Link>
                   </td>
                 </tr>
               ))}

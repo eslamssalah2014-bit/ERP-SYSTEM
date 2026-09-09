@@ -11,22 +11,36 @@ import {
   ArrowUpRight, ArrowDownLeft, ShieldCheck
 } from "lucide-react";
 
-function CustomerStatementContent() {
+export function CustomerStatementContent({ paramId }: { paramId?: string }) {
   const { customers, getCustomerStatement, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
   const searchParams = useSearchParams();
 
-  const initialCustomerId = searchParams.get("id") || customers[0]?.id || "";
-  const [selectedCustomerId, setSelectedCustomerId] = useState(initialCustomerId);
+  const queryId = paramId || searchParams.get("id") || searchParams.get("customerId") || searchParams.get("code") || "";
+  const [selectedCustomerId, setSelectedCustomerId] = useState(queryId || customers[0]?.id || "");
   const [fromDate, setFromDate] = useState("2026-01-01");
   const [toDate, setToDate] = useState(new Date().toISOString().split("T")[0]);
+
+  // Synchronize state if URL params change
+  React.useEffect(() => {
+    if (queryId) {
+      setSelectedCustomerId(queryId);
+    }
+  }, [queryId]);
 
   if (isLoadingData) {
     return <TableSkeleton rows={6} columns={7} summaryCards={4} isAr={isAr} />;
   }
 
   const selectedCustomer = useMemo(() => {
-    return customers.find(c => c.id === selectedCustomerId) || customers[0];
+    if (!selectedCustomerId || customers.length === 0) return customers[0];
+    const target = selectedCustomerId.trim().toLowerCase();
+    return customers.find(c =>
+      c.id.toLowerCase() === target ||
+      c.code.toLowerCase() === target ||
+      c.code.toLowerCase() === ("cust-" + target.padStart(4, "0")).toLowerCase() ||
+      c.code.replace(/^CUST-/i, "").replace(/^0+/, "") === target.replace(/^CUST-/i, "").replace(/^0+/, "")
+    ) || customers[0];
   }, [customers, selectedCustomerId]);
 
   const statement = useMemo(() => {

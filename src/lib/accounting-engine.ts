@@ -1328,17 +1328,26 @@ export function computeTrialBalance(
 
   const orderedAccounts = buildHierarchicalAccountTree(accounts);
 
-  // Level 4 leaf accounts determine the system balanced totals
-  const leafAccounts = orderedAccounts.filter(a => a.level === 4 || !orderedAccounts.some(sub => sub.parentId === a.id));
-  leafAccounts.forEach(leaf => {
-    const r = summary.rows.find(row => row.accountCode === leaf.code);
+  // Level 4 leaf accounts (and non-leaf accounts with direct entries) determine system balanced totals
+  orderedAccounts.forEach(acc => {
+    const isLeaf = acc.level === 4 || !orderedAccounts.some(sub => sub.parentId === acc.id);
+    const r = summary.rows.find(row => row.accountCode === acc.code);
     if (r) {
-      grandOpenDr += r.openingDebit;
-      grandOpenCr += r.openingCredit;
-      grandPerDr += r.periodDebit;
-      grandPerCr += r.periodCredit;
-      grandEndDr += r.endingDebit;
-      grandEndCr += r.endingCredit;
+      if (isLeaf) {
+        grandOpenDr += r.openingDebit;
+        grandOpenCr += r.openingCredit;
+        grandPerDr += r.periodDebit;
+        grandPerCr += r.periodCredit;
+        grandEndDr += r.endingDebit;
+        grandEndCr += r.endingCredit;
+      } else if (r.periodDebit > 0 || r.periodCredit > 0 || r.openingDebit > 0 || r.openingCredit > 0) {
+        grandOpenDr += r.openingDebit;
+        grandOpenCr += r.openingCredit;
+        grandPerDr += r.periodDebit;
+        grandPerCr += r.periodCredit;
+        grandEndDr += r.endingDebit;
+        grandEndCr += r.endingCredit;
+      }
     }
   });
 
@@ -1371,8 +1380,19 @@ export function computeTrialBalance(
           endCr = r.endingCredit;
         }
       } else {
+        // Rollup direct postings on this parent account if any
+        const selfR = summary.rows.find(row => row.accountCode === acc.code);
+        if (selfR) {
+          openDr += selfR.openingDebit;
+          openCr += selfR.openingCredit;
+          perDr += selfR.periodDebit;
+          perCr += selfR.periodCredit;
+          endDr += selfR.endingDebit;
+          endCr += selfR.endingCredit;
+        }
+
         // Rollup from descendants
-        const descendants = accounts.filter(a => a.code.startsWith(acc.code) && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
+        const descendants = accounts.filter(a => a.code.startsWith(acc.code) && a.code !== acc.code && (a.level === 4 || !accounts.some(sub => sub.parentId === a.id)));
         descendants.forEach(d => {
           const r = summary.rows.find(row => row.accountCode === d.code);
           if (r) {

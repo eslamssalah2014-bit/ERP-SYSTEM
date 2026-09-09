@@ -23,17 +23,65 @@ export default function Dashboard() {
   const {
     locale, organization, salesInvoices, purchaseInvoices,
     products, customers, suppliers, treasuryAccounts, checks,
-    categories, updateCheckStatus, isLoadingData
+    categories, updateCheckStatus, isLoadingData, accounts,
+    journalEntries, getCustomerStatement
   } = useERP();
 
   const isAr = locale === "ar";
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
 
-  // Financial KPI calculations (Strictly dynamic from live state, 0.00 on empty DB)
+  // Financial KPI calculations (Strictly dynamic from single accounting source of truth)
   const totalSales = useMemo(() => salesInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0), [salesInvoices]);
   const totalPurchases = useMemo(() => purchaseInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0), [purchaseInvoices]);
-  const totalTreasuryBalance = useMemo(() => treasuryAccounts.reduce((sum, t) => sum + (Number(t.balance) || 0), 0), [treasuryAccounts]);
-  const totalReceivables = useMemo(() => customers.reduce((sum, c) => sum + (Number(c.currentBalance) || 0), 0), [customers]);
+
+  // Cash & Treasury KPI: derived directly from General Ledger Cash accounts (1101)
+  const totalTreasuryBalance = useMemo(() => {
+    const cashAccs = accounts.filter(a => a.code.startsWith("1101"));
+    if (cashAccs.length > 0 && journalEntries.length > 0) {
+      let netCash = 0;
+      cashAccs.forEach(acc => {
+        let dr = 0;
+        let cr = 0;
+        journalEntries.forEach(entry => {
+          entry.lines?.forEach(l => {
+            if (l.accountId === acc.id || l.accountCode === acc.code) {
+              dr += Number(l.debit) || 0;
+              cr += Number(l.credit) || 0;
+            }
+          });
+        });
+        if (acc.level === 4 || !cashAccs.some(sub => sub.parentId === acc.id)) {
+          netCash += (dr - cr);
+        }
+      });
+      if (netCash !== 0) return netCash;
+    }
+    return treasuryAccounts.reduce((sum, t) => sum + (Number(t.balance) || 0), 0);
+  }, [accounts, journalEntries, treasuryAccounts]);
+
+  // Receivables KPI: derived directly from GL Accounts Receivable (1102001) / Customer Statements
+  const totalReceivables = useMemo(() => {
+    const arAcc = accounts.find(a => a.code === "1102001") || accounts.find(a => a.code === "1102");
+    if (arAcc && journalEntries.length > 0) {
+      let dr = 0;
+      let cr = 0;
+      journalEntries.forEach(entry => {
+        entry.lines?.forEach(l => {
+          if (l.accountId === arAcc.id || l.accountCode === arAcc.code) {
+            dr += Number(l.debit) || 0;
+            cr += Number(l.credit) || 0;
+          }
+        });
+      });
+      const netAR = dr - cr;
+      if (netAR !== 0) return netAR;
+    }
+    return customers.reduce((sum, c) => {
+      const stmt = getCustomerStatement(c.id);
+      return sum + (stmt ? stmt.closingBalance : (Number(c.currentBalance) || 0));
+    }, 0);
+  }, [accounts, journalEntries, customers, getCustomerStatement]);
+
   const estimatedGrossProfit = totalSales - totalPurchases;
 
   // Low stock products
