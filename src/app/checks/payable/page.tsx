@@ -38,6 +38,21 @@ export default function PayableChecksPage() {
   const [printData, setPrintData] = useState<VoucherPrintData | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
+  // Source bank names ONLY from Chart of Accounts & Treasury accounts (no hardcoding, no phantom data)
+  const availableBanks = React.useMemo(() => {
+    const set = new Set<string>();
+    treasuryAccounts.forEach(t => {
+      if (t.bankName && t.bankName.trim()) set.add(t.bankName.trim());
+    });
+    accounts.forEach(a => {
+      if (a.code.startsWith("1101002") || a.code.startsWith("1101") || a.nameAr.includes("بنك") || a.nameEn?.toLowerCase().includes("bank")) {
+        const cleanName = a.nameAr.replace(/^(حسابات|حساب|أرصدة)\s*/, "").trim();
+        if (cleanName && cleanName.length > 2) set.add(cleanName);
+      }
+    });
+    return Array.from(set);
+  }, [treasuryAccounts, accounts]);
+
   // Form State
   const [formData, setFormData] = useState({
     checkNumber: "",
@@ -57,10 +72,10 @@ export default function PayableChecksPage() {
     setFormError(null);
     const defaultAcc = accounts.find(a => a.code === "2101002" || a.code === "2101")?.id || accounts[0]?.id || "";
     setFormData({
-      checkNumber: "CHK-PAY-" + Date.now().toString().slice(-6),
-      bankName: isAr ? "البنك الأهلي المصري" : "National Bank of Egypt",
-      supplierId: suppliers[0]?.id || "",
-      partyName: suppliers[0]?.nameAr || "",
+      checkNumber: "",
+      bankName: "",
+      supplierId: "",
+      partyName: "",
       accountId: defaultAcc,
       costCenterId: "",
       amount: 0,
@@ -113,6 +128,21 @@ export default function PayableChecksPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+
+    if (!formData.checkNumber.trim()) {
+      setFormError(isAr ? "يرجى إدخال رقم الشيك" : "Please enter check number");
+      return;
+    }
+
+    if (!formData.bankName.trim()) {
+      setFormError(isAr ? "يرجى تحديد البنك المسحوب عليه" : "Please specify issuing bank");
+      return;
+    }
+
+    if (!formData.supplierId && !formData.partyName.trim()) {
+      setFormError(isAr ? "يرجى اختيار مورد أو كتابة اسم المستفيد" : "Please select supplier or enter payee name");
+      return;
+    }
 
     if (formData.amount <= 0) {
       setFormError(isAr ? "يرجى تحديد مبلغ صحيح للشيك" : "Please enter a valid check amount");
@@ -410,20 +440,28 @@ export default function PayableChecksPage() {
               <input
                 type="text"
                 value={formData.checkNumber}
+                placeholder={isAr ? "أدخل رقم الشيك يدوياً..." : "Enter check # manually..."}
                 onChange={e => setFormData({ ...formData, checkNumber: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-amber-500"
                 required
               />
             </div>
             <div>
               <label className="block text-slate-400 mb-1">{isAr ? "البنك المسحوب عليه:" : "Issuing Bank:"}</label>
               <input
+                list="payable-banks-list"
                 type="text"
                 value={formData.bankName}
+                placeholder={isAr ? "اختر أو ابحث عن البنك..." : "Select / search bank..."}
                 onChange={e => setFormData({ ...formData, bankName: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500"
                 required
               />
+              <datalist id="payable-banks-list">
+                {availableBanks.map(b => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
             </div>
           </div>
 

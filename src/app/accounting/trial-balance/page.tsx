@@ -4,6 +4,8 @@ import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { computeTrialBalance } from "@/lib/accounting-engine";
 import { formatCurrency } from "@/lib/utils";
+import { exportTableToExcel } from "@/lib/excel-export";
+import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
 import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   Scale, CheckCircle2, AlertTriangle, Printer, Download,
@@ -46,42 +48,12 @@ export default function TrialBalancePage() {
     });
   }, [tbData.rows, selectedType, searchQuery]);
 
-  // Export to CSV
-  const handleExportCSV = () => {
-    const headers = [
-      isAr ? "كود الحساب" : "Account Code",
-      isAr ? "اسم الحساب" : "Account Name",
-      isAr ? "المستوى" : "Level",
-      isAr ? "النوع" : "Type",
-      isAr ? "مدين افتتاحي" : "Opening Debit",
-      isAr ? "دائن افتتاحي" : "Opening Credit",
-      isAr ? "حركات مدينة" : "Movement Debit",
-      isAr ? "حركات دائنة" : "Movement Credit",
-      isAr ? "رصيد ختامي مدين" : "Closing Debit",
-      isAr ? "رصيد ختامي دائن" : "Closing Credit",
-    ];
-
-    const rows = filteredRows.map((r) => [
-      `"${r.accountCode}"`,
-      `"${isAr ? r.accountNameAr : r.accountNameEn}"`,
-      r.level,
-      `"${r.accountType}"`,
-      r.openingDebit.toFixed(2),
-      r.openingCredit.toFixed(2),
-      r.periodDebit.toFixed(2),
-      r.periodCredit.toFixed(2),
-      r.endingDebit.toFixed(2),
-      r.endingCredit.toFixed(2),
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "Trial_Balance_6_Columns.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Export to genuine Excel XLSX
+  const handleExportExcel = () => {
+    exportTableToExcel("trial-balance-table", {
+      filename: `ميزان_المراجعة_${new Date().toISOString().split("T")[0]}`,
+      sheetName: isAr ? "ميزان المراجعة" : "Trial Balance"
+    });
   };
 
   if (isLoadingData) {
@@ -90,8 +62,19 @@ export default function TrialBalancePage() {
 
   return (
     <div className="space-y-6">
+      {/* Printable Report Header */}
+      <ReportPrintHeader
+        organization={organization}
+        reportTitleAr="ميزان المراجعة بالأرصدة والمجاميع (المصفوفة السداسية)"
+        reportTitleEn="Trial Balance (6-Column Matrix: Opening, Movements, Closing)"
+        dateFrom={fromDate}
+        dateTo={toDate}
+        locale={locale}
+        extraMeta={selectedLevel !== "all" ? `المستوى: L${selectedLevel}` : "كافة المستويات الشجرية"}
+      />
+
       {/* Page Header */}
-      <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 print:hidden">
         <div>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-900/40">
@@ -121,11 +104,11 @@ export default function TrialBalancePage() {
           </button>
 
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
           >
-            <Download className="w-4 h-4" />
-            <span>{isAr ? "تصدير Excel" : "Export CSV"}</span>
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>{isAr ? "تصدير Excel (XLSX)" : "Export Excel"}</span>
           </button>
         </div>
       </div>
@@ -133,7 +116,7 @@ export default function TrialBalancePage() {
       {/* Balanced Indicator Banner */}
       <div
         className={
-          "p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-bold " +
+          "p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-bold print:hidden " +
           (tbData.isBalanced
             ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
             : "bg-rose-500/10 border-rose-500/20 text-rose-400")
@@ -169,7 +152,7 @@ export default function TrialBalancePage() {
       </div>
 
       {/* Filters Toolbar */}
-      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs print:hidden">
         <div>
           <label className="block text-slate-400 font-bold mb-1">{isAr ? "المستوى الشجري:" : "Hierarchy Level:"}</label>
           <select
@@ -225,7 +208,7 @@ export default function TrialBalancePage() {
       {/* 6-Column Matrix Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-right border-collapse">
+          <table id="trial-balance-table" className="w-full text-xs text-right border-collapse">
             <thead>
               {/* Group Header */}
               <tr className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 text-center">
@@ -335,6 +318,9 @@ export default function TrialBalancePage() {
           </table>
         </div>
       </div>
+
+      {/* Printable Report Footer */}
+      <ReportPrintFooter organization={organization} />
     </div>
   );
 }

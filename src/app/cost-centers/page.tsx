@@ -124,6 +124,51 @@ export default function CostCentersPage() {
     }
   };
 
+  // Filter & Hierarchy State
+  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "sub" | "expense" | "revenue">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Group into structured hierarchical tree
+  const hierarchicalCostCenters = React.useMemo(() => {
+    const roots = costCenters.filter(c => !c.parentId || !costCenters.some(p => p.id === c.parentId));
+    const result: Array<{ cc: CostCenter; parent?: CostCenter; childrenCount: number }> = [];
+    
+    roots.forEach(root => {
+      const children = costCenters.filter(c => c.parentId === root.id);
+      result.push({ cc: root, childrenCount: children.length });
+      children.forEach(child => {
+        result.push({ cc: child, parent: root, childrenCount: 0 });
+      });
+    });
+
+    // Also include any orphan centers if any
+    const handledIds = new Set(result.map(r => r.cc.id));
+    costCenters.forEach(cc => {
+      if (!handledIds.has(cc.id)) {
+        result.push({ cc, childrenCount: 0 });
+      }
+    });
+
+    return result;
+  }, [costCenters]);
+
+  const filteredCostCenters = React.useMemo(() => {
+    return hierarchicalCostCenters.filter(({ cc }) => {
+      const matchesSearch = 
+        cc.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cc.nameAr.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cc.nameEn?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      if (!matchesSearch) return false;
+
+      if (typeFilter === "main") return !cc.parentId;
+      if (typeFilter === "sub") return !!cc.parentId;
+      if (typeFilter === "expense") return (cc.costCenterType || cc.type) !== "revenue";
+      if (typeFilter === "revenue") return (cc.costCenterType || cc.type) === "revenue";
+      return true;
+    });
+  }, [hierarchicalCostCenters, searchQuery, typeFilter]);
+
   if (isLoadingData) {
     return <TableSkeleton rows={5} columns={6} summaryCards={0} isAr={isAr} />;
   }
@@ -135,89 +180,176 @@ export default function CostCentersPage() {
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2.5">
             <Layers className="w-6 h-6 text-emerald-400" />
-            <span>{isAr ? "دليل مراكز التكلفة ومحاسبة المسؤولية" : "Cost Centers Structure"}</span>
+            <span>{isAr ? "دليل وهيكل مراكز التكلفة" : "Cost Centers Directory & Hierarchy"}</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            {isAr ? "الهيكل الهرمي لمراكز التكلفة لتوجيه المصروفات والإيرادات التحليلية" : "Hierarchical cost center dimensions for analytical reporting"}
+            {isAr ? "الهيكل الهرمي للشجرة (مراكز رئيسية وفرعية) لتوجيه المصروفات والإيرادات التحليلية" : "Hierarchical parent-child tree structure for multi-dimensional cost accounting"}
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setCode("CC-" + (costCenters.length + 1).toString().padStart(2, "0"));
-            setIsAddModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{isAr ? "إضافة مركز تكلفة جديد" : "Add Cost Center"}</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <a
+            href="/cost-centers/report"
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold rounded-xl border border-slate-700 transition-all shadow-sm"
+          >
+            <Layers className="w-4 h-4" />
+            <span>{isAr ? "تقرير حركة مراكز التكلفة التفصيلي" : "Movement Report"}</span>
+          </a>
+
+          <button
+            onClick={() => {
+              setCode("CC-" + (costCenters.length + 1).toString().padStart(2, "0"));
+              setIsAddModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isAr ? "إضافة مركز تكلفة جديد" : "Add Cost Center"}</span>
+          </button>
+        </div>
       </div>
 
-      {/* Cost Centers Table */}
+      {/* Filter & Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setTypeFilter("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "all" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "كافة المراكز" : "All"} ({costCenters.length})
+          </button>
+          <button
+            onClick={() => setTypeFilter("main")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "main" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "مراكز رئيسية فقط (L1)" : "Main Centers (L1)"}
+          </button>
+          <button
+            onClick={() => setTypeFilter("sub")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "sub" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "مراكز فرعية فقط (L2)" : "Sub Centers (L2)"}
+          </button>
+          <button
+            onClick={() => setTypeFilter("expense")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "expense" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "تكاليف ومصروفات" : "Expenses"}
+          </button>
+          <button
+            onClick={() => setTypeFilter("revenue")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "revenue" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "إيرادية" : "Revenues"}
+          </button>
+        </div>
+
+        <div className="relative min-w-[240px]">
+          <input
+            type="text"
+            placeholder={isAr ? "بحث بالكود أو الاسم..." : "Search code or name..."}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+      </div>
+
+      {/* Cost Centers Hierarchical Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-right border-collapse">
             <thead>
               <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
                 <th className="p-3.5 rounded-r-lg font-mono">{isAr ? "كود المركز" : "Code"}</th>
-                <th className="p-3.5">{isAr ? "اسم مركز التكلفة" : "Cost Center Name"}</th>
+                <th className="p-3.5">{isAr ? "اسم مركز التكلفة والتسلسل الهرمي" : "Cost Center Name & Hierarchy"}</th>
                 <th className="p-3.5 text-center">{isAr ? "طبيعة المركز" : "Type"}</th>
-                <th className="p-3.5 text-center font-mono">{isAr ? "المستوى" : "Level"}</th>
+                <th className="p-3.5 text-center">{isAr ? "التصنيف الهرمي" : "Level"}</th>
                 <th className="p-3.5 text-center">{isAr ? "الحالة" : "Status"}</th>
                 <th className="p-3.5 rounded-l-lg text-center">{isAr ? "الإجراءات" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {costCenters.map(cc => (
-                <tr key={cc.id} className="hover:bg-slate-800/30">
-                  <td className="p-3.5 font-mono font-bold text-emerald-400">{cc.code}</td>
-                  <td className="p-3.5">
-                    <div
-                      className="font-bold text-white"
-                      style={{ paddingRight: isAr ? ((cc.level - 1) * 20) + "px" : undefined, paddingLeft: !isAr ? ((cc.level - 1) * 20) + "px" : undefined }}
-                    >
-                      {cc.level > 1 && <span className="text-slate-500 font-normal ml-1">↳</span>}
-                      <span>{isAr ? cc.nameAr : cc.nameEn}</span>
-                    </div>
-                  </td>
-                  <td className="p-3.5 text-center">
-                    {cc.costCenterType === "revenue" || cc.type === "revenue" ? (
+              {filteredCostCenters.map(({ cc, parent, childrenCount }) => {
+                const isChild = !!parent;
+                return (
+                  <tr key={cc.id} className={`hover:bg-slate-800/30 ${!isChild ? "bg-slate-850/40" : ""}`}>
+                    <td className="p-3.5 font-mono font-bold text-emerald-400">
+                      {cc.code}
+                    </td>
+                    <td className="p-3.5">
+                      <div
+                        className="flex items-center gap-2"
+                        style={{ paddingRight: isChild ? "32px" : "0px", paddingLeft: isChild ? "0px" : "0px" }}
+                      >
+                        {isChild ? (
+                          <>
+                            <span className="text-slate-500 font-mono text-sm">└──</span>
+                            <span className="font-semibold text-white">{isAr ? cc.nameAr : cc.nameEn}</span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                              {isAr ? `تابع لـ: ${parent.nameAr}` : `Sub of: ${parent.nameEn}`}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-white text-sm">{isAr ? cc.nameAr : cc.nameEn}</span>
+                            {childrenCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                {childrenCount} {isAr ? "مراكز فرعية" : "sub-centers"}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {cc.costCenterType === "revenue" || cc.type === "revenue" ? (
+                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
+                          {isAr ? "إيرادي" : "Revenue"}
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-xl font-bold border border-blue-500/20 text-[10px]">
+                          {isAr ? "تكاليف ومصروفات" : "Expense"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {isChild ? (
+                        <span className="px-2 py-0.5 bg-slate-800 text-amber-300 font-mono text-[10px] font-bold rounded-md border border-amber-500/20">
+                          {isAr ? "فرعي (L2)" : "Sub (L2)"}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-300 font-mono text-[10px] font-bold rounded-md border border-emerald-500/20">
+                          {isAr ? "رئيسي (L1)" : "Main (L1)"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center">
                       <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
-                        {isAr ? "إيرادي" : "Revenue"}
+                        {isAr ? "نشط" : "Active"}
                       </span>
-                    ) : (
-                      <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-xl font-bold border border-blue-500/20 text-[10px]">
-                        {isAr ? "تكاليف ومصروفات" : "Expense"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3.5 text-center font-mono text-slate-400">L{cc.level}</td>
-                  <td className="p-3.5 text-center">
-                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
-                      {isAr ? "نشط" : "Active"}
-                    </span>
-                  </td>
-                  <td className="p-3.5 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => handleOpenEdit(cc)}
-                        title={isAr ? "تعديل المركز" : "Edit"}
-                        className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTargetId(cc.id)}
-                        title={isAr ? "حذف المركز" : "Delete"}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => handleOpenEdit(cc)}
+                          title={isAr ? "تعديل المركز" : "Edit"}
+                          className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all cursor-pointer"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTargetId(cc.id)}
+                          title={isAr ? "حذف المركز" : "Delete"}
+                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

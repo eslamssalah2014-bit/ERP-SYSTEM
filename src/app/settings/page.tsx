@@ -21,9 +21,12 @@ export default function SettingsPage() {
   const [nameAr, setNameAr] = useState(organization.nameAr);
   const [nameEn, setNameEn] = useState(organization.nameEn);
   const [taxNumber, setTaxNumber] = useState(organization.taxNumber);
+  const [commercialRegister, setCommercialRegister] = useState(organization.commercialRegister || "");
+  const [country, setCountry] = useState(organization.country || "EG");
   const [currency, setCurrency] = useState<Currency>(organization.currency);
   const [defaultVatRate, setDefaultVatRate] = useState(organization.defaultVatRate);
   const [address, setAddress] = useState(organization.address || "");
+  const [logoUrl, setLogoUrl] = useState(organization.logoUrl || "");
   const [saved, setSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -42,9 +45,12 @@ export default function SettingsPage() {
     setNameAr(organization.nameAr);
     setNameEn(organization.nameEn);
     setTaxNumber(organization.taxNumber);
+    setCommercialRegister(organization.commercialRegister || "");
+    setCountry(organization.country || "EG");
     setCurrency(organization.currency);
     setDefaultVatRate(organization.defaultVatRate);
     setAddress(organization.address || "");
+    setLogoUrl(organization.logoUrl || "");
   }, [organization]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -52,19 +58,23 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       await updateOrganization({
-        nameAr,
-        nameEn,
-        taxNumber,
+        id: organization.id,
+        nameAr: nameAr.trim(),
+        nameEn: nameEn.trim(),
+        taxNumber: taxNumber.trim(),
+        commercialRegister: commercialRegister.trim(),
+        country: country as any,
         currency,
         defaultVatRate,
-        address,
+        address: address.trim(),
+        logoUrl: logoUrl.trim() || undefined,
       });
       setSaved(true);
-      showToast(isAr ? "تم حفظ إعدادات المنشأة بنجاح" : "Settings saved", "success");
+      showToast(isAr ? "تم حفظ إعدادات المنشأة وتأكيد المزامنة مع قاعدة البيانات" : "Settings saved successfully", "success");
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       console.error("Failed to save settings:", err);
-      showToast(err?.message || "Failed to save settings", "error");
+      showToast(err?.message || (isAr ? "فشل حفظ إعدادات المنشأة" : "Failed to save settings"), "error");
     } finally {
       setIsSaving(false);
     }
@@ -229,7 +239,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الرقم الضريبي الموحد *" : "Tax / VAT ID *"}</label>
               <input
@@ -240,6 +250,31 @@ export default function SettingsPage() {
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
               />
             </div>
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رقم السجل التجاري" : "Commercial Register"}</label>
+              <input
+                type="text"
+                value={commercialRegister}
+                placeholder={isAr ? "مثال: 1010987654" : "e.g. 1010987654"}
+                onChange={(e) => setCommercialRegister(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "الدولة / النطاق الجغرافي *" : "Country *"}</label>
+              <select
+                value={country}
+                onChange={(e) => setCountry(e.target.value as any)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-bold focus:outline-none focus:border-emerald-500"
+              >
+                <option value="EG">{isAr ? "مصر (Egypt - EGP / 14%)" : "Egypt (EG)"}</option>
+                <option value="SA">{isAr ? "المملكة العربية السعودية (KSA - SAR / 15%)" : "Saudi Arabia (SA)"}</option>
+                <option value="AE">{isAr ? "الإمارات العربية المتحدة (UAE - AED / 5%)" : "United Arab Emirates (AE)"}</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "العملة الأساسية للنظام *" : "Base Currency *"}</label>
               <select
@@ -254,11 +289,12 @@ export default function SettingsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "نسبة ضريبة القيمة المضافة الافتراضية *" : "Default VAT Rate % *"}</label>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "نسبة ضريبة القيمة المضافة الافتراضية (%) *" : "Default VAT Rate % *"}</label>
               <input
                 type="number"
                 min="0"
                 max="100"
+                step="0.01"
                 required
                 value={defaultVatRate}
                 onChange={(e) => setDefaultVatRate(parseFloat(e.target.value) || 0)}
@@ -267,14 +303,27 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "العنوان والمقر الرئيسي" : "Address"}</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "العنوان والمقر الرئيسي" : "Address"}</label>
+              <input
+                type="text"
+                value={address}
+                placeholder={isAr ? "المدينة، الشارع، المبنى..." : "City, street, building..."}
+                onChange={(e) => setAddress(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "رابط شعار المنشأة (Logo URL)" : "Logo URL"}</label>
+              <input
+                type="text"
+                value={logoUrl}
+                placeholder="https://example.com/logo.png"
+                onChange={(e) => setLogoUrl(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-slate-800">

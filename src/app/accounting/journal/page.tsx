@@ -4,11 +4,12 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
+import JournalVoucherPrintModal from "@/components/ui/JournalVoucherPrintModal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
-import { JournalLine } from "@/types/erp";
+import { JournalLine, JournalEntry } from "@/types/erp";
 import {
   FileText, Plus, Search, CheckCircle2, AlertTriangle,
-  Trash2, Scale, Loader2, AlertCircle
+  Trash2, Scale, Loader2, AlertCircle, Printer, Clock, ShieldCheck
 } from "lucide-react";
 
 export default function JournalPage() {
@@ -16,6 +17,8 @@ export default function JournalPage() {
   const isAr = locale === "ar";
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedPrintEntry, setSelectedPrintEntry] = useState<JournalEntry | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -150,6 +153,17 @@ export default function JournalPage() {
                 <span className="text-xs font-semibold text-slate-300">{entry.description}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedPrintEntry(entry);
+                    setIsPrintModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer shadow-sm"
+                  title={isAr ? "طباعة سند القيد المحاسبي" : "Print Journal Voucher"}
+                >
+                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isAr ? "طباعة سند القيد" : "Print Voucher"}</span>
+                </button>
                 <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-bold border border-emerald-500/20 flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" />
                   <span>{isAr ? "قيد مرحل ومتزن" : "Posted & Balanced"}</span>
@@ -185,6 +199,19 @@ export default function JournalPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Audit Trail Stamp (Item 6) */}
+            {entry.description?.includes("[تم التعديل") && (
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 text-[11px] font-sans flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="font-semibold">{entry.description.slice(entry.description.indexOf("[تم التعديل"))}</span>
+                </div>
+                <span className="text-[10px] text-amber-400/80 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  {isAr ? "أثر محاسبي معدل" : "Modified Audit Trail"}
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -357,6 +384,13 @@ export default function JournalPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Journal Voucher Print Modal (Item 7) */}
+      <JournalVoucherPrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        entry={selectedPrintEntry}
+      />
     </div>
   );
 }

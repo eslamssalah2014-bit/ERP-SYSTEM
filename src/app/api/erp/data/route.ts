@@ -146,12 +146,9 @@ export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
     "created_by", "created_at"
   ],
   check_records: [
-    "id", "organization_id", "branch_id", "check_number", "type",
-    "party_name", "customer_id", "supplier_id", "account_id",
-    "cost_center_id", "amount", "issue_date", "due_date",
-    "collection_date", "status", "target_treasury_id", "drawee_bank",
-    "collection_bank", "voucher_number", "receipt_voucher_id",
-    "notes", "created_by", "created_at"
+    "id", "organization_id", "branch_id", "check_number", "bank_name", "type",
+    "party_name", "customer_id", "supplier_id", "amount", "issue_date", "due_date",
+    "collection_date", "status", "target_treasury_id", "notes", "created_at"
   ],
   sales_invoices: [
     "id", "organization_id", "branch_id", "invoice_number", "date",
@@ -175,7 +172,7 @@ export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
   ],
   purchase_invoice_items: [
     "id", "purchase_invoice_id", "product_id", "product_name",
-    "warehouse_id", "quantity", "unit_cost", "discount_percent",
+    "warehouse_id", "quantity", "unit_cost",
     "discount_amount", "tax_rate", "tax_amount", "total"
   ],
   journal_entries: [
@@ -191,7 +188,7 @@ export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
     "id", "organization_id", "product_id", "warehouse_id",
     "movement_type", "reference_id", "reference_number", "date",
     "quantity", "unit_cost", "total_cost", "balance_quantity",
-    "partner_id", "partner_name", "partner_type", "notes", "created_at"
+    "notes", "created_at"
   ],
   audit_logs: [
     "id", "organization_id", "user_id", "user_name", "action",
@@ -765,29 +762,36 @@ export function mapCashPayment(p: any) {
 
 export function mapCheck(chk: any) {
   if (!chk) return null;
+  const rawNotes = chk.notes || "";
+  const vMatch = rawNotes.match(/\[VOUCHER:([^\]]*)\]/);
+  const accMatch = rawNotes.match(/\[ACC:([^\]]*)\]/);
+  const ccMatch = rawNotes.match(/\[CC:([^\]]*)\]/);
+  const draweeMatch = rawNotes.match(/\[DRAWEE:([^\]]*)\]/);
+  const cleanNotes = rawNotes.replace(/\[(VOUCHER|ACC|CC|DRAWEE):[^\]]*\]/g, "").trim();
+
   return {
     id: chk.id,
     organizationId: chk.organization_id,
     branchId: chk.branch_id,
     checkNumber: chk.check_number,
-    bankName: chk.bank_name || chk.drawee_bank || "البنك الأهلي المصري",
+    bankName: chk.bank_name || (draweeMatch ? draweeMatch[1] : "") || "",
     type: chk.type,
     partyName: chk.party_name,
     customerId: chk.customer_id || undefined,
     supplierId: chk.supplier_id || undefined,
-    accountId: chk.account_id || undefined,
-    costCenterId: chk.cost_center_id || undefined,
+    accountId: chk.account_id || (accMatch ? accMatch[1] : undefined) || undefined,
+    costCenterId: chk.cost_center_id || (ccMatch ? ccMatch[1] : undefined) || undefined,
     amount: Number(chk.amount) || 0,
     issueDate: chk.issue_date,
     dueDate: chk.due_date,
     collectionDate: chk.collection_date || undefined,
     status: chk.status || "pending",
     targetTreasuryId: chk.target_treasury_id || undefined,
-    draweeBank: chk.drawee_bank || chk.bank_name || undefined,
+    draweeBank: (draweeMatch ? draweeMatch[1] : "") || chk.bank_name || undefined,
     collectionBank: chk.collection_bank || undefined,
-    voucherNumber: chk.voucher_number || undefined,
+    voucherNumber: chk.voucher_number || (vMatch ? vMatch[1] : undefined) || undefined,
     receiptVoucherId: chk.receipt_voucher_id || undefined,
-    notes: chk.notes || "",
+    notes: cleanNotes || chk.notes || "",
     createdBy: chk.created_by || "",
     createdAt: chk.created_at,
   };
@@ -976,6 +980,13 @@ export function mapJournalEntry(je: any, lines: any[] = []) {
 
 export function mapStockMovement(sm: any) {
   if (!sm) return null;
+  const rawNotes = sm.notes || "";
+  const pMatch = rawNotes.match(/\[PARTNER:([^:]*):([^:]*):([^\]]*)\]/);
+  const partnerType = sm.partner_type || (pMatch ? pMatch[1] : undefined);
+  const partnerId = sm.partner_id || (pMatch ? pMatch[2] : undefined);
+  const partnerName = sm.partner_name || (pMatch ? pMatch[3] : undefined);
+  const cleanNotes = rawNotes.replace(/\[PARTNER:[^\]]*\]/g, "").trim();
+
   return {
     id: sm.id,
     organizationId: sm.organization_id,
@@ -989,10 +1000,10 @@ export function mapStockMovement(sm: any) {
     unitCost: Number(sm.unit_cost) || 0,
     totalCost: Number(sm.total_cost) || 0,
     balanceQuantity: Number(sm.balance_quantity) || 0,
-    partnerId: sm.partner_id || undefined,
-    partnerName: sm.partner_name || undefined,
-    partnerType: sm.partner_type || undefined,
-    notes: sm.notes || "",
+    partnerId: partnerId || undefined,
+    partnerName: partnerName || undefined,
+    partnerType: (partnerType as any) || undefined,
+    notes: cleanNotes || sm.notes || "",
   };
 }
 
@@ -3420,36 +3431,39 @@ export async function POST(request: Request) {
         const {
           id, organizationId, branchId, checkNumber, bankName, type, partyName,
           customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
-          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, receiptVoucherId, notes, createdBy
+          status, targetTreasuryId, draweeBank, voucherNumber, notes, createdBy
         } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
         const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
 
-        const insertRow: any = {
+        const metaNotes = [
+          notes || "",
+          voucherNumber ? `[VOUCHER:${voucherNumber}]` : "",
+          accountId ? `[ACC:${accountId}]` : "",
+          costCenterId ? `[CC:${costCenterId}]` : "",
+          draweeBank ? `[DRAWEE:${draweeBank}]` : "",
+        ].filter(Boolean).join(" ");
+
+        const rawRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
           check_number: checkNumber || ("CHK-" + Date.now().toString().slice(-6)),
-          bank_name: bankName || draweeBank || "البنك الأهلي المصري",
+          bank_name: bankName || draweeBank || "",
           type: type || "incoming",
-          party_name: partyName || "جهة الشيك",
+          party_name: partyName || (type === "incoming" ? "عميل" : "مورد"),
           customer_id: cleanUUID(customerId, null),
           supplier_id: cleanUUID(supplierId, null),
-          account_id: cleanUUID(accountId, null),
-          cost_center_id: cleanUUID(costCenterId, null),
           amount: Number(amount) || 0,
           issue_date: issueDate || new Date().toISOString().split("T")[0],
           due_date: dueDate || issueDate || new Date().toISOString().split("T")[0],
           status: status || (type === "outgoing" ? "pending" : "in_treasury"),
           target_treasury_id: cleanUUID(targetTreasuryId, null),
-          drawee_bank: draweeBank || bankName || null,
-          collection_bank: collectionBank || null,
-          voucher_number: voucherNumber || null,
-          receipt_voucher_id: cleanUUID(receiptVoucherId, null),
-          notes: notes || null,
-          created_by: createdBy || null,
+          notes: metaNotes || null,
         };
-        if (validId) insertRow.id = validId;
+        if (validId) rawRow.id = validId;
+
+        const insertRow = sanitizeRowForTable("check_records", rawRow);
 
         const { data: chk, error: chkErr } = await supabaseAdmin
           .from("check_records")
@@ -3465,29 +3479,34 @@ export async function POST(request: Request) {
         const {
           id, checkNumber, bankName, type, partyName,
           customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
-          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, notes
+          status, targetTreasuryId, draweeBank, voucherNumber, notes
         } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid check ID is required" }, 400);
 
-        const updateRow: any = {};
-        if (checkNumber !== undefined) updateRow.check_number = checkNumber;
-        if (bankName !== undefined) updateRow.bank_name = bankName;
-        if (type !== undefined) updateRow.type = type;
-        if (partyName !== undefined) updateRow.party_name = partyName;
-        if (customerId !== undefined) updateRow.customer_id = cleanUUID(customerId, null);
-        if (supplierId !== undefined) updateRow.supplier_id = cleanUUID(supplierId, null);
-        if (accountId !== undefined) updateRow.account_id = cleanUUID(accountId, null);
-        if (costCenterId !== undefined) updateRow.cost_center_id = cleanUUID(costCenterId, null);
-        if (amount !== undefined) updateRow.amount = Number(amount);
-        if (issueDate !== undefined) updateRow.issue_date = issueDate;
-        if (dueDate !== undefined) updateRow.due_date = dueDate;
-        if (status !== undefined) updateRow.status = status;
-        if (targetTreasuryId !== undefined) updateRow.target_treasury_id = cleanUUID(targetTreasuryId, null);
-        if (draweeBank !== undefined) updateRow.drawee_bank = draweeBank;
-        if (collectionBank !== undefined) updateRow.collection_bank = collectionBank;
-        if (voucherNumber !== undefined) updateRow.voucher_number = voucherNumber;
-        if (notes !== undefined) updateRow.notes = notes;
+        const metaNotes = [
+          notes || "",
+          voucherNumber ? `[VOUCHER:${voucherNumber}]` : "",
+          accountId ? `[ACC:${accountId}]` : "",
+          costCenterId ? `[CC:${costCenterId}]` : "",
+          draweeBank ? `[DRAWEE:${draweeBank}]` : "",
+        ].filter(Boolean).join(" ");
+
+        const rawUpdate: any = {};
+        if (checkNumber !== undefined) rawUpdate.check_number = checkNumber;
+        if (bankName !== undefined || draweeBank !== undefined) rawUpdate.bank_name = bankName || draweeBank;
+        if (type !== undefined) rawUpdate.type = type;
+        if (partyName !== undefined) rawUpdate.party_name = partyName;
+        if (customerId !== undefined) rawUpdate.customer_id = cleanUUID(customerId, null);
+        if (supplierId !== undefined) rawUpdate.supplier_id = cleanUUID(supplierId, null);
+        if (amount !== undefined) rawUpdate.amount = Number(amount);
+        if (issueDate !== undefined) rawUpdate.issue_date = issueDate;
+        if (dueDate !== undefined) rawUpdate.due_date = dueDate;
+        if (status !== undefined) rawUpdate.status = status;
+        if (targetTreasuryId !== undefined) rawUpdate.target_treasury_id = cleanUUID(targetTreasuryId, null);
+        if (metaNotes) rawUpdate.notes = metaNotes;
+
+        const updateRow = sanitizeRowForTable("check_records", rawUpdate);
 
         const { data: chk, error: chkErr } = await supabaseAdmin
           .from("check_records")
@@ -3673,6 +3692,77 @@ export async function POST(request: Request) {
         if (delErr) throw delErr;
 
         return noCacheResponse({ success: true, id: validId });
+      }
+
+      case "update_journal_entry": {
+        const { id, date, description, lines, totalDebit, totalCredit, isBalanced, status } = payload;
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid journal entry ID is required" }, 400);
+
+        const updateRow: any = {};
+        if (date !== undefined) updateRow.date = date;
+        if (description !== undefined) updateRow.description = description;
+        if (totalDebit !== undefined) updateRow.total_debit = Number(totalDebit);
+        if (totalCredit !== undefined) updateRow.total_credit = Number(totalCredit);
+        if (isBalanced !== undefined) updateRow.is_balanced = Boolean(isBalanced);
+        if (status !== undefined) updateRow.status = status;
+
+        const { data: je, error: jeErr } = await supabaseAdmin
+          .from("journal_entries")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (jeErr) throw jeErr;
+
+        let mappedLines: any[] = [];
+        if (lines && Array.isArray(lines)) {
+          // Replace existing lines with updated lines
+          await supabaseAdmin.from("journal_lines").delete().eq("journal_entry_id", validId);
+
+          const lineRows = lines.map((l: any) => ({
+            id: cleanUUID(l.id, generateId()),
+            journal_entry_id: validId,
+            account_id: cleanUUID(l.accountId, "00000000-0000-0000-0000-000000000101"),
+            account_code: l.accountCode || "101",
+            account_name: l.accountName || "حساب",
+            debit: Number(l.debit) || 0,
+            credit: Number(l.credit) || 0,
+            cost_center_id: cleanUUID(l.costCenterId, null),
+            description: l.description || null,
+          }));
+
+          await supabaseAdmin.from("journal_lines").insert(lineRows);
+
+          mappedLines = lineRows.map((l: any) => ({
+            id: l.id,
+            accountId: l.account_id,
+            accountCode: l.account_code,
+            accountName: l.account_name,
+            debit: l.debit,
+            credit: l.credit,
+            costCenterId: l.cost_center_id,
+            description: l.description,
+          }));
+        } else {
+          const { data: existingLines } = await supabaseAdmin
+            .from("journal_lines")
+            .select("*")
+            .eq("journal_entry_id", validId);
+          mappedLines = (existingLines || []).map((l: any) => ({
+            id: l.id,
+            accountId: l.account_id,
+            accountCode: l.account_code,
+            accountName: l.account_name,
+            debit: Number(l.debit) || 0,
+            credit: Number(l.credit) || 0,
+            costCenterId: l.cost_center_id,
+            description: l.description,
+          }));
+        }
+
+        return noCacheResponse({ success: true, data: mapJournalEntry(je, mappedLines) });
       }
 
       // ==========================================

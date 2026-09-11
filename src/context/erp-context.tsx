@@ -85,6 +85,7 @@ import {
   persistCheckStatusDB,
   deleteCheckDB,
   persistJournalEntryDB,
+  updateJournalEntryDB,
   deleteJournalEntryDB,
   updateStockMovementDB,
   deleteStockMovementDB,
@@ -980,14 +981,108 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return savedInvoice;
   };
 
+  const formatAuditStamp = (referenceNumber: string) => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("ar-EG", { year: "numeric", month: "2-digit", day: "2-digit" });
+    const timeStr = now.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+    return `[تم التعديل بواسطة: ${currentUser?.name || "مدير النظام"} في ${dateStr} ${timeStr} | مستند الأصل: ${referenceNumber}]`;
+  };
+
   const updateSalesInvoice = async (id: string, inv: Partial<SalesInvoice>): Promise<SalesInvoice> => {
+    const oldInvoice = salesInvoices.find(item => item.id === id);
     const res = await updateSalesInvoiceDB(id, inv);
     if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل فاتورة المبيعات في قاعدة البيانات");
     }
     const savedInvoice = res.data;
+
+    // 1. Delta on Customer Balance
+    const oldDue = (oldInvoice && (oldInvoice.status === "unpaid" || oldInvoice.status === "partially_paid"))
+      ? (Number(oldInvoice.dueAmount) || 0) : 0;
+    const newDue = (savedInvoice.status === "unpaid" || savedInvoice.status === "partially_paid")
+      ? (Number(savedInvoice.dueAmount) || 0) : 0;
+
+    if (savedInvoice.customerId) {
+      if (oldInvoice && oldInvoice.customerId !== savedInvoice.customerId) {
+        setCustomers(prev => prev.map(c => {
+          if (c.id === oldInvoice.customerId) return { ...c, currentBalance: Math.max(0, c.currentBalance - oldDue) };
+          if (c.id === savedInvoice.customerId) return { ...c, currentBalance: c.currentBalance + newDue };
+          return c;
+        }));
+      } else {
+        const delta = newDue - oldDue;
+        if (delta !== 0) {
+          setCustomers(prev => prev.map(c =>
+            c.id === savedInvoice.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance + delta) } : c
+          ));
+        }
+      }
+    }
+
+    // 2. Rebuild & update linked journal entry
+    const existingJE = journalEntries.find(j =>
+      j.referenceId === savedInvoice.id ||
+      j.entryNumber === `JV-SALES-${savedInvoice.invoiceNumber}` ||
+      (oldInvoice && j.entryNumber === `JV-SALES-${oldInvoice.invoiceNumber}`)
+    );
+
+    let totalCogs = 0;
+    (savedInvoice.items || []).forEach(it => {
+      totalCogs += (Number(it.costPrice) || 0) * (Number(it.quantity) || 0);
+    });
+
+    const stamp = formatAuditStamp(savedInvoice.invoiceNumber);
+    const journalDraft = generateSalesInvoiceJournal(savedInvoice, accounts, totalCogs);
+
+    if (existingJE && journalDraft) {
+      const cleanDesc = existingJE.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+      const updatedJE: JournalEntry = {
+        ...existingJE,
+        lines: journalDraft.lines.map(l => ({ ...l, id: generateId() })),
+        totalDebit: journalDraft.totalDebit,
+        totalCredit: journalDraft.totalCredit,
+        isBalanced: journalDraft.isBalanced,
+        date: savedInvoice.date || existingJE.date,
+        description: `${cleanDesc} ${stamp}`,
+      };
+
+      setJournalEntries(prev => prev.map(j => j.id === existingJE.id ? updatedJE : j));
+      try {
+        await updateJournalEntryDB(existingJE.id, updatedJE);
+      } catch (err) {
+        console.warn("Failed to persist updated journal entry:", err);
+      }
+    } else if (journalDraft) {
+      const cleanDesc = journalDraft.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+      const newJE: JournalEntry = {
+        ...journalDraft,
+        id: generateId(),
+        entryNumber: `JV-SALES-${savedInvoice.invoiceNumber}`,
+        referenceId: savedInvoice.id,
+        referenceType: "sales_invoice",
+        description: `${cleanDesc} ${stamp}`,
+      };
+      setJournalEntries(prev => [newJE, ...prev]);
+      try {
+        await persistJournalEntryDB(newJE as any);
+      } catch (err) {
+        console.warn("Failed to persist new journal entry on invoice update:", err);
+      }
+    }
+
     setSalesInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
-    showToast(locale === "ar" ? `تم تحديث فاتورة المبيعات (${savedInvoice.invoiceNumber}) بنجاح` : `Sales invoice updated`, "success");
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "SalesInvoice",
+      entityId: savedInvoice.id,
+      details: `تعديل فاتورة مبيعات ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
+    });
+
+    showToast(locale === "ar" ? `تم تحديث فاتورة المبيعات (${savedInvoice.invoiceNumber}) والقيود بنجاح` : `Sales invoice updated`, "success");
     return savedInvoice;
   };
 
@@ -1085,13 +1180,95 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePurchaseInvoice = async (id: string, pinv: Partial<PurchaseInvoice>): Promise<PurchaseInvoice> => {
+    const oldInvoice = purchaseInvoices.find(item => item.id === id);
     const res = await updatePurchaseInvoiceDB(id, pinv);
     if (!res.success || !res.data) {
       throw new Error(res.error || "فشل تعديل فاتورة المشتريات في قاعدة البيانات");
     }
     const savedInvoice = res.data;
+
+    // 1. Delta on Supplier Balance
+    const oldDue = (oldInvoice && (oldInvoice.status === "unpaid" || oldInvoice.status === "partially_paid"))
+      ? (Number(oldInvoice.dueAmount) || 0) : 0;
+    const newDue = (savedInvoice.status === "unpaid" || savedInvoice.status === "partially_paid")
+      ? (Number(savedInvoice.dueAmount) || 0) : 0;
+
+    if (savedInvoice.supplierId) {
+      if (oldInvoice && oldInvoice.supplierId !== savedInvoice.supplierId) {
+        setSuppliers(prev => prev.map(s => {
+          if (s.id === oldInvoice.supplierId) return { ...s, currentBalance: Math.max(0, s.currentBalance - oldDue) };
+          if (s.id === savedInvoice.supplierId) return { ...s, currentBalance: s.currentBalance + newDue };
+          return s;
+        }));
+      } else {
+        const delta = newDue - oldDue;
+        if (delta !== 0) {
+          setSuppliers(prev => prev.map(s =>
+            s.id === savedInvoice.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance + delta) } : s
+          ));
+        }
+      }
+    }
+
+    // 2. Rebuild & update linked journal entry
+    const existingJE = journalEntries.find(j =>
+      j.referenceId === savedInvoice.id ||
+      j.entryNumber === `JV-PURCHASE-${savedInvoice.invoiceNumber}` ||
+      (oldInvoice && j.entryNumber === `JV-PURCHASE-${oldInvoice.invoiceNumber}`)
+    );
+
+    const stamp = formatAuditStamp(savedInvoice.invoiceNumber);
+    const journalDraft = generatePurchaseInvoiceJournal(savedInvoice, accounts);
+
+    if (existingJE && journalDraft) {
+      const cleanDesc = existingJE.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+      const updatedJE: JournalEntry = {
+        ...existingJE,
+        lines: journalDraft.lines.map(l => ({ ...l, id: generateId() })),
+        totalDebit: journalDraft.totalDebit,
+        totalCredit: journalDraft.totalCredit,
+        isBalanced: journalDraft.isBalanced,
+        date: savedInvoice.date || existingJE.date,
+        description: `${cleanDesc} ${stamp}`,
+      };
+
+      setJournalEntries(prev => prev.map(j => j.id === existingJE.id ? updatedJE : j));
+      try {
+        await updateJournalEntryDB(existingJE.id, updatedJE);
+      } catch (err) {
+        console.warn("Failed to persist updated journal entry:", err);
+      }
+    } else if (journalDraft) {
+      const cleanDesc = journalDraft.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+      const newJE: JournalEntry = {
+        ...journalDraft,
+        id: generateId(),
+        entryNumber: `JV-PURCHASE-${savedInvoice.invoiceNumber}`,
+        referenceId: savedInvoice.id,
+        referenceType: "purchase_invoice",
+        description: `${cleanDesc} ${stamp}`,
+      };
+      setJournalEntries(prev => [newJE, ...prev]);
+      try {
+        await persistJournalEntryDB(newJE as any);
+      } catch (err) {
+        console.warn("Failed to persist new journal entry on purchase update:", err);
+      }
+    }
+
     setPurchaseInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
-    showToast(locale === "ar" ? `تم تحديث فاتورة المشتريات (${savedInvoice.invoiceNumber}) بنجاح` : `Purchase invoice updated`, "success");
+
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "PurchaseInvoice",
+      entityId: savedInvoice.id,
+      details: `تعديل فاتورة مشتريات ${savedInvoice.invoiceNumber} بمبلغ ${savedInvoice.grandTotal}`,
+    });
+
+    showToast(locale === "ar" ? `تم تحديث فاتورة المشتريات (${savedInvoice.invoiceNumber}) والقيود بنجاح` : `Purchase invoice updated`, "success");
     return savedInvoice;
   };
 
@@ -1575,11 +1752,90 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCashReceipt = async (id: string, rcp: Partial<CashReceipt>): Promise<CashReceipt> => {
+    const oldReceipt = cashReceipts.find(r => r.id === id);
     const res = await updateCashReceiptDB(id, rcp);
     if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل سند القبض");
     const saved = res.data;
+
+    const oldAmount = Number(oldReceipt?.amount) || 0;
+    const newAmount = Number(saved.amount) || 0;
+
+    // Adjust treasury account balance
+    if (oldReceipt && oldReceipt.treasuryAccountId !== saved.treasuryAccountId) {
+      setTreasuryAccounts(prev => prev.map(t => {
+        if (t.id === oldReceipt.treasuryAccountId) return { ...t, balance: (Number(t.balance) || 0) - oldAmount };
+        if (t.id === saved.treasuryAccountId) return { ...t, balance: (Number(t.balance) || 0) + newAmount };
+        return t;
+      }));
+    } else {
+      const delta = newAmount - oldAmount;
+      if (delta !== 0) {
+        setTreasuryAccounts(prev => prev.map(t =>
+          t.id === saved.treasuryAccountId ? { ...t, balance: (Number(t.balance) || 0) + delta } : t
+        ));
+      }
+    }
+
+    // Adjust customer balance
+    if (oldReceipt && oldReceipt.customerId !== saved.customerId) {
+      if (oldReceipt.customerId) {
+        setCustomers(prev => prev.map(c => c.id === oldReceipt.customerId ? { ...c, currentBalance: c.currentBalance + oldAmount } : c));
+      }
+      if (saved.customerId) {
+        setCustomers(prev => prev.map(c => c.id === saved.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - newAmount) } : c));
+      }
+    } else if (saved.customerId) {
+      const delta = newAmount - oldAmount;
+      if (delta !== 0) {
+        setCustomers(prev => prev.map(c =>
+          c.id === saved.customerId ? { ...c, currentBalance: Math.max(0, c.currentBalance - delta) } : c
+        ));
+      }
+    }
+
+    // Rebuild Journal Entry
+    const existingJE = journalEntries.find(j =>
+      j.referenceId === saved.id ||
+      j.entryNumber === `JV-RCP-${saved.receiptNumber}` ||
+      (oldReceipt && j.entryNumber === `JV-RCP-${oldReceipt.receiptNumber}`)
+    );
+
+    const stamp = formatAuditStamp(saved.receiptNumber);
+    const tr = treasuryAccounts.find(t => t.id === saved.treasuryAccountId);
+    const trGlId = tr?.glAccountId || accounts.find(a => a.code === "1101001")?.id || accounts[0]?.id;
+
+    if (trGlId && accounts.length > 0) {
+      const journalDraft = generateReceiptJournal(saved, trGlId, accounts);
+      if (existingJE && journalDraft) {
+        const cleanDesc = existingJE.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+        const updatedJE: JournalEntry = {
+          ...existingJE,
+          lines: journalDraft.lines.map(l => ({ ...l, id: generateId() })),
+          totalDebit: journalDraft.totalDebit,
+          totalCredit: journalDraft.totalCredit,
+          date: saved.date || existingJE.date,
+          description: `${cleanDesc} ${stamp}`,
+        };
+        setJournalEntries(prev => prev.map(j => j.id === existingJE.id ? updatedJE : j));
+        try {
+          await updateJournalEntryDB(existingJE.id, updatedJE);
+        } catch (err) {
+          console.warn("Failed to update JE for cash receipt:", err);
+        }
+      }
+    }
+
     setCashReceipts(prev => prev.map(r => r.id === id ? saved : r));
-    showToast(locale === "ar" ? `تم تعديل سند القبض (${saved.receiptNumber}) بنجاح` : "Cash receipt updated", "success");
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "CashReceipt",
+      entityId: saved.id,
+      details: `تعديل سند قبض ${saved.receiptNumber} بمبلغ ${saved.amount}`,
+    });
+    showToast(locale === "ar" ? `تم تعديل سند القبض (${saved.receiptNumber}) وتحديث القيد بنجاح` : "Cash receipt updated", "success");
     return saved;
   };
 
@@ -1620,11 +1876,90 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCashPayment = async (id: string, pay: Partial<CashPayment>): Promise<CashPayment> => {
+    const oldPayment = cashPayments.find(p => p.id === id);
     const res = await updateCashPaymentDB(id, pay);
     if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل سند الصرف");
     const saved = res.data;
+
+    const oldAmount = Number(oldPayment?.amount) || 0;
+    const newAmount = Number(saved.amount) || 0;
+
+    // Adjust treasury account balance (Payment decreases treasury)
+    if (oldPayment && oldPayment.treasuryAccountId !== saved.treasuryAccountId) {
+      setTreasuryAccounts(prev => prev.map(t => {
+        if (t.id === oldPayment.treasuryAccountId) return { ...t, balance: (Number(t.balance) || 0) + oldAmount };
+        if (t.id === saved.treasuryAccountId) return { ...t, balance: (Number(t.balance) || 0) - newAmount };
+        return t;
+      }));
+    } else {
+      const delta = newAmount - oldAmount;
+      if (delta !== 0) {
+        setTreasuryAccounts(prev => prev.map(t =>
+          t.id === saved.treasuryAccountId ? { ...t, balance: (Number(t.balance) || 0) - delta } : t
+        ));
+      }
+    }
+
+    // Adjust supplier balance (Payment reduces supplier debt)
+    if (oldPayment && oldPayment.supplierId !== saved.supplierId) {
+      if (oldPayment.supplierId) {
+        setSuppliers(prev => prev.map(s => s.id === oldPayment.supplierId ? { ...s, currentBalance: s.currentBalance + oldAmount } : s));
+      }
+      if (saved.supplierId) {
+        setSuppliers(prev => prev.map(s => s.id === saved.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - newAmount) } : s));
+      }
+    } else if (saved.supplierId) {
+      const delta = newAmount - oldAmount;
+      if (delta !== 0) {
+        setSuppliers(prev => prev.map(s =>
+          s.id === saved.supplierId ? { ...s, currentBalance: Math.max(0, s.currentBalance - delta) } : s
+        ));
+      }
+    }
+
+    // Rebuild Journal Entry
+    const existingJE = journalEntries.find(j =>
+      j.referenceId === saved.id ||
+      j.entryNumber === `JV-PAY-${saved.paymentNumber}` ||
+      (oldPayment && j.entryNumber === `JV-PAY-${oldPayment.paymentNumber}`)
+    );
+
+    const stamp = formatAuditStamp(saved.paymentNumber);
+    const tr = treasuryAccounts.find(t => t.id === saved.treasuryAccountId);
+    const trGlId = tr?.glAccountId || accounts.find(a => a.code === "1101001")?.id || accounts[0]?.id;
+
+    if (trGlId && accounts.length > 0) {
+      const journalDraft = generatePaymentJournal(saved, trGlId, accounts);
+      if (existingJE && journalDraft) {
+        const cleanDesc = existingJE.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+        const updatedJE: JournalEntry = {
+          ...existingJE,
+          lines: journalDraft.lines.map(l => ({ ...l, id: generateId() })),
+          totalDebit: journalDraft.totalDebit,
+          totalCredit: journalDraft.totalCredit,
+          date: saved.date || existingJE.date,
+          description: `${cleanDesc} ${stamp}`,
+        };
+        setJournalEntries(prev => prev.map(j => j.id === existingJE.id ? updatedJE : j));
+        try {
+          await updateJournalEntryDB(existingJE.id, updatedJE);
+        } catch (err) {
+          console.warn("Failed to update JE for cash payment:", err);
+        }
+      }
+    }
+
     setCashPayments(prev => prev.map(p => p.id === id ? saved : p));
-    showToast(locale === "ar" ? `تم تعديل سند الصرف (${saved.paymentNumber}) بنجاح` : "Cash payment updated", "success");
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "CashPayment",
+      entityId: saved.id,
+      details: `تعديل سند صرف ${saved.paymentNumber} بمبلغ ${saved.amount}`,
+    });
+    showToast(locale === "ar" ? `تم تعديل سند الصرف (${saved.paymentNumber}) وتحديث القيد بنجاح` : "Cash payment updated", "success");
     return saved;
   };
 
@@ -1666,11 +2001,69 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCheck = async (id: string, chk: Partial<CheckRecord>): Promise<CheckRecord> => {
+    const oldCheck = checks.find(c => c.id === id);
     const res = await updateCheckDB(id, chk);
     if (!res.success || !res.data) throw new Error(res.error || "فشل تعديل الشيك");
     const saved = res.data;
+
+    const oldAmount = Number(oldCheck?.amount) || 0;
+    const newAmount = Number(saved.amount) || 0;
+    const delta = newAmount - oldAmount;
+
+    // If check was collected and deposited in treasury, adjust treasury balance
+    if (saved.status === "collected" && saved.targetTreasuryId && delta !== 0) {
+      const tDelta = saved.type === "incoming" ? delta : -delta;
+      setTreasuryAccounts(prev => prev.map(t =>
+        t.id === saved.targetTreasuryId ? { ...t, balance: (Number(t.balance) || 0) + tDelta } : t
+      ));
+    }
+
+    // Rebuild linked journal entry
+    const existingJE = journalEntries.find(j =>
+      j.referenceId === saved.id ||
+      j.entryNumber === (saved.type === "incoming" ? `JV-CHK-IN-${saved.checkNumber}` : `JV-PCHK-${saved.checkNumber}`) ||
+      (oldCheck && j.entryNumber === (oldCheck.type === "incoming" ? `JV-CHK-IN-${oldCheck.checkNumber}` : `JV-PCHK-${oldCheck.checkNumber}`))
+    );
+
+    const stamp = formatAuditStamp(saved.checkNumber);
+    if (accounts.length > 0) {
+      let journalDraft = null;
+      if (saved.type === "incoming") {
+        journalDraft = generateReceivableCheckJournal(saved, accounts);
+      } else {
+        journalDraft = generatePayableCheckJournal(saved, accounts);
+      }
+
+      if (existingJE && journalDraft) {
+        const cleanDesc = existingJE.description.replace(/\s*\[تم التعديل[^\]]*\]/g, "").trim();
+        const updatedJE: JournalEntry = {
+          ...existingJE,
+          lines: journalDraft.lines.map(l => ({ ...l, id: generateId() })),
+          totalDebit: journalDraft.totalDebit,
+          totalCredit: journalDraft.totalCredit,
+          date: saved.issueDate || existingJE.date,
+          description: `${cleanDesc} ${stamp}`,
+        };
+        setJournalEntries(prev => prev.map(j => j.id === existingJE.id ? updatedJE : j));
+        try {
+          await updateJournalEntryDB(existingJE.id, updatedJE);
+        } catch (err) {
+          console.warn("Failed to update JE for check:", err);
+        }
+      }
+    }
+
     setChecks(prev => prev.map(c => c.id === id ? saved : c));
-    showToast(locale === "ar" ? `تم تعديل الشيك (${saved.checkNumber}) بنجاح` : "Check updated", "success");
+    addAuditLog({
+      organizationId: organization.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: "update",
+      entityType: "CheckRecord",
+      entityId: saved.id,
+      details: `تعديل ورقة ${saved.type === "incoming" ? "قبض" : "دفع"} شيك ${saved.checkNumber} بمبلغ ${saved.amount}`,
+    });
+    showToast(locale === "ar" ? `تم تعديل الشيك (${saved.checkNumber}) وتحديث القيد بنجاح` : "Check updated", "success");
     return saved;
   };
 

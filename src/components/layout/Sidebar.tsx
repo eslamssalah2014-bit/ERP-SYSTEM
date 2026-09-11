@@ -131,6 +131,10 @@ export default function Sidebar() {
       titleEn: "Cost Centers",
       href: "/cost-centers",
       icon: Layers,
+      children: [
+        { titleAr: "دليل وهيكل مراكز التكلفة", titleEn: "Cost Centers Directory", href: "/cost-centers" },
+        { titleAr: "تقرير حركة مراكز التكلفة", titleEn: "Cost Center Movement Report", href: "/cost-centers/report" },
+      ]
     },
     {
       titleAr: "التقارير التحليلية",

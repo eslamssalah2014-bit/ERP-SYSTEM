@@ -54,11 +54,26 @@ export default function ReceivableChecksPage() {
   const [costCenterId, setCostCenterId] = useState("");
   const [voucherNotes, setVoucherNotes] = useState("");
 
+  // Source bank names ONLY from Chart of Accounts & Treasury accounts (no hardcoding, no phantom data)
+  const availableBanks = React.useMemo(() => {
+    const set = new Set<string>();
+    treasuryAccounts.forEach(t => {
+      if (t.bankName && t.bankName.trim()) set.add(t.bankName.trim());
+    });
+    accounts.forEach(a => {
+      if (a.code.startsWith("1101002") || a.nameAr.includes("بنك") || a.nameEn?.toLowerCase().includes("bank")) {
+        const cleanName = a.nameAr.replace(/^(حسابات|حساب|أرصدة)\s*/, "").trim();
+        if (cleanName && cleanName.length > 2) set.add(cleanName);
+      }
+    });
+    return Array.from(set);
+  }, [treasuryAccounts, accounts]);
+
   const [checkItems, setCheckItems] = useState<CheckRowItem[]>([
     {
       id: "chk_1",
-      checkNumber: "CHK-" + Date.now().toString().slice(-6),
-      draweeBank: isAr ? "البنك الأهلي المصري" : "National Bank of Egypt",
+      checkNumber: "",
+      draweeBank: "",
       dueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
       amount: 0
     }
@@ -68,8 +83,8 @@ export default function ReceivableChecksPage() {
     setFormError(null);
     setVoucherNumber("RCV-CHK-" + Date.now().toString().slice(-6));
     setVoucherDate(new Date().toISOString().split("T")[0]);
-    setCustomerId(customers[0]?.id || "");
-    setPartyName(customers[0]?.nameAr || "");
+    setCustomerId("");
+    setPartyName("");
     const defaultAcc = accounts.find(a => a.code === "1102002" || a.code === "1102")?.id || accounts[0]?.id || "";
     setAccountId(defaultAcc);
     setCostCenterId("");
@@ -77,8 +92,8 @@ export default function ReceivableChecksPage() {
     setCheckItems([
       {
         id: "chk_" + Date.now(),
-        checkNumber: "CHK-" + Date.now().toString().slice(-6),
-        draweeBank: isAr ? "البنك الأهلي المصري" : "National Bank of Egypt",
+        checkNumber: "",
+        draweeBank: "",
         dueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
         amount: 0
       }
@@ -91,8 +106,8 @@ export default function ReceivableChecksPage() {
       ...prev,
       {
         id: "chk_" + Date.now() + Math.random(),
-        checkNumber: "CHK-" + (Date.now() + prev.length).toString().slice(-6),
-        draweeBank: isAr ? "بنك مصر" : "Banque Misr",
+        checkNumber: "",
+        draweeBank: "",
         dueDate: new Date(Date.now() + 45 * 24 * 3600 * 1000).toISOString().split("T")[0],
         amount: 0
       }
@@ -112,11 +127,27 @@ export default function ReceivableChecksPage() {
 
   const handleSubmitVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
+    if (!customerId && !partyName.trim()) {
+      setFormError(isAr ? "يرجى اختيار العميل المسدد أو تحديد اسم الجهة" : "Please select customer or enter party name");
+      return;
+    }
 
     if (totalVoucherAmount <= 0) {
       setFormError(isAr ? "يرجى تحديد مبالغ صحيحة للشيكات" : "Please enter valid check amounts");
       return;
+    }
+
+    for (const item of checkItems) {
+      if (item.amount > 0) {
+        if (!item.checkNumber.trim()) {
+          setFormError(isAr ? "يرجى إدخال رقم الشيك يدوياً لكافة البنود" : "Please enter check number manually for all checks");
+          return;
+        }
+        if (!item.draweeBank.trim()) {
+          setFormError(isAr ? "يرجى تحديد البنك المسحوب عليه للشيكات" : "Please select or enter drawee bank");
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);
@@ -561,17 +592,20 @@ export default function ReceivableChecksPage() {
                         <input
                           type="text"
                           value={chk.checkNumber}
+                          placeholder={isAr ? "أدخل رقم الشيك يدوياً..." : "Enter check # manually..."}
                           onChange={e => handleUpdateCheckRow(chk.id, "checkNumber", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white font-mono"
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                           required
                         />
                       </td>
                       <td className="p-2">
                         <input
+                          list="receivable-banks-list"
                           type="text"
                           value={chk.draweeBank}
+                          placeholder={isAr ? "اختر أو ابحث عن البنك..." : "Select / search bank..."}
                           onChange={e => handleUpdateCheckRow(chk.id, "draweeBank", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white"
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                           required
                         />
                       </td>
@@ -580,7 +614,7 @@ export default function ReceivableChecksPage() {
                           type="date"
                           value={chk.dueDate}
                           onChange={e => handleUpdateCheckRow(chk.id, "dueDate", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white"
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white focus:outline-none focus:border-emerald-500"
                           required
                         />
                       </td>
@@ -612,6 +646,13 @@ export default function ReceivableChecksPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Dynamic banks datalist sourced strictly from COA and Treasury accounts */}
+            <datalist id="receivable-banks-list">
+              {availableBanks.map((b, idx) => (
+                <option key={idx} value={b} />
+              ))}
+            </datalist>
           </div>
 
           {/* Total Box */}

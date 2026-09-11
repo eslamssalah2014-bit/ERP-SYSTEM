@@ -300,6 +300,9 @@ export async function deletePurchaseReturnDB(id: string) {
 export async function persistJournalEntryDB(entry: JournalEntry | Omit<JournalEntry, "id">) {
   return mutateERP<JournalEntry>("create_journal_entry", entry);
 }
+export async function updateJournalEntryDB(id: string, entry: Partial<JournalEntry>) {
+  return mutateERP<JournalEntry>("update_journal_entry", { id, ...entry });
+}
 export async function deleteJournalEntryDB(id: string) {
   return mutateERP("delete_journal_entry", { id });
 }

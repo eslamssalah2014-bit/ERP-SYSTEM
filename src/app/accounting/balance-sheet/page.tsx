@@ -4,8 +4,10 @@ import React from "react";
 import { useERP } from "@/context/erp-context";
 import { computeBalanceSheet } from "@/lib/accounting-engine";
 import { formatCurrency } from "@/lib/utils";
+import { exportTableToExcel } from "@/lib/excel-export";
+import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
 import TableSkeleton from "@/components/ui/TableSkeleton";
-import { Scale, Printer, CheckCircle2, AlertTriangle, Building2, Layers, DollarSign } from "lucide-react";
+import { Scale, Printer, CheckCircle2, AlertTriangle, Building2, Layers, DollarSign, Download } from "lucide-react";
 
 export default function BalanceSheetPage() {
   const { accounts, journalEntries, organization, locale, isLoadingData } = useERP();
@@ -38,8 +40,24 @@ export default function BalanceSheetPage() {
     isBalanced,
   } = computeBalanceSheet(accounts, journalEntries);
 
+  const handleExportExcel = () => {
+    exportTableToExcel(
+      "balance-sheet-table",
+      `الميزانية_العمومية_والمركز_المالي_${new Date().toISOString().split("T")[0]}`
+    );
+  };
+
   return (
     <div className="space-y-6 pb-20">
+      {/* Printable Report Header */}
+      <ReportPrintHeader
+        organization={organization}
+        reportTitleAr="الميزانية العمومية وقائمة المركز المالي الرسمية"
+        reportTitleEn="Official Balance Sheet & Statement of Financial Position"
+        locale={locale}
+        extraMeta={isBalanced ? "الميزانية متزنة تماماً" : "تنبيه: ميزانية غير متزنة"}
+      />
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm print:hidden">
         <div>
@@ -54,13 +72,22 @@ export default function BalanceSheetPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
-        >
-          <Printer className="w-4 h-4" />
-          <span>{isAr ? "طباعة المركز المالي (PDF)" : "Print Balance Sheet"}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>{isAr ? "تصدير Excel (XLSX)" : "Export Excel"}</span>
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-colors cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            <span>{isAr ? "طباعة الميزانية" : "Print Balance Sheet"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Balancing Status Banner */}
@@ -378,6 +405,180 @@ export default function BalanceSheetPage() {
           </div>
         </div>
       </div>
+
+      {/* Hidden/Exportable Standard Table for Excel Engine & Official Print */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm mt-8">
+        <div className="overflow-x-auto">
+          <table id="balance-sheet-table" className="w-full text-xs text-right border-collapse">
+            <thead>
+              <tr className="bg-slate-800/90 text-slate-300 font-bold border-b border-slate-700">
+                <th className="p-3.5 w-32 font-mono">{isAr ? "كود الحساب" : "Code"}</th>
+                <th className="p-3.5">{isAr ? "البند المحاسبي / بيان المركز المالي" : "Financial Position Item"}</th>
+                <th className="p-3.5 text-left font-mono w-40">{isAr ? "المبلغ الجزئي" : "Amount"}</th>
+                <th className="p-3.5 text-left font-mono w-44">{isAr ? "المبلغ الإجمالي" : "Total"}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono">
+              {/* ASSETS */}
+              <tr className="bg-emerald-950/40 font-bold text-emerald-400 text-sm font-sans">
+                <td colSpan={4} className="p-3.5">
+                  {isAr ? "أولاً: الأصول والموجودات (Assets)" : "I. Assets"}
+                </td>
+              </tr>
+              <tr className="bg-slate-850 font-bold text-emerald-300 font-sans">
+                <td colSpan={4} className="p-2.5 pr-6">
+                  {isAr ? "1. الأصول المتداولة (Current Assets)" : "1. Current Assets"}
+                </td>
+              </tr>
+              {currentAssets.map(acc => (
+                <tr key={acc.id} className="hover:bg-slate-800/30">
+                  <td className="p-2.5 text-slate-400">{acc.code}</td>
+                  <td className="p-2.5 font-sans text-white">{isAr ? acc.nameAr : acc.nameEn}</td>
+                  <td className="p-2.5 text-left text-slate-200">{formatCurrency(acc.balance, organization.currency, locale)}</td>
+                  <td className="p-2.5 text-left text-slate-500">-</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-900 font-bold text-emerald-400 border-t border-slate-800">
+                <td colSpan={3} className="p-2.5 font-sans text-right">{isAr ? "إجمالي الأصول المتداولة:" : "Total Current Assets:"}</td>
+                <td className="p-2.5 text-left">{formatCurrency(totalCurrentAssets, organization.currency, locale)}</td>
+              </tr>
+
+              <tr className="bg-slate-850 font-bold text-emerald-300 font-sans">
+                <td colSpan={4} className="p-2.5 pr-6">
+                  {isAr ? "2. الأصول الثابتة وصافي القيمة الدفترية (Fixed Assets Net NBV)" : "2. Net Fixed Assets"}
+                </td>
+              </tr>
+              {fixedAssetGroups.map(group => (
+                <tr key={group.key} className="hover:bg-slate-800/30">
+                  <td className="p-2.5 text-slate-400">{group.costCode}</td>
+                  <td className="p-2.5 font-sans text-white">
+                    {isAr ? group.nameAr : group.nameEn}
+                    {group.depreciationBalance > 0 && (
+                      <span className="text-[11px] text-slate-400 block font-mono">
+                        (تكلفة: {formatCurrency(group.costBalance, organization.currency, locale)} - مجمع إهلاك: {formatCurrency(group.depreciationBalance, organization.currency, locale)})
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-2.5 text-left text-slate-200">{formatCurrency(group.netBookValue, organization.currency, locale)}</td>
+                  <td className="p-2.5 text-left text-slate-500">-</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-900 font-bold text-emerald-400 border-t border-slate-800">
+                <td colSpan={3} className="p-2.5 font-sans text-right">{isAr ? "صافي الأصول الثابتة:" : "Total Net Fixed Assets:"}</td>
+                <td className="p-2.5 text-left">{formatCurrency(totalNetFixedAssets, organization.currency, locale)}</td>
+              </tr>
+
+              {otherNonCurrentAssets.length > 0 && (
+                <>
+                  <tr className="bg-slate-850 font-bold text-emerald-300 font-sans">
+                    <td colSpan={4} className="p-2.5 pr-6">
+                      {isAr ? "3. أصول غير متداولة أخرى" : "3. Other Non-Current Assets"}
+                    </td>
+                  </tr>
+                  {otherNonCurrentAssets.map(acc => (
+                    <tr key={acc.id} className="hover:bg-slate-800/30">
+                      <td className="p-2.5 text-slate-400">{acc.code}</td>
+                      <td className="p-2.5 font-sans text-white">{isAr ? acc.nameAr : acc.nameEn}</td>
+                      <td className="p-2.5 text-left text-slate-200">{formatCurrency(acc.balance, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-left text-slate-500">-</td>
+                    </tr>
+                  ))}
+                </>
+              )}
+
+              <tr className="bg-emerald-950 font-black text-emerald-400 text-sm border-t-2 border-b-2 border-emerald-500/40">
+                <td colSpan={3} className="p-3.5 font-sans text-right">{isAr ? "إجمالي الأصول والموجودات (Total Assets):" : "TOTAL ASSETS:"}</td>
+                <td className="p-3.5 text-left">{formatCurrency(totalAssets, organization.currency, locale)}</td>
+              </tr>
+
+              {/* LIABILITIES */}
+              <tr className="bg-sky-950/40 font-bold text-sky-400 text-sm font-sans">
+                <td colSpan={4} className="p-3.5">
+                  {isAr ? "ثانياً: الخصوم والالتزامات (Liabilities)" : "II. Liabilities"}
+                </td>
+              </tr>
+              <tr className="bg-slate-850 font-bold text-sky-300 font-sans">
+                <td colSpan={4} className="p-2.5 pr-6">
+                  {isAr ? "1. الالتزامات المتداولة (قصيرة الأجل)" : "1. Current Liabilities"}
+                </td>
+              </tr>
+              {currentLiabilities.map(acc => (
+                <tr key={acc.id} className="hover:bg-slate-800/30">
+                  <td className="p-2.5 text-slate-400">{acc.code}</td>
+                  <td className="p-2.5 font-sans text-white">{isAr ? acc.nameAr : acc.nameEn}</td>
+                  <td className="p-2.5 text-left text-slate-200">{formatCurrency(acc.balance, organization.currency, locale)}</td>
+                  <td className="p-2.5 text-left text-slate-500">-</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-900 font-bold text-sky-400 border-t border-slate-800">
+                <td colSpan={3} className="p-2.5 font-sans text-right">{isAr ? "إجمالي الخصوم المتداولة:" : "Total Current Liabilities:"}</td>
+                <td className="p-2.5 text-left">{formatCurrency(totalCurrentLiabilities, organization.currency, locale)}</td>
+              </tr>
+
+              {nonCurrentLiabilities.length > 0 && (
+                <>
+                  <tr className="bg-slate-850 font-bold text-sky-300 font-sans">
+                    <td colSpan={4} className="p-2.5 pr-6">
+                      {isAr ? "2. الالتزامات طويلة الأجل (غير المتداولة)" : "2. Non-Current Liabilities"}
+                    </td>
+                  </tr>
+                  {nonCurrentLiabilities.map(acc => (
+                    <tr key={acc.id} className="hover:bg-slate-800/30">
+                      <td className="p-2.5 text-slate-400">{acc.code}</td>
+                      <td className="p-2.5 font-sans text-white">{isAr ? acc.nameAr : acc.nameEn}</td>
+                      <td className="p-2.5 text-left text-slate-200">{formatCurrency(acc.balance, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-left text-slate-500">-</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-900 font-bold text-sky-400 border-t border-slate-800">
+                    <td colSpan={3} className="p-2.5 font-sans text-right">{isAr ? "إجمالي الالتزامات غير المتداولة:" : "Total Non-Current Liabilities:"}</td>
+                    <td className="p-2.5 text-left">{formatCurrency(totalNonCurrentLiabilities, organization.currency, locale)}</td>
+                  </tr>
+                </>
+              )}
+
+              <tr className="bg-slate-850 font-bold text-sky-400 border-t border-slate-700">
+                <td colSpan={3} className="p-3 font-sans text-right">{isAr ? "إجمالي الخصوم والالتزامات:" : "Total Liabilities:"}</td>
+                <td className="p-3 text-left">{formatCurrency(totalLiabilities, organization.currency, locale)}</td>
+              </tr>
+
+              {/* EQUITY */}
+              <tr className="bg-purple-950/40 font-bold text-purple-400 text-sm font-sans">
+                <td colSpan={4} className="p-3.5">
+                  {isAr ? "ثالثاً: حقوق الملكية (Owner's Equity)" : "III. Owner's Equity"}
+                </td>
+              </tr>
+              {equity.map(acc => (
+                <tr key={acc.id} className="hover:bg-slate-800/30">
+                  <td className="p-2.5 text-slate-400">{acc.code}</td>
+                  <td className="p-2.5 font-sans text-white">{isAr ? acc.nameAr : acc.nameEn}</td>
+                  <td className="p-2.5 text-left text-slate-200">{formatCurrency(acc.balance, organization.currency, locale)}</td>
+                  <td className="p-2.5 text-left text-slate-500">-</td>
+                </tr>
+              ))}
+              <tr className="bg-emerald-950/20 font-bold text-emerald-400">
+                <td className="p-2.5 text-slate-400">P&L</td>
+                <td className="p-2.5 font-sans">{isAr ? "صافي أرباح / (خسائر) الفترة الحالية" : "Current Period Net Income"}</td>
+                <td className="p-2.5 text-left">{formatCurrency(netIncome, organization.currency, locale)}</td>
+                <td className="p-2.5 text-left text-slate-500">-</td>
+              </tr>
+              <tr className="bg-slate-850 font-bold text-purple-400 border-t border-slate-700">
+                <td colSpan={3} className="p-3 font-sans text-right">{isAr ? "إجمالي حقوق الملكية:" : "Total Owner's Equity:"}</td>
+                <td className="p-3 text-left">{formatCurrency(totalEquity, organization.currency, locale)}</td>
+              </tr>
+
+              {/* TOTAL LIABILITIES & EQUITY */}
+              <tr className="bg-sky-950 font-black text-sky-400 text-sm border-t-2 border-b-2 border-sky-500/40">
+                <td colSpan={3} className="p-3.5 font-sans text-right">{isAr ? "إجمالي الخصوم وحقوق الملكية (Total Liabilities & Equity):" : "TOTAL LIABILITIES & EQUITY:"}</td>
+                <td className="p-3.5 text-left">{formatCurrency(totalLiabilitiesAndEquity, organization.currency, locale)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Printable Report Footer */}
+      <ReportPrintFooter organization={organization} />
     </div>
   );
 }

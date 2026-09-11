@@ -4,6 +4,8 @@ import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { computeGeneralLedgerSummary, GeneralLedgerSummaryRow } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { exportTableToExcel } from "@/lib/excel-export";
+import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
 import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   BookOpen, Search, Printer, Download, Filter,
@@ -119,70 +121,18 @@ export default function LedgerPage() {
     };
   }, [selectedAccount, journalEntries, fromDate, toDate]);
 
-  // Export to CSV
-  const handleExportCSV = () => {
+  // Export to genuine Excel XLSX
+  const handleExportExcel = () => {
     if (viewMode === "summary") {
-      const headers = [
-        isAr ? "كود الحساب" : "Code",
-        isAr ? "اسم الحساب" : "Name",
-        isAr ? "مدين افتتاحي" : "Opening Debit",
-        isAr ? "دائن افتتاحي" : "Opening Credit",
-        isAr ? "حركات مدينة" : "Period Debit",
-        isAr ? "حركات دائنة" : "Period Credit",
-        isAr ? "رصيد ختامي مدين" : "Ending Debit",
-        isAr ? "رصيد ختامي دائن" : "Ending Credit",
-      ];
-      const rows = filteredSummaryRows.map((r) => [
-        `"${r.accountCode}"`,
-        `"${isAr ? r.accountNameAr : r.accountNameEn}"`,
-        r.openingDebit.toFixed(2),
-        r.openingCredit.toFixed(2),
-        r.periodDebit.toFixed(2),
-        r.periodCredit.toFixed(2),
-        r.endingDebit.toFixed(2),
-        r.endingCredit.toFixed(2),
-      ]);
-      const csv = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-      const encodedUri = encodeURI(csv);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "General_Ledger_Summary.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      exportTableToExcel("gl-summary-table", {
+        filename: `مصفوفة_الأستاذ_العام_${new Date().toISOString().split("T")[0]}`,
+        sheetName: isAr ? "مصفوفة الأستاذ العام" : "GL Summary"
+      });
     } else {
-      const headers = [
-        isAr ? "التاريخ" : "Date",
-        isAr ? "رقم القيد" : "Entry No",
-        isAr ? "البيان" : "Description",
-        isAr ? "مدين" : "Debit",
-        isAr ? "دائن" : "Credit",
-        isAr ? "الرصيد التراكمي" : "Running Balance",
-      ];
-      const openingRow = [
-        fromDate || "2026-01-01",
-        "OPENING",
-        isAr ? "رصيد أول المدة / القيد الافتتاحي" : "Beginning Balance",
-        detailedLedger.openingDr.toFixed(2),
-        detailedLedger.openingCr.toFixed(2),
-        detailedLedger.openingBalance.toFixed(2),
-      ];
-      const rows = detailedLedger.lines.map((l) => [
-        `"${l.date}"`,
-        `"${l.entryNumber}"`,
-        `"${l.description}"`,
-        l.debit.toFixed(2),
-        l.credit.toFixed(2),
-        l.runningBalance.toFixed(2),
-      ]);
-      const csv = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), openingRow.join(","), ...rows.map((r) => r.join(","))].join("\n");
-      const encodedUri = encodeURI(csv);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Ledger_${selectedAccount.code}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      exportTableToExcel("gl-detailed-table", {
+        filename: `كشف_حساب_${selectedAccount?.code || "GL"}_${new Date().toISOString().split("T")[0]}`,
+        sheetName: isAr ? `حساب ${selectedAccount?.code}` : `Account ${selectedAccount?.code}`
+      });
     }
   };
 
@@ -192,8 +142,19 @@ export default function LedgerPage() {
 
   return (
     <div className="space-y-6">
+      {/* Printable Report Header */}
+      <ReportPrintHeader
+        organization={organization}
+        reportTitleAr={viewMode === "summary" ? "مصفوفة ملخص دفتر الأستاذ العام (8 أعمدة)" : `كشف حساب تفصيلي: ${selectedAccount?.nameAr} (${selectedAccount?.code})`}
+        reportTitleEn={viewMode === "summary" ? "General Ledger 8-Column Summary Matrix" : `Account Ledger: ${selectedAccount?.nameEn} (${selectedAccount?.code})`}
+        dateFrom={fromDate}
+        dateTo={toDate}
+        locale={locale}
+        extraMeta={viewMode === "detailed" ? `طبيعة الحساب: ${selectedAccount?.nature === "debit" ? "مدين" : "دائن"}` : undefined}
+      />
+
       {/* Page Header */}
-      <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 print:hidden">
         <div>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-900/40">
@@ -246,17 +207,17 @@ export default function LedgerPage() {
           </button>
 
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
           >
-            <Download className="w-4 h-4" />
-            <span>{isAr ? "تصدير CSV" : "Export CSV"}</span>
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>{isAr ? "تصدير Excel (XLSX)" : "Export Excel"}</span>
           </button>
         </div>
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs print:hidden">
         {viewMode === "detailed" && (
           <div className="md:col-span-2">
             <label className="block text-slate-400 font-bold mb-1">
@@ -336,7 +297,7 @@ export default function LedgerPage() {
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right border-collapse">
+              <table id="gl-summary-table" className="w-full text-xs text-right border-collapse">
                 <thead>
                   <tr className="bg-slate-800/90 text-slate-300 font-bold border-b border-slate-700">
                     <th className="p-3.5 rounded-r-lg font-mono w-24">{isAr ? "كود الحساب" : "Code"}</th>
@@ -456,7 +417,7 @@ export default function LedgerPage() {
           {/* Detailed Movements Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right border-collapse">
+              <table id="gl-detailed-table" className="w-full text-xs text-right border-collapse">
                 <thead>
                   <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
                     <th className="p-3.5 rounded-r-lg w-28">{isAr ? "التاريخ" : "Date"}</th>
@@ -545,6 +506,9 @@ export default function LedgerPage() {
           </div>
         </div>
       )}
+
+      {/* Printable Report Footer */}
+      <ReportPrintFooter organization={organization} />
     </div>
   );
 }
