@@ -124,6 +124,7 @@ export default function Sidebar() {
         { titleAr: "ميزان المراجعة", titleEn: "Trial Balance", href: "/accounting/trial-balance" },
         { titleAr: "قائمة الدخل (الأرباح والخسائر)", titleEn: "Income Statement", href: "/accounting/income-statement" },
         { titleAr: "الميزانية العمومية", titleEn: "Balance Sheet", href: "/accounting/balance-sheet" },
+        { titleAr: "الاهلاكات", titleEn: "Fixed Assets & Depreciation", href: "/accounting/depreciation" },
       ]
     },
     {

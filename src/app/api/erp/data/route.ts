@@ -193,6 +193,13 @@ export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
   audit_logs: [
     "id", "organization_id", "user_id", "user_name", "action",
     "entity_type", "entity_id", "details", "created_at"
+  ],
+  fixed_assets: [
+    "id", "organization_id", "branch_id", "name", "asset_type",
+    "account_id", "accumulated_account_id", "expense_account_id",
+    "purchase_date", "purchase_value", "beginning_depreciation",
+    "depreciation_rate", "status", "cost_center_id", "notes",
+    "created_by", "created_at"
   ]
 };
 
@@ -1060,6 +1067,29 @@ export function mapPeriodClosing(closing: any) {
   };
 }
 
+export function mapFixedAsset(fa: any) {
+  if (!fa) return null;
+  return {
+    id: fa.id,
+    organizationId: fa.organization_id || DEFAULT_ORG_ID,
+    branchId: fa.branch_id || DEFAULT_BRANCH_ID,
+    name: fa.name,
+    assetType: fa.asset_type || "purchased",
+    accountId: fa.account_id,
+    accumulatedAccountId: fa.accumulated_account_id || undefined,
+    expenseAccountId: fa.expense_account_id || undefined,
+    purchaseDate: fa.purchase_date || "2026-01-01",
+    purchaseValue: Number(fa.purchase_value) || 0,
+    beginningDepreciation: Number(fa.beginning_depreciation) || 0,
+    depreciationRate: Number(fa.depreciation_rate) || 0,
+    status: fa.status || "active",
+    costCenterId: fa.cost_center_id || undefined,
+    notes: fa.notes || "",
+    createdBy: fa.created_by || "النظام",
+    createdAt: fa.created_at || new Date().toISOString(),
+  };
+}
+
 let hasSeededBaseline = false;
 async function ensureBaselineEntities(supabase: any) {
   if (hasSeededBaseline) return;
@@ -1454,6 +1484,20 @@ export async function GET() {
     // Map Units
     const units = (unitsRes?.data || []).map(mapUnit).filter(Boolean);
 
+    // Map Fixed Assets (Report 10)
+    let fixedAssets: any[] = [];
+    try {
+      const { data: faData, error: faErr } = await supabaseAdmin
+        .from("fixed_assets")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!faErr && faData) {
+        fixedAssets = faData.map(mapFixedAsset).filter(Boolean);
+      }
+    } catch (faErr) {
+      console.warn("Could not query fixed_assets:", faErr);
+    }
+
     return noCacheResponse({
       success: true,
       data: {
@@ -1480,6 +1524,7 @@ export async function GET() {
         journalEntries,
         stockMovements,
         auditLogs,
+        fixedAssets,
         productChangeLogs: [],
         periodClosings: [],
       },
@@ -4142,6 +4187,145 @@ export async function POST(request: Request) {
           }], { onConflict: "product_id,warehouse_id" });
 
         return noCacheResponse({ success: true, data: mapStockMovement(sm) });
+      }
+
+      // ==========================================
+      // FIXED ASSETS CRUD (REPORT 10)
+      // ==========================================
+      case "create_fixed_asset": {
+        const {
+          organizationId, branchId, name, assetType, accountId,
+          accumulatedAccountId, expenseAccountId, purchaseDate,
+          purchaseValue, beginningDepreciation, depreciationRate,
+          status, costCenterId, notes, createdBy
+        } = payload;
+
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validAccId = cleanUUID(accountId, null);
+        const validAccumAccId = cleanUUID(accumulatedAccountId, null);
+        const validExpAccId = cleanUUID(expenseAccountId, null);
+        const validCCId = cleanUUID(costCenterId, null);
+
+        if (!name) {
+          return noCacheResponse({ success: false, message: "Asset name is required" }, 400);
+        }
+
+        const rawInsert = {
+          organization_id: validOrgId,
+          branch_id: validBranchId,
+          name: String(name).trim(),
+          asset_type: assetType === "opening" ? "opening" : "purchased",
+          account_id: validAccId,
+          accumulated_account_id: validAccumAccId,
+          expense_account_id: validExpAccId,
+          purchase_date: purchaseDate || new Date().toISOString().split("T")[0],
+          purchase_value: Number(purchaseValue) || 0,
+          beginning_depreciation: Number(beginningDepreciation) || 0,
+          depreciation_rate: Number(depreciationRate) || 0,
+          status: status === "inactive" ? "inactive" : "active",
+          cost_center_id: validCCId,
+          notes: notes || "",
+          created_by: createdBy || "المشرف العام",
+        };
+
+        const insertRow = sanitizeRowForTable("fixed_assets", rawInsert);
+        const { data: fa, error: faErr } = await supabaseAdmin
+          .from("fixed_assets")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (faErr) throw faErr;
+
+        // Log audit trail
+        try {
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: validOrgId,
+            user_name: createdBy || "النظام",
+            action: "create",
+            entity_type: "fixed_asset",
+            entity_id: fa.id,
+            details: `إضافة أصل جديد: ${fa.name} (القيمة: ${fa.purchase_value}, النسبة: ${fa.depreciation_rate}%)`,
+          }]);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, data: mapFixedAsset(fa) });
+      }
+
+      case "update_fixed_asset": {
+        const {
+          id, name, assetType, accountId, accumulatedAccountId,
+          expenseAccountId, purchaseDate, purchaseValue, beginningDepreciation,
+          depreciationRate, status, costCenterId, notes, updatedBy
+        } = payload;
+
+        const validId = cleanUUID(id, null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid asset ID is required" }, 400);
+
+        const rawUpdate: any = {};
+        if (name !== undefined) rawUpdate.name = String(name).trim();
+        if (assetType !== undefined) rawUpdate.asset_type = assetType;
+        if (accountId !== undefined) rawUpdate.account_id = cleanUUID(accountId, null);
+        if (accumulatedAccountId !== undefined) rawUpdate.accumulated_account_id = cleanUUID(accumulatedAccountId, null);
+        if (expenseAccountId !== undefined) rawUpdate.expense_account_id = cleanUUID(expenseAccountId, null);
+        if (purchaseDate !== undefined) rawUpdate.purchase_date = purchaseDate;
+        if (purchaseValue !== undefined) rawUpdate.purchase_value = Number(purchaseValue) || 0;
+        if (beginningDepreciation !== undefined) rawUpdate.beginning_depreciation = Number(beginningDepreciation) || 0;
+        if (depreciationRate !== undefined) rawUpdate.depreciation_rate = Number(depreciationRate) || 0;
+        if (status !== undefined) rawUpdate.status = status;
+        if (costCenterId !== undefined) rawUpdate.cost_center_id = cleanUUID(costCenterId, null);
+        if (notes !== undefined) rawUpdate.notes = notes;
+
+        const updateRow = sanitizeRowForTable("fixed_assets", rawUpdate);
+        const { data: fa, error: faErr } = await supabaseAdmin
+          .from("fixed_assets")
+          .update(updateRow)
+          .eq("id", validId)
+          .select()
+          .single();
+
+        if (faErr) throw faErr;
+
+        // Log audit trail
+        try {
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: fa.organization_id || DEFAULT_ORG_ID,
+            user_name: updatedBy || "النظام",
+            action: status !== undefined ? "status_change" : "update",
+            entity_type: "fixed_asset",
+            entity_id: fa.id,
+            details: `تحديث بيانات الأصل: ${fa.name} (الحالة: ${fa.status}, القيمة: ${fa.purchase_value})`,
+          }]);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, data: mapFixedAsset(fa) });
+      }
+
+      case "delete_fixed_asset": {
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid asset ID required" }, 400);
+
+        const { error: delErr } = await supabaseAdmin
+          .from("fixed_assets")
+          .delete()
+          .eq("id", validId);
+
+        if (delErr) throw delErr;
+
+        try {
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: DEFAULT_ORG_ID,
+            user_name: "النظام",
+            action: "delete",
+            entity_type: "fixed_asset",
+            entity_id: validId,
+            details: `حذف أصل ثابت بمعرف: ${validId}`,
+          }]);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, id: validId });
       }
 
       default:

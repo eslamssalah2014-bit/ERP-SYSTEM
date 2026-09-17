@@ -3,7 +3,7 @@ import {
   Warehouse, CostCenter, CheckRecord, JournalEntry, Account, TreasuryAccount,
   StockMovement, AuditLog, ProductChangeLog, PeriodClosing, ProductCategory,
   ProductUnit, Organization, Branch, User, CashReceipt, CashPayment,
-  CustomerCategory, SalesReturn, PurchaseReturn
+  CustomerCategory, SalesReturn, PurchaseReturn, FixedAsset
 } from "@/types/erp";
 
 export interface HydratedERPData {
@@ -23,10 +23,11 @@ export interface HydratedERPData {
   treasuryAccounts: TreasuryAccount[];
   cashReceipts?: CashReceipt[];
   cashPayments?: CashPayment[];
-  checks: CheckRecord[];
+  checks?: CheckRecord[];
   journalEntries: JournalEntry[];
   stockMovements: StockMovement[];
-  auditLogs: AuditLog[];
+  auditLogs?: AuditLog[];
+  fixedAssets?: FixedAsset[];
   productChangeLogs?: ProductChangeLog[];
   periodClosings?: PeriodClosing[];
   organization?: Organization;
@@ -308,4 +309,15 @@ export async function updateJournalEntryDB(id: string, entry: Partial<JournalEnt
 }
 export async function deleteJournalEntryDB(id: string) {
   return mutateERP("delete_journal_entry", { id });
+}
+
+// Fixed Assets CRUD (Report 10)
+export async function persistFixedAssetDB(fa: FixedAsset | Omit<FixedAsset, "id">) {
+  return mutateERP<FixedAsset>("create_fixed_asset", fa);
+}
+export async function updateFixedAssetDB(id: string, fa: Partial<FixedAsset>) {
+  return mutateERP<FixedAsset>("update_fixed_asset", { id, ...fa });
+}
+export async function deleteFixedAssetDB(id: string) {
+  return mutateERP("delete_fixed_asset", { id });
 }

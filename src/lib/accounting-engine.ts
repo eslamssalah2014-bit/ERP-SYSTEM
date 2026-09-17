@@ -3,7 +3,8 @@ import {
   PurchaseInvoice, SalesReturn, PurchaseReturn, CashReceipt, CashPayment, StockMovement,
   StockCardRecord, TrialBalanceRow, AgingBucket, Customer, Supplier,
   Product, ProductCategory, ProductUnit, Warehouse, StockBalanceReportRow,
-  CheckRecord, TreasuryAccount, TreasuryStatementRow
+  CheckRecord, TreasuryAccount, TreasuryStatementRow,
+  FixedAsset, AssetDepreciationCalculation, AssetDepreciationReportRow
 } from "@/types/erp";
 
 // Helper: Resolve account by primary codes with backward compatibility
@@ -1952,4 +1953,183 @@ export function computeAging(
       bucket90Plus: d90p,
     };
   });
+}
+
+/**
+ * REPORT 10: Fixed Asset Straight-Line Depreciation Engine
+ * - Active: Calculates depreciation based on purchase value, rate, and period.
+ * - Inactive: Depreciation stops.
+ * - Opening Assets: Purchase date defaults to beginning of current fiscal year (01/01/Current Fiscal Year).
+ * - Accumulated Depreciation cannot exceed purchase value.
+ * - Current Asset Value = Purchase Value - Accumulated Depreciation.
+ */
+export function computeAssetDepreciation(
+  asset: FixedAsset,
+  asOfDate?: string,
+  fromDate?: string,
+  toDate?: string
+): AssetDepreciationCalculation {
+  const purchaseVal = Number(asset.purchaseValue) || 0;
+  const begDeprec = Number(asset.beginningDepreciation) || 0;
+  const rate = Number(asset.depreciationRate) || 0;
+
+  // Opening Asset Value at start of period
+  const openingAssetVal = Math.max(0, purchaseVal - begDeprec);
+
+  // If rate is 0 or value is 0 or land (0% rate), no depreciation occurs
+  if (rate <= 0 || purchaseVal <= 0) {
+    const accum = Math.min(purchaseVal, begDeprec);
+    return {
+      assetId: asset.id,
+      purchaseValue: purchaseVal,
+      beginningDepreciation: begDeprec,
+      currentPeriodDepreciation: 0,
+      accumulatedDepreciation: accum,
+      currentAssetValue: Math.max(0, purchaseVal - accum),
+      openingAssetValue: openingAssetVal,
+    };
+  }
+
+  // Determine calculation bounds
+  const currentFiscalYear = new Date().getFullYear();
+  const defaultFiscalStart = `${currentFiscalYear}-01-01`;
+  const assetStartDate = asset.assetType === "opening"
+    ? (asset.purchaseDate || defaultFiscalStart)
+    : (asset.purchaseDate || defaultFiscalStart);
+
+  const targetEndDate = toDate || asOfDate || new Date().toISOString().split("T")[0];
+  const targetStartDate = fromDate || assetStartDate;
+
+  // If inactive, no new period depreciation is calculated
+  if (asset.status === "inactive") {
+    const accum = Math.min(purchaseVal, begDeprec);
+    return {
+      assetId: asset.id,
+      purchaseValue: purchaseVal,
+      beginningDepreciation: begDeprec,
+      currentPeriodDepreciation: 0,
+      accumulatedDepreciation: accum,
+      currentAssetValue: Math.max(0, purchaseVal - accum),
+      openingAssetValue: openingAssetVal,
+    };
+  }
+
+  // Effective period in days
+  const startEffective = targetStartDate > assetStartDate ? targetStartDate : assetStartDate;
+  const endEffective = targetEndDate;
+
+  let currentPeriodDeprec = 0;
+  if (endEffective >= startEffective) {
+    const diffMs = new Date(endEffective).getTime() - new Date(startEffective).getTime();
+    const elapsedDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+
+    // Annual straight-line depreciation = purchaseVal * (rate / 100)
+    const annualDeprec = purchaseVal * (rate / 100);
+    // Prorated daily
+    currentPeriodDeprec = Math.round(((annualDeprec / 365) * elapsedDays) * 100) / 100;
+  }
+
+  // Maximum remaining depreciable amount = purchaseVal - begDeprec
+  const maxAllowable = Math.max(0, purchaseVal - begDeprec);
+  if (currentPeriodDeprec > maxAllowable) {
+    currentPeriodDeprec = maxAllowable;
+  }
+
+  const accumulated = Math.min(purchaseVal, Math.round((begDeprec + currentPeriodDeprec) * 100) / 100);
+  const currentVal = Math.max(0, Math.round((purchaseVal - accumulated) * 100) / 100);
+
+  return {
+    assetId: asset.id,
+    purchaseValue: purchaseVal,
+    beginningDepreciation: begDeprec,
+    currentPeriodDepreciation: currentPeriodDeprec,
+    accumulatedDepreciation: accumulated,
+    currentAssetValue: currentVal,
+    openingAssetValue: openingAssetVal,
+  };
+}
+
+/**
+ * REPORT 10: Generate Depreciation Journal Entry
+ * Debit: Depreciation Expense (5202005)
+ * Credit: Accumulated Depreciation (1202xxx)
+ */
+export function generateAssetDepreciationJournalEntry(
+  asset: FixedAsset,
+  amount: number,
+  periodEndDate: string,
+  accounts: Account[],
+  organizationId: string,
+  branchId: string,
+  createdBy?: string,
+  costCenterId?: string
+): Omit<JournalEntry, "id"> | null {
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return null;
+
+  // Expense account: 5202005 or custom
+  const expAccount = asset.expenseAccountId
+    ? (accounts.find(a => a.id === asset.expenseAccountId) || findAccount(accounts, ["5202005", "5202"], "expense"))
+    : findAccount(accounts, ["5202005", "5202"], "expense");
+
+  // Accumulated Depreciation account: custom or paired with asset account
+  let accumAccount: Account;
+  if (asset.accumulatedAccountId) {
+    accumAccount = accounts.find(a => a.id === asset.accumulatedAccountId) || findAccount(accounts, ["1202002", "1202001", "1202"], "assets");
+  } else {
+    // Auto-detect based on asset main account code
+    const mainAcc = accounts.find(a => a.id === asset.accountId);
+    if (mainAcc?.code === "1201002") {
+      accumAccount = findAccount(accounts, ["1202001", "1202"], "assets"); // Buildings
+    } else if (mainAcc?.code === "1201003") {
+      accumAccount = findAccount(accounts, ["1202002", "1202"], "assets"); // Vehicles
+    } else if (mainAcc?.code === "1201005") {
+      accumAccount = findAccount(accounts, ["1202003", "1202"], "assets"); // Computers
+    } else if (mainAcc?.code === "1201006") {
+      accumAccount = findAccount(accounts, ["1202004", "1202"], "assets"); // Furniture
+    } else {
+      accumAccount = findAccount(accounts, ["1202", "1202002", "1202001"], "assets");
+    }
+  }
+
+  const lines: JournalLine[] = [
+    {
+      id: `jl_dep_dr_${asset.id.slice(0, 8)}`,
+      accountId: expAccount.id,
+      accountCode: expAccount.code,
+      accountName: expAccount.nameAr,
+      debit: amt,
+      credit: 0,
+      costCenterId: asset.costCenterId || costCenterId,
+      description: `إهلاك أصل: ${asset.name} عن الفترة المنتهية في ${periodEndDate}`,
+    },
+    {
+      id: `jl_dep_cr_${asset.id.slice(0, 8)}`,
+      accountId: accumAccount.id,
+      accountCode: accumAccount.code,
+      accountName: accumAccount.nameAr,
+      debit: 0,
+      credit: amt,
+      costCenterId: asset.costCenterId || costCenterId,
+      description: `مجمع إهلاك أصل: ${asset.name} حتى ${periodEndDate}`,
+    }
+  ];
+
+  const safeNum = asset.name.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, "_").slice(0, 10);
+
+  return {
+    organizationId,
+    branchId,
+    entryNumber: `JV-DEP-${safeNum}-${periodEndDate.replace(/-/g, "")}`,
+    date: periodEndDate,
+    referenceType: "asset_depreciation",
+    referenceId: asset.id,
+    description: `قيد إهلاك أصل: ${asset.name} بمعدل (${asset.depreciationRate}%) عن الفترة حتى ${periodEndDate}`,
+    lines,
+    totalDebit: amt,
+    totalCredit: amt,
+    isBalanced: true,
+    status: "posted",
+    createdBy: createdBy || "النظام (إهلاك تلقائي)",
+  };
 }

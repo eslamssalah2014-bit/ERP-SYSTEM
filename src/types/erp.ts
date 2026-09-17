@@ -711,3 +711,51 @@ export interface StockBalanceReportRow {
   closingValue: number;
 }
 
+export type FixedAssetType = 'purchased' | 'opening';
+export type FixedAssetStatus = 'active' | 'inactive';
+
+export interface FixedAsset {
+  id: string;
+  organizationId: string;
+  branchId?: string;
+  name: string;
+  assetType: FixedAssetType;
+  accountId: string;
+  accumulatedAccountId?: string;
+  expenseAccountId?: string;
+  purchaseDate: string;
+  purchaseValue: number;
+  beginningDepreciation: number;
+  depreciationRate: number;
+  status: FixedAssetStatus;
+  costCenterId?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface AssetDepreciationCalculation {
+  assetId: string;
+  purchaseValue: number;
+  beginningDepreciation: number;
+  currentPeriodDepreciation: number;
+  accumulatedDepreciation: number;
+  currentAssetValue: number;
+  openingAssetValue: number;
+}
+
+export interface AssetDepreciationReportRow {
+  assetId: string;
+  assetName: string;
+  mainAccountCode: string;
+  mainAccountName: string;
+  purchaseDate: string;
+  beginningDepreciation: number;
+  openingAssetValue: number;
+  purchaseValue: number;
+  depreciationRate: number;
+  status: FixedAssetStatus;
+  currentPeriodDepreciation: number;
+  accumulatedDepreciation: number;
+  closingAssetValue: number;
+}

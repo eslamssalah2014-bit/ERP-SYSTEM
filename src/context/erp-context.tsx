@@ -7,7 +7,7 @@ import {
   SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification,
   AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment,
   ProductChangeLog, PeriodClosing, UserRole, CustomerCategory, SalesReturn,
-  PurchaseReturn, PartnerStatement, StatementTransaction
+  PurchaseReturn, PartnerStatement, StatementTransaction, FixedAsset
 } from "@/types/erp";
 import {
   initialOrganization, initialBranches, initialUsers, initialCategories,
@@ -31,7 +31,9 @@ import {
   generateOpeningStockJournal,
   generateStockAdjustmentJournal,
   generatePeriodClosingJournal,
-  generateCheckReceiptVoucherJournal
+  generateCheckReceiptVoucherJournal,
+  computeAssetDepreciation,
+  generateAssetDepreciationJournalEntry
 } from "@/lib/accounting-engine";
 import {
   fetchFullERPData,
@@ -93,7 +95,10 @@ import {
   deleteStockMovementDB,
   persistProductChangeLogDB,
   persistPeriodClosingDB,
-  updateOrganizationDB
+  updateOrganizationDB,
+  persistFixedAssetDB,
+  updateFixedAssetDB,
+  deleteFixedAssetDB
 } from "@/lib/erp-service";
 import { ToastContainer, ToastMessage } from "@/components/ui/Toast";
 
@@ -256,6 +261,14 @@ interface ERPContextType {
   deleteJournalEntry: (id: string) => Promise<void>;
   postOpeningEntry: (entry: Omit<JournalEntry, "id">) => Promise<JournalEntry>;
 
+  // Fixed Assets & Depreciation (Report 10)
+  fixedAssets: FixedAsset[];
+  addFixedAsset: (fa: Omit<FixedAsset, "id">) => Promise<FixedAsset>;
+  updateFixedAsset: (id: string, fa: Partial<FixedAsset>) => Promise<FixedAsset>;
+  deleteFixedAsset: (id: string) => Promise<void>;
+  postAssetDepreciation: (assetId: string, periodEndDate?: string) => Promise<JournalEntry | null>;
+  postAllActiveAssetsDepreciation: (periodEndDate?: string) => Promise<number>;
+
   // Audit & Notifications
   auditLogs: AuditLog[];
   notifications: Notification[];
@@ -333,6 +346,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
   const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
+  const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
 
   // ==========================================
   // HYDRATE FROM SUPABASE
@@ -376,6 +390,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         setJournalEntries(liveData.journalEntries || []);
         setStockMovements(liveData.stockMovements || []);
         setAuditLogs(liveData.auditLogs || []);
+        if (liveData.fixedAssets) setFixedAssets(liveData.fixedAssets);
       } else {
         setIsDbConnected(false);
       }
@@ -2367,6 +2382,127 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return saved;
   };
 
+  // ==========================================
+  // FIXED ASSETS & DEPRECIATION (REPORT 10)
+  // ==========================================
+  const addFixedAsset = async (fa: Omit<FixedAsset, "id">): Promise<FixedAsset> => {
+    const res = await persistFixedAssetDB(fa);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة الأصل الثابت");
+    const saved = res.data;
+    setFixedAssets(prev => [saved, ...prev]);
+
+    await addAuditLog({
+      organizationId: organization.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "FixedAsset",
+      entityId: saved.id,
+      details: `إضافة أصل جديد: ${saved.name} (قيمة الشراء: ${saved.purchaseValue}, نسبة الإهلاك: ${saved.depreciationRate}%)`,
+    });
+
+    showToast(locale === "ar" ? `تم حفظ الأصل (${saved.name}) بنجاح` : `Asset (${saved.name}) saved`, "success");
+    return saved;
+  };
+
+  const updateFixedAsset = async (id: string, fa: Partial<FixedAsset>): Promise<FixedAsset> => {
+    const oldAsset = fixedAssets.find(a => a.id === id);
+    const res = await updateFixedAssetDB(id, fa);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل تحديث الأصل الثابت");
+    const saved = res.data;
+    setFixedAssets(prev => prev.map(a => a.id === id ? saved : a));
+
+    await addAuditLog({
+      organizationId: organization.id,
+      userName: currentUser.name,
+      action: fa.status !== undefined ? "status_change" : "update",
+      entityType: "FixedAsset",
+      entityId: saved.id,
+      details: `تحديث بيانات الأصل: ${saved.name} (الحالة السابقة: ${oldAsset?.status || "-"} -> الحالية: ${saved.status})`,
+    });
+
+    showToast(locale === "ar" ? `تم تحديث الأصل (${saved.name}) بنجاح` : `Asset (${saved.name}) updated`, "success");
+    return saved;
+  };
+
+  const deleteFixedAsset = async (id: string): Promise<void> => {
+    const target = fixedAssets.find(a => a.id === id);
+    const res = await deleteFixedAssetDB(id);
+    if (!res.success) throw new Error(res.error || "فشل حذف الأصل الثابت");
+    setFixedAssets(prev => prev.filter(a => a.id !== id));
+
+    await addAuditLog({
+      organizationId: organization.id,
+      userName: currentUser.name,
+      action: "delete",
+      entityType: "FixedAsset",
+      entityId: id,
+      details: `حذف الأصل الثابت: ${target?.name || id}`,
+    });
+
+    showToast(locale === "ar" ? "تم حذف الأصل بنجاح" : "Asset deleted", "success");
+  };
+
+  const postAssetDepreciation = async (assetId: string, periodEndDate?: string): Promise<JournalEntry | null> => {
+    const asset = fixedAssets.find(a => a.id === assetId);
+    if (!asset) throw new Error("الأصل غير موجود");
+    if (asset.status === "inactive") {
+      showToast(locale === "ar" ? "الأصل غير نشط - لا يمكن احتساب إهلاك" : "Asset is inactive", "error");
+      return null;
+    }
+
+    const calc = computeAssetDepreciation(asset, periodEndDate);
+    if (calc.currentPeriodDepreciation <= 0) {
+      showToast(locale === "ar" ? `لا يوجد قسط إهلاك مستحق للأصل (${asset.name})` : "No depreciation due", "info");
+      return null;
+    }
+
+    const dateStr = periodEndDate || new Date().toISOString().split("T")[0];
+    const jeDraft = generateAssetDepreciationJournalEntry(
+      asset,
+      calc.currentPeriodDepreciation,
+      dateStr,
+      accounts,
+      organization.id,
+      activeBranchId,
+      currentUser.name
+    );
+
+    if (!jeDraft) return null;
+
+    const res = await persistJournalEntryDB(jeDraft as any);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل ترحيل قيد الإهلاك");
+    const savedJE = res.data as JournalEntry;
+
+    setJournalEntries(prev => [savedJE, ...prev]);
+
+    await addAuditLog({
+      organizationId: organization.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "AssetDepreciation",
+      entityId: asset.id,
+      details: `ترحيل قيد إهلاك أصل: ${asset.name} بمبلغ ${calc.currentPeriodDepreciation} (قيد رقم: ${savedJE.entryNumber})`,
+    });
+
+    showToast(locale === "ar" ? `تم ترحيل قيد إهلاك (${asset.name}) بمبلغ ${calc.currentPeriodDepreciation} بنجاح` : `Depreciation posted`, "success");
+    return savedJE;
+  };
+
+  const postAllActiveAssetsDepreciation = async (periodEndDate?: string): Promise<number> => {
+    let count = 0;
+    const activeAssets = fixedAssets.filter(a => a.status === "active");
+    for (const a of activeAssets) {
+      try {
+        const je = await postAssetDepreciation(a.id, periodEndDate);
+        if (je) count++;
+      } catch (err) {
+        console.warn(`Failed to post depreciation for asset ${a.name}:`, err);
+      }
+    }
+    showToast(locale === "ar" ? `تم ترحيل إهلاك (${count}) أصل بنجاح` : `Depreciation posted for ${count} assets`, "success");
+    return count;
+  };
+
   const resetToDemoData = () => {
     setProducts(initialProducts);
     setCategories(initialCategories);
@@ -2390,6 +2526,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     setAuditLogs(initialAuditLogs);
     setProductChangeLogs([]);
     setPeriodClosings([]);
+    setFixedAssets([]);
   };
 
   return (
@@ -2422,6 +2559,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         accounts, costCenters, journalEntries, addAccount, updateAccount, deleteAccount,
         addCostCenter, updateCostCenter, deleteCostCenter,
         addJournalEntry, deleteJournalEntry, postOpeningEntry,
+        fixedAssets, addFixedAsset, updateFixedAsset, deleteFixedAsset, postAssetDepreciation, postAllActiveAssetsDepreciation,
         auditLogs, notifications, addAuditLog, markNotificationRead, resetToDemoData
       }}
     >
