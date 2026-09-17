@@ -3,6 +3,7 @@
 import React from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getMonthlyJournalNumber } from "@/lib/accounting-engine";
 import Modal from "./Modal";
 import { JournalEntry } from "@/types/erp";
 import { Printer, FileText, CheckCircle2, Building2, User, Clock, ShieldCheck } from "lucide-react";
@@ -14,7 +15,7 @@ interface JournalVoucherPrintModalProps {
 }
 
 export default function JournalVoucherPrintModal({ entry, isOpen, onClose }: JournalVoucherPrintModalProps) {
-  const { organization, costCenters, locale } = useERP();
+  const { organization, costCenters, journalEntries, locale } = useERP();
   const isAr = locale === "ar";
 
   if (!entry) return null;
@@ -59,7 +60,13 @@ export default function JournalVoucherPrintModal({ entry, isOpen, onClose }: Jou
 
             <div className="text-left font-mono text-xs text-slate-700 space-y-1">
               <div>
-                <span className="text-slate-500">{isAr ? "رقم القيد: " : "Entry #: "}</span>
+                <span className="text-slate-500">{isAr ? "رقم القيد الشهري: " : "Monthly Entry #: "}</span>
+                <span className="font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {getMonthlyJournalNumber(entry, journalEntries)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500">{isAr ? "الرقم المرجعي: " : "Ref #: "}</span>
                 <span className="font-bold text-slate-950">{entry.entryNumber}</span>
               </div>
               <div>
@@ -68,7 +75,7 @@ export default function JournalVoucherPrintModal({ entry, isOpen, onClose }: Jou
               </div>
               <div>
                 <span className="text-slate-500">{isAr ? "المرجع: " : "Ref: "}</span>
-                <span className="font-semibold text-slate-800">{entry.referenceType || "قيد يدوي"}</span>
+                <span className="font-semibold text-slate-800">{entry.referenceType || (isAr ? "قيد يدوي" : "Manual Entry")}</span>
               </div>
             </div>
           </div>

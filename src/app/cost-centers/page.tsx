@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useERP } from "@/context/erp-context";
 import Modal from "@/components/ui/Modal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
-import { CostCenter } from "@/types/erp";
+import { CostCenter, CostCenterType } from "@/types/erp";
 import {
   Layers, Plus, Search, Edit, Trash2, AlertTriangle, CheckCircle2, Loader2, AlertCircle
 } from "lucide-react";
@@ -21,7 +21,7 @@ export default function CostCentersPage() {
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [parentId, setParentId] = useState("");
-  const [costCenterType, setCostCenterType] = useState<"expense" | "revenue">("expense");
+  const [costCenterType, setCostCenterType] = useState<CostCenterType>("expense");
 
   // Edit / Delete Modal State
   const [editCostCenter, setEditCostCenter] = useState<CostCenter | null>(null);
@@ -32,7 +32,7 @@ export default function CostCentersPage() {
   const [editNameAr, setEditNameAr] = useState("");
   const [editNameEn, setEditNameEn] = useState("");
   const [editParentId, setEditParentId] = useState("");
-  const [editCostCenterType, setEditCostCenterType] = useState<"expense" | "revenue">("expense");
+  const [editCostCenterType, setEditCostCenterType] = useState<CostCenterType>("expense");
 
   const handleCreateCostCenter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,7 +125,7 @@ export default function CostCentersPage() {
   };
 
   // Filter & Hierarchy State
-  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "sub" | "expense" | "revenue">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "sub" | CostCenterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Group into structured hierarchical tree
@@ -161,10 +161,13 @@ export default function CostCentersPage() {
 
       if (!matchesSearch) return false;
 
+      const currentType = (cc.costCenterType || cc.type || "expense") as CostCenterType;
       if (typeFilter === "main") return !cc.parentId;
       if (typeFilter === "sub") return !!cc.parentId;
-      if (typeFilter === "expense") return (cc.costCenterType || cc.type) !== "revenue";
-      if (typeFilter === "revenue") return (cc.costCenterType || cc.type) === "revenue";
+      if (typeFilter === "expense") return currentType === "expense";
+      if (typeFilter === "revenue") return currentType === "revenue";
+      if (typeFilter === "asset") return currentType === "asset";
+      if (typeFilter === "liability") return currentType === "liability";
       return true;
     });
   }, [hierarchicalCostCenters, searchQuery, typeFilter]);
@@ -234,13 +237,25 @@ export default function CostCentersPage() {
             onClick={() => setTypeFilter("expense")}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "expense" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
-            {isAr ? "تكاليف ومصروفات" : "Expenses"}
+            {isAr ? "مصروفات" : "Expenses"}
           </button>
           <button
             onClick={() => setTypeFilter("revenue")}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "revenue" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
           >
-            {isAr ? "إيرادية" : "Revenues"}
+            {isAr ? "إيرادات" : "Revenues"}
+          </button>
+          <button
+            onClick={() => setTypeFilter("asset")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "asset" ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "أصول" : "Assets"}
+          </button>
+          <button
+            onClick={() => setTypeFilter("liability")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${typeFilter === "liability" ? "bg-amber-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            {isAr ? "التزامات" : "Liabilities"}
           </button>
         </div>
 
@@ -303,15 +318,34 @@ export default function CostCentersPage() {
                       </div>
                     </td>
                     <td className="p-3.5 text-center">
-                      {cc.costCenterType === "revenue" || cc.type === "revenue" ? (
-                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
-                          {isAr ? "إيرادي" : "Revenue"}
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-xl font-bold border border-blue-500/20 text-[10px]">
-                          {isAr ? "تكاليف ومصروفات" : "Expense"}
-                        </span>
-                      )}
+                      {(() => {
+                        const t = cc.costCenterType || cc.type || "expense";
+                        if (t === "revenue") {
+                          return (
+                            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
+                              {isAr ? "إيراد" : "Revenue"}
+                            </span>
+                          );
+                        } else if (t === "asset") {
+                          return (
+                            <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-xl font-bold border border-indigo-500/20 text-[10px]">
+                              {isAr ? "أصل" : "Asset"}
+                            </span>
+                          );
+                        } else if (t === "liability") {
+                          return (
+                            <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-xl font-bold border border-amber-500/20 text-[10px]">
+                              {isAr ? "التزامات" : "Liability"}
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-xl font-bold border border-blue-500/20 text-[10px]">
+                              {isAr ? "مصروف" : "Expense"}
+                            </span>
+                          );
+                        }
+                      })()}
                     </td>
                     <td className="p-3.5 text-center">
                       {isChild ? (
@@ -383,11 +417,13 @@ export default function CostCentersPage() {
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "طبيعة المركز *" : "Center Type *"}</label>
               <select
                 value={costCenterType}
-                onChange={(e) => setCostCenterType(e.target.value as "expense" | "revenue")}
+                onChange={(e) => setCostCenterType(e.target.value as CostCenterType)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="expense">{isAr ? "مركز تكاليف ومصروفات" : "Expense Cost Center"}</option>
-                <option value="revenue">{isAr ? "مركز إيرادات وأرباح" : "Revenue Center"}</option>
+                <option value="expense">{isAr ? "مصروف (Expense)" : "Expense"}</option>
+                <option value="revenue">{isAr ? "إيراد (Revenue)" : "Revenue"}</option>
+                <option value="asset">{isAr ? "أصل (Asset)" : "Asset"}</option>
+                <option value="liability">{isAr ? "التزامات (Liability)" : "Liability"}</option>
               </select>
             </div>
           </div>
@@ -483,11 +519,13 @@ export default function CostCentersPage() {
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "طبيعة المركز *" : "Center Type *"}</label>
                 <select
                   value={editCostCenterType}
-                  onChange={(e) => setEditCostCenterType(e.target.value as "expense" | "revenue")}
+                  onChange={(e) => setEditCostCenterType(e.target.value as CostCenterType)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="expense">{isAr ? "مركز تكاليف ومصروفات" : "Expense Cost Center"}</option>
-                  <option value="revenue">{isAr ? "مركز إيرادات وأرباح" : "Revenue Center"}</option>
+                  <option value="expense">{isAr ? "مصروف (Expense)" : "Expense"}</option>
+                  <option value="revenue">{isAr ? "إيراد (Revenue)" : "Revenue"}</option>
+                  <option value="asset">{isAr ? "أصل (Asset)" : "Asset"}</option>
+                  <option value="liability">{isAr ? "التزامات (Liability)" : "Liability"}</option>
                 </select>
               </div>
             </div>

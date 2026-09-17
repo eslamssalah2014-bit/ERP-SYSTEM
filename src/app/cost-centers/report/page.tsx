@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportTableToExcel } from "@/lib/excel-export";
 import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
 import TableSkeleton from "@/components/ui/TableSkeleton";
+import { CostCenterType } from "@/types/erp";
 import Link from "next/link";
 import {
   Layers, Filter, Printer, Download, ArrowRight,
@@ -50,7 +51,7 @@ export default function CostCenterReportPage() {
       costCenterId: string;
       costCenterCode: string;
       costCenterName: string;
-      costCenterType: "revenue" | "expense";
+      costCenterType: CostCenterType;
       accountId: string;
       accountCode: string;
       accountName: string;
@@ -79,7 +80,7 @@ export default function CostCenterReportPage() {
         const cc = costCenters.find(c => c.id === line.costCenterId);
         const acc = accounts.find(a => a.id === line.accountId);
 
-        const ccType = (cc?.costCenterType || cc?.type || "expense") as "revenue" | "expense";
+        const ccType = (cc?.costCenterType || cc?.type || "expense") as CostCenterType;
 
         list.push({
           id: `${entry.id}-${idx}`,

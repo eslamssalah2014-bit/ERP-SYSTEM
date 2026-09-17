@@ -132,7 +132,9 @@ export default function SalesQuotationsPage() {
       current.productName = isAr ? prod.nameAr : prod.nameEn;
       current.unitPrice = prod.sellingPrice;
       current.costPrice = prod.costPrice;
-      current.taxRate = organization.defaultVatRate;
+      current.taxRate = (prod.taxRate !== undefined && prod.taxRate !== null && !isNaN(Number(prod.taxRate)))
+        ? Number(prod.taxRate)
+        : (organization.defaultVatRate || 0);
 
       const lineSubtotal = current.unitPrice * current.quantity;
       current.taxAmount = (lineSubtotal * current.taxRate) / 100;

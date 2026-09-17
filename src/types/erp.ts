@@ -362,7 +362,7 @@ export interface PurchaseReturn {
 export interface StatementTransaction {
   id: string;
   date: string;
-  type: 'opening_balance' | 'invoice' | 'payment' | 'receipt' | 'return';
+  type: 'opening_balance' | 'invoice' | 'payment' | 'receipt' | 'return' | 'check_receipt' | 'check_payment';
   referenceNumber: string;
   description: string;
   debit: number;
@@ -531,7 +531,18 @@ export interface Account {
   isSystem: boolean;
 }
 
-export type CostCenterType = 'revenue' | 'expense';
+export type CostCenterType = 'expense' | 'revenue' | 'asset' | 'liability';
+
+export interface CostCenterAccount {
+  id: string;
+  organizationId: string;
+  code: string;
+  nameAr: string;
+  nameEn?: string;
+  accountId?: string;
+  costCenterType?: CostCenterType;
+  description?: string;
+}
 
 export interface CostCenter {
   id: string;
@@ -542,6 +553,7 @@ export interface CostCenter {
   type?: CostCenterType;
   costCenterType?: CostCenterType;
   parentId?: string;
+  mainAccountId?: string;
   level: number;
   isActive: boolean;
 }

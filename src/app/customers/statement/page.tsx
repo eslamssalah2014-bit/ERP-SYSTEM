@@ -251,11 +251,13 @@ export function CustomerStatementContent({ paramId }: { paramId?: string }) {
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         tx.type === "invoice" ? "bg-rose-500/10 text-rose-400 print:text-rose-700" :
                         tx.type === "payment" ? "bg-emerald-500/10 text-emerald-400 print:text-emerald-700" :
+                        tx.type === "check_receipt" ? "bg-cyan-500/10 text-cyan-400 print:text-cyan-700" :
                         tx.type === "return" ? "bg-amber-500/10 text-amber-400 print:text-amber-700" :
                         "bg-slate-700 text-slate-300 print:text-black"
                       }`}>
                         {tx.type === "invoice" ? (isAr ? "فاتورة مبيعات" : "Invoice") :
-                         tx.type === "payment" ? (isAr ? "سند قبض" : "Receipt") :
+                         tx.type === "payment" ? (isAr ? "سند قبض نقدي" : "Cash Receipt") :
+                         tx.type === "check_receipt" ? (isAr ? "سند قبض شيكات" : "Check Receipt") :
                          tx.type === "return" ? (isAr ? "مرتجع مبيعات" : "Return") :
                          (isAr ? "رصيد افتتاح" : "Opening")}
                       </span>

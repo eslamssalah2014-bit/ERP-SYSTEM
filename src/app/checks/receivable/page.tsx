@@ -24,7 +24,7 @@ interface CheckRowItem {
 export default function ReceivableChecksPage() {
   const {
     checks, customers, accounts, costCenters, treasuryAccounts,
-    addCheck, updateCheck, deleteCheck, organization,
+    addCheck, addCheckReceiptVoucher, updateCheck, deleteCheck, organization,
     activeBranchId, currentUser, locale, hasPermission, isLoadingData
   } = useERP();
 
@@ -152,34 +152,25 @@ export default function ReceivableChecksPage() {
 
     setIsSubmitting(true);
     try {
-      const createdChecks: CheckRecord[] = [];
       const custObj = customers.find(c => c.id === customerId);
       const finalPartyName = partyName || custObj?.nameAr || (isAr ? "عميل" : "Customer");
 
-      for (const item of checkItems) {
-        if (item.amount > 0) {
-          const chk = await addCheck({
-            organizationId: organization.id,
-            branchId: activeBranchId,
-            checkNumber: item.checkNumber,
-            bankName: item.draweeBank,
-            draweeBank: item.draweeBank,
-            type: "incoming",
-            partyName: finalPartyName,
-            customerId: customerId || undefined,
-            accountId: accountId || undefined,
-            costCenterId: costCenterId || undefined,
-            voucherNumber: voucherNumber,
-            amount: item.amount,
-            issueDate: voucherDate,
-            dueDate: item.dueDate,
-            status: "in_treasury",
-            notes: voucherNotes,
-            createdBy: currentUser.name
-          });
-          createdChecks.push(chk);
-        }
-      }
+      await addCheckReceiptVoucher({
+        voucherNumber,
+        voucherDate,
+        partyName: finalPartyName,
+        customerId: customerId || undefined,
+        accountId: accountId || undefined,
+        costCenterId: costCenterId || undefined,
+        notes: voucherNotes,
+        checks: checkItems.filter(item => item.amount > 0).map(item => ({
+          checkNumber: item.checkNumber,
+          bankName: item.draweeBank,
+          draweeBank: item.draweeBank,
+          dueDate: item.dueDate,
+          amount: item.amount,
+        }))
+      });
 
       setIsModalOpen(false);
 

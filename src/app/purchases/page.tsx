@@ -143,7 +143,9 @@ export default function PurchasesPage() {
       current.productId = prod.id;
       current.productName = isAr ? prod.nameAr : prod.nameEn;
       current.unitCost = prod.costPrice || 0;
-      current.taxRate = organization.defaultVatRate;
+      current.taxRate = (prod.taxRate !== undefined && prod.taxRate !== null && !isNaN(Number(prod.taxRate)))
+        ? Number(prod.taxRate)
+        : (organization.defaultVatRate || 0);
 
       const lineSubtotal = current.unitCost * current.quantity;
       current.taxAmount = (lineSubtotal * current.taxRate) / 100;

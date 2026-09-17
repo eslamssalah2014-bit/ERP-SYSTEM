@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
-import { computeGeneralLedgerSummary, GeneralLedgerSummaryRow } from "@/lib/accounting-engine";
+import { computeGeneralLedgerSummary, GeneralLedgerSummaryRow, computeMonthlyJournalNumbers } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportTableToExcel } from "@/lib/excel-export";
 import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
@@ -15,6 +15,8 @@ import {
 export default function LedgerPage() {
   const { accounts, journalEntries, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  const monthlyNumbers = useMemo(() => computeMonthlyJournalNumbers(journalEntries), [journalEntries]);
 
   // State
   const [viewMode, setViewMode] = useState<"summary" | "detailed">("summary");
@@ -56,6 +58,7 @@ export default function LedgerPage() {
     let openDr = 0;
     let openCr = 0;
     const periodLines: Array<{
+      journalEntryId?: string;
       date: string;
       entryNumber: string;
       description: string;
@@ -85,6 +88,7 @@ export default function LedgerPage() {
             openCr += cr;
           } else if (isInPeriod) {
             periodLines.push({
+              journalEntryId: entry.id,
               date: entry.date,
               entryNumber: entry.entryNumber,
               description: line.description || entry.description,
@@ -462,7 +466,19 @@ export default function LedgerPage() {
                     detailedLedger.lines.map((l, idx) => (
                       <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
                         <td className="p-3.5 font-sans text-slate-300">{formatDate(l.date, locale)}</td>
-                        <td className="p-3.5 text-slate-400 font-bold">{l.entryNumber}</td>
+                        <td className="p-3.5 text-slate-400 font-bold">
+                          <div className="flex items-center gap-1.5 font-mono">
+                            {l.journalEntryId && monthlyNumbers[l.journalEntryId] && (
+                              <span
+                                className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold text-[11px] border border-emerald-500/20"
+                                title={isAr ? "رقم القيد الشهري (الشهر/المسلسل)" : "Monthly Journal Number (Month/Seq)"}
+                              >
+                                {monthlyNumbers[l.journalEntryId]}
+                              </span>
+                            )}
+                            <span>{l.entryNumber}</span>
+                          </div>
+                        </td>
                         <td className="p-3.5 font-sans text-white font-semibold">{l.description}</td>
                         <td className="p-3.5 text-center font-bold text-emerald-400">
                           {l.debit > 0 ? formatCurrency(l.debit, organization.currency, locale) : "-"}

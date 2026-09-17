@@ -300,14 +300,16 @@ async function autoPostDocumentJournal(
         credit: netAmount,
         description: `إيراد مبيعات بضاعة صافي فاتورة ${doc.invoice_number}`
       });
-      lines.push({
-        account_id: vatOutAcc.id,
-        account_code: vatOutAcc.code,
-        account_name: vatOutAcc.name_ar,
-        debit: 0,
-        credit: taxTotal,
-        description: `ضريبة القيمة المضافة المستحقة (مخرجات) فاتورة ${doc.invoice_number}`
-      });
+      if (taxTotal > 0) {
+        lines.push({
+          account_id: vatOutAcc.id,
+          account_code: vatOutAcc.code,
+          account_name: vatOutAcc.name_ar,
+          debit: 0,
+          credit: taxTotal,
+          description: `ضريبة القيمة المضافة المستحقة (مخرجات) فاتورة ${doc.invoice_number}`
+        });
+      }
 
       let totalCogs = 0;
       items.forEach((it: any) => {
@@ -343,14 +345,16 @@ async function autoPostDocumentJournal(
         credit: 0,
         description: `إضافة بضاعة للمخزن بالصافي فاتورة مشتريات ${doc.invoice_number}`
       });
-      lines.push({
-        account_id: vatInAcc.id,
-        account_code: vatInAcc.code,
-        account_name: vatInAcc.name_ar,
-        debit: taxTotal,
-        credit: 0,
-        description: `ضريبة مدخلات قابلة للخصم فاتورة مشتريات ${doc.invoice_number}`
-      });
+      if (taxTotal > 0) {
+        lines.push({
+          account_id: vatInAcc.id,
+          account_code: vatInAcc.code,
+          account_name: vatInAcc.name_ar,
+          debit: taxTotal,
+          credit: 0,
+          description: `ضريبة مدخلات قابلة للخصم فاتورة مشتريات ${doc.invoice_number}`
+        });
+      }
       lines.push({
         account_id: apAcc.id,
         account_code: apAcc.code,
@@ -372,14 +376,16 @@ async function autoPostDocumentJournal(
         credit: 0,
         description: `مردودات مبيعات إشعار دائن ${doc.return_number}`
       });
-      lines.push({
-        account_id: vatOutAcc.id,
-        account_code: vatOutAcc.code,
-        account_name: vatOutAcc.name_ar,
-        debit: taxTotal,
-        credit: 0,
-        description: `تخفيض ضريبة القيمة المضافة لمرتجع مبيعات ${doc.return_number}`
-      });
+      if (taxTotal > 0) {
+        lines.push({
+          account_id: vatOutAcc.id,
+          account_code: vatOutAcc.code,
+          account_name: vatOutAcc.name_ar,
+          debit: taxTotal,
+          credit: 0,
+          description: `تخفيض ضريبة القيمة المضافة لمرتجع مبيعات ${doc.return_number}`
+        });
+      }
       lines.push({
         account_id: creditAcc.id,
         account_code: creditAcc.code,
@@ -547,7 +553,7 @@ export function mapProduct(p: any, stockMap: { [whId: string]: number } = {}) {
     unitId: p.unit_id || "",
     costPrice: Number(p.cost_price) || 0,
     sellingPrice: Number(p.selling_price) || 0,
-    taxRate: Number(p.tax_rate) || 14,
+    taxRate: (p.tax_rate !== undefined && p.tax_rate !== null && !isNaN(Number(p.tax_rate))) ? Number(p.tax_rate) : 14,
     minStockLevel: Number(p.min_stock_level) || 5,
     status: p.status || "active",
     warehouseStock: stockMap,
@@ -1319,7 +1325,7 @@ export async function GET() {
         costPrice: Number(item.cost_price) || 0,
         discountPercent: Number(item.discount_percent) || 0,
         discountAmount: Number(item.discount_amount) || 0,
-        taxRate: Number(item.tax_rate) || 14,
+        taxRate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(Number(item.tax_rate))) ? Number(item.tax_rate) : 14,
         taxAmount: Number(item.tax_amount) || 0,
         total: Number(item.total) || 0,
       });
@@ -1341,7 +1347,7 @@ export async function GET() {
         quantity: Number(item.quantity) || 1,
         unitPrice: Number(item.unit_price) || 0,
         costPrice: Number(item.cost_price) || 0,
-        taxRate: Number(item.tax_rate) || 14,
+        taxRate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(Number(item.tax_rate))) ? Number(item.tax_rate) : 14,
         taxAmount: Number(item.tax_amount) || 0,
         total: Number(item.total) || 0,
       });
@@ -1364,7 +1370,7 @@ export async function GET() {
         unitCost: Number(item.unit_cost) || 0,
         discountPercent: Number(item.discount_percent) || 0,
         discountAmount: Number(item.discount_amount) || 0,
-        taxRate: Number(item.tax_rate) || 14,
+        taxRate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(Number(item.tax_rate))) ? Number(item.tax_rate) : 14,
         taxAmount: Number(item.tax_amount) || 0,
         total: Number(item.total) || 0,
       });
@@ -1385,7 +1391,7 @@ export async function GET() {
         warehouseId: item.warehouse_id,
         quantity: Number(item.quantity) || 1,
         unitCost: Number(item.unit_cost) || 0,
-        taxRate: Number(item.tax_rate) || 14,
+        taxRate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(Number(item.tax_rate))) ? Number(item.tax_rate) : 14,
         taxAmount: Number(item.tax_amount) || 0,
         total: Number(item.total) || 0,
       });
@@ -1566,7 +1572,7 @@ export async function POST(request: Request) {
           unit_id: validUnitId,
           cost_price: Number(costPrice) || 0,
           selling_price: Number(sellingPrice) || 0,
-          tax_rate: Number(taxRate) || 14,
+          tax_rate: (taxRate !== undefined && taxRate !== null && !isNaN(Number(taxRate))) ? Number(taxRate) : 14,
           min_stock_level: Number(minStockLevel) || 5,
           status: status || "active",
         };
@@ -2502,7 +2508,7 @@ export async function POST(request: Request) {
 
             // If actual tax invoice, affect stock
             if (it.product_id && invType !== "quotation") {
-              await supabaseAdmin.from("stock_movements").insert([{
+              const movRow = sanitizeRowForTable("stock_movements", {
                 organization_id: validOrgId,
                 product_id: it.product_id,
                 warehouse_id: it.warehouse_id,
@@ -2514,11 +2520,10 @@ export async function POST(request: Request) {
                 unit_cost: it.cost_price,
                 total_cost: -Math.abs(it.cost_price * it.quantity),
                 balance_quantity: 0,
-                partner_id: validCustId,
-                partner_name: customerName,
-                partner_type: "customer",
-                notes: `صرف مبيعات فاتورة ${inv.invoice_number}`,
-              }]);
+                notes: `[PARTNER:customer:${validCustId || ""}:${customerName || ""}] صرف مبيعات فاتورة ${inv.invoice_number}`,
+              });
+              const { error: smErr } = await supabaseAdmin.from("stock_movements").insert([movRow]);
+              if (smErr) console.error("Error inserting sales stock movement:", smErr);
 
               // Decrement Product Warehouse Stock
               const { data: currentStockRow } = await supabaseAdmin
@@ -2685,7 +2690,7 @@ export async function POST(request: Request) {
 
             if (it.product_id) {
               // 1. Stock Movement (Return)
-              await supabaseAdmin.from("stock_movements").insert([{
+              const movRow = sanitizeRowForTable("stock_movements", {
                 organization_id: validOrgId,
                 product_id: it.product_id,
                 warehouse_id: it.warehouse_id,
@@ -2697,11 +2702,10 @@ export async function POST(request: Request) {
                 unit_cost: it.cost_price || it.unit_price,
                 total_cost: Math.abs((it.cost_price || it.unit_price) * it.quantity),
                 balance_quantity: 0,
-                partner_id: validCustId,
-                partner_name: customerName,
-                partner_type: "customer",
-                notes: `مرتجع مبيعات إشعار دائن ${sret.return_number}`,
-              }]);
+                notes: `[PARTNER:customer:${validCustId || ""}:${customerName || ""}] مرتجع مبيعات إشعار دائن ${sret.return_number}`,
+              });
+              const { error: smErr } = await supabaseAdmin.from("stock_movements").insert([movRow]);
+              if (smErr) console.error("Error inserting sales return stock movement:", smErr);
 
               // 2. Increment Stock
               const { data: currentStockRow } = await supabaseAdmin
@@ -2834,7 +2838,7 @@ export async function POST(request: Request) {
         if (items && items.length > 0 && pinv?.id) {
           const itemRows = items.map((it: any) => {
             const rowId = cleanUUID(it.id, generateId());
-            return {
+            return sanitizeRowForTable("purchase_invoice_items", {
               id: rowId,
               purchase_invoice_id: pinv.id,
               product_id: cleanUUID(it.productId, null),
@@ -2842,50 +2846,49 @@ export async function POST(request: Request) {
               warehouse_id: cleanUUID(it.warehouseId, validWhId),
               quantity: Number(it.quantity) || 1,
               unit_cost: Number(it.unitCost) || 0,
-              discount_percent: Number(it.discountPercent) || 0,
               discount_amount: Number(it.discountAmount) || 0,
-              tax_rate: Number(it.taxRate) || 14,
+              tax_rate: (it.taxRate !== undefined && it.taxRate !== null && !isNaN(Number(it.taxRate))) ? Number(it.taxRate) : 14,
               tax_amount: Number(it.taxAmount) || 0,
               total: Number(it.total) || 0,
-            };
+            });
           });
 
-          await supabaseAdmin.from("purchase_invoice_items").insert(itemRows);
+          const { error: piErr } = await supabaseAdmin.from("purchase_invoice_items").insert(itemRows);
+          if (piErr) console.error("Error inserting purchase invoice items:", piErr);
 
-          for (const it of itemRows) {
+          for (const it of items) {
             mappedItems.push({
               id: it.id,
-              productId: it.product_id,
-              productName: it.product_name,
-              warehouseId: it.warehouse_id,
+              productId: it.productId,
+              productName: it.productName,
+              warehouseId: it.warehouseId,
               quantity: it.quantity,
-              unitCost: it.unit_cost,
+              unitCost: it.unitCost,
               discountPercent: it.discountPercent,
-              discountAmount: it.discount_amount,
-              taxRate: it.tax_rate,
-              taxAmount: it.tax_amount,
+              discountAmount: it.discountAmount,
+              taxRate: (it.taxRate !== undefined && it.taxRate !== null && !isNaN(Number(it.taxRate))) ? Number(it.taxRate) : 14,
+              taxAmount: it.taxAmount,
               total: it.total,
             });
 
             // If actual purchase invoice, increment stock
-            if (it.product_id && pType !== "purchase_order") {
-              await supabaseAdmin.from("stock_movements").insert([{
+            if (it.productId && pType !== "purchase_order") {
+              const movRow = sanitizeRowForTable("stock_movements", {
                 organization_id: validOrgId,
-                product_id: it.product_id,
-                warehouse_id: it.warehouse_id,
+                product_id: cleanUUID(it.productId, null),
+                warehouse_id: cleanUUID(it.warehouseId, validWhId),
                 movement_type: "purchase_receipt",
                 reference_id: pinv.id,
                 reference_number: pinv.invoice_number,
                 date: pinv.date,
                 quantity: Math.abs(it.quantity),
-                unit_cost: it.unit_cost,
-                total_cost: Math.abs(it.unit_cost * it.quantity),
+                unit_cost: Number(it.unitCost) || 0,
+                total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
                 balance_quantity: 0,
-                partner_id: validSuppId,
-                partner_name: supplierName,
-                partner_type: "supplier",
-                notes: `توريد مشتريات فاتورة ${pinv.invoice_number}`,
-              }]);
+                notes: `[PARTNER:supplier:${validSuppId || ""}:${supplierName || ""}] توريد مشتريات فاتورة ${pinv.invoice_number}`,
+              });
+              const { error: smErr } = await supabaseAdmin.from("stock_movements").insert([movRow]);
+              if (smErr) console.error("Error inserting purchase stock movement:", smErr);
 
               // Increment Product Warehouse Stock
               const { data: currentStockRow } = await supabaseAdmin
@@ -3049,7 +3052,7 @@ export async function POST(request: Request) {
 
             if (it.product_id) {
               // 1. Stock Movement (Return)
-              await supabaseAdmin.from("stock_movements").insert([{
+              const movRow = sanitizeRowForTable("stock_movements", {
                 organization_id: validOrgId,
                 product_id: it.product_id,
                 warehouse_id: it.warehouse_id,
@@ -3061,11 +3064,10 @@ export async function POST(request: Request) {
                 unit_cost: it.unit_cost,
                 total_cost: -Math.abs(it.unit_cost * it.quantity),
                 balance_quantity: 0,
-                partner_id: validSuppId,
-                partner_name: supplierName,
-                partner_type: "supplier",
-                notes: `مرتجع مشتريات إشعار مدين ${pret.return_number}`,
-              }]);
+                notes: `[PARTNER:supplier:${validSuppId || ""}:${supplierName || ""}] مرتجع مشتريات إشعار مدين ${pret.return_number}`,
+              });
+              const { error: smErr } = await supabaseAdmin.from("stock_movements").insert([movRow]);
+              if (smErr) console.error("Error inserting purchase return stock movement:", smErr);
 
               // 2. Decrement Stock
               const { data: currentStockRow } = await supabaseAdmin
@@ -3935,6 +3937,7 @@ export async function POST(request: Request) {
       // ==========================================
       // PRODUCT CATEGORIES (CREATE, UPDATE, DELETE)
       // ==========================================
+      case "create_product_category":
       case "create_category": {
         const { id, organizationId, code, nameAr, nameEn, parentId } = payload;
         const validId = cleanUUID(id, null);
@@ -3962,6 +3965,7 @@ export async function POST(request: Request) {
         return noCacheResponse({ success: true, data: mapCategory(cat) });
       }
 
+      case "update_product_category":
       case "update_category": {
         const { id, code, nameAr, nameEn, parentId } = payload;
         const validId = cleanUUID(id, null);
@@ -3984,6 +3988,7 @@ export async function POST(request: Request) {
         return noCacheResponse({ success: true, data: mapCategory(cat) });
       }
 
+      case "delete_product_category":
       case "delete_category": {
         const rawId = extractEntityId(payload);
         const validId = cleanUUID(rawId, rawId || null);
@@ -4076,6 +4081,67 @@ export async function POST(request: Request) {
         }
 
         return noCacheResponse({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // STOCK MOVEMENTS (CREATE / MANUAL ADJUSTMENT)
+      // ==========================================
+      case "create_stock_movement": {
+        const { organizationId, productId, warehouseId, movementType, referenceId, referenceNumber, date, quantity, unitCost, totalCost, notes } = payload;
+        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
+        const validProdId = cleanUUID(productId, null);
+        const validWhId = cleanUUID(warehouseId, DEFAULT_WAREHOUSE_ID);
+        const numQty = Number(quantity) || 0;
+        const numUnitCost = Number(unitCost) || 0;
+
+        if (!validProdId || !validWhId) {
+          return noCacheResponse({ success: false, message: "Valid productId and warehouseId are required" }, 400);
+        }
+
+        const rawRow = {
+          organization_id: validOrgId,
+          product_id: validProdId,
+          warehouse_id: validWhId,
+          movement_type: movementType || "adjustment",
+          reference_id: cleanUUID(referenceId, null),
+          reference_number: referenceNumber || ("MOV-" + Date.now().toString().slice(-6)),
+          date: date || new Date().toISOString().split("T")[0],
+          quantity: numQty,
+          unit_cost: numUnitCost,
+          total_cost: Math.abs(numQty * numUnitCost),
+          balance_quantity: 0,
+          notes: notes || "حركة مخزون",
+        };
+
+        const insertRow = sanitizeRowForTable("stock_movements", rawRow);
+        const { data: sm, error: smErr } = await supabaseAdmin
+          .from("stock_movements")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (smErr) throw smErr;
+
+        // Atomically update product_warehouse_stock
+        const { data: currentStockRow } = await supabaseAdmin
+          .from("product_warehouse_stock")
+          .select("quantity")
+          .eq("product_id", validProdId)
+          .eq("warehouse_id", validWhId)
+          .maybeSingle();
+
+        const currentQty = Number(currentStockRow?.quantity) || 0;
+        const newQty = Math.max(0, currentQty + numQty);
+
+        await supabaseAdmin
+          .from("product_warehouse_stock")
+          .upsert([{
+            product_id: validProdId,
+            warehouse_id: validWhId,
+            quantity: newQty,
+          }], { onConflict: "product_id,warehouse_id" });
+
+        return noCacheResponse({ success: true, data: mapStockMovement(sm) });
       }
 
       default:

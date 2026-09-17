@@ -30,7 +30,8 @@ import {
   generatePayableCheckJournal,
   generateOpeningStockJournal,
   generateStockAdjustmentJournal,
-  generatePeriodClosingJournal
+  generatePeriodClosingJournal,
+  generateCheckReceiptVoucherJournal
 } from "@/lib/accounting-engine";
 import {
   fetchFullERPData,
@@ -87,6 +88,7 @@ import {
   persistJournalEntryDB,
   updateJournalEntryDB,
   deleteJournalEntryDB,
+  persistStockMovementDB,
   updateStockMovementDB,
   deleteStockMovementDB,
   persistProductChangeLogDB,
@@ -219,7 +221,23 @@ interface ERPContextType {
   addCashPayment: (pay: Omit<CashPayment, "id">) => Promise<CashPayment>;
   updateCashPayment: (id: string, pay: Partial<CashPayment>) => Promise<CashPayment>;
   deleteCashPayment: (id: string) => Promise<void>;
-  addCheck: (chk: Omit<CheckRecord, "id">) => Promise<CheckRecord>;
+  addCheck: (chk: Omit<CheckRecord, "id">, skipAutoJE?: boolean) => Promise<CheckRecord>;
+  addCheckReceiptVoucher: (voucherData: {
+    voucherNumber: string;
+    voucherDate: string;
+    partyName: string;
+    customerId?: string;
+    accountId?: string;
+    costCenterId?: string;
+    notes?: string;
+    checks: Array<{
+      checkNumber: string;
+      bankName: string;
+      draweeBank?: string;
+      dueDate: string;
+      amount: number;
+    }>;
+  }) => Promise<CheckRecord[]>;
   updateCheck: (id: string, chk: Partial<CheckRecord>) => Promise<CheckRecord>;
   updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => Promise<void>;
   deleteCheck: (id: string) => Promise<void>;
@@ -517,6 +535,11 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
           };
 
           setStockMovements(prev => [adjMovement, ...prev]);
+          try {
+            await persistStockMovementDB(adjMovement);
+          } catch (smErr) {
+            console.error("Failed to persist stock adjustment movement:", smErr);
+          }
 
           const adjJournalDraft = generateStockAdjustmentJournal(
             organization.id,
@@ -1534,6 +1557,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
+    // 5. Incoming Checks (Receipt Checks)
+    checks.filter(chk => chk.type === "incoming" && chk.customerId === customerId).forEach(chk => {
+      const chkDate = chk.issueDate || (chk.createdAt ? chk.createdAt.split("T")[0] : "2026-01-01");
+      const bank = chk.draweeBank || chk.bankName || "البنك";
+      allTx.push({
+        id: chk.id,
+        date: chkDate,
+        type: "check_receipt",
+        referenceNumber: chk.voucherNumber || chk.checkNumber,
+        description: `سند قبض شيكات ${chk.voucherNumber ? `رقم ${chk.voucherNumber}` : ""} - شيك رقم ${chk.checkNumber} (${bank})${chk.dueDate ? ` - استحقاق ${chk.dueDate}` : ""}`,
+        debit: 0,
+        credit: Number(chk.amount) || 0,
+        balance: 0,
+      });
+    });
+
     // Sort by Date ascending
     allTx.sort((a, b) => a.date.localeCompare(b.date));
 
@@ -1564,7 +1603,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       closingBalance,
       transactions: filteredTx,
     };
-  }, [customers, salesInvoices, cashReceipts, salesReturns]);
+  }, [customers, salesInvoices, cashReceipts, salesReturns, checks]);
 
   const getSupplierStatement = useCallback((supplierId: string, fromDate?: string, toDate?: string): PartnerStatement => {
     const supplier = suppliers.find(s => s.id === supplierId);
@@ -1629,6 +1668,22 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
+    // 5. Outgoing Checks (Payment Checks)
+    checks.filter(chk => chk.type === "outgoing" && chk.supplierId === supplierId).forEach(chk => {
+      const chkDate = chk.issueDate || (chk.createdAt ? chk.createdAt.split("T")[0] : "2026-01-01");
+      const bank = chk.draweeBank || chk.bankName || "البنك";
+      allTx.push({
+        id: chk.id,
+        date: chkDate,
+        type: "check_payment",
+        referenceNumber: chk.voucherNumber || chk.checkNumber,
+        description: `سند صرف شيكات ${chk.voucherNumber ? `رقم ${chk.voucherNumber}` : ""} - شيك رقم ${chk.checkNumber} (${bank})${chk.dueDate ? ` - استحقاق ${chk.dueDate}` : ""}`,
+        debit: Number(chk.amount) || 0,
+        credit: 0,
+        balance: 0,
+      });
+    });
+
     // Sort by Date ascending
     allTx.sort((a, b) => a.date.localeCompare(b.date));
 
@@ -1659,7 +1714,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       closingBalance,
       transactions: filteredTx,
     };
-  }, [suppliers, purchaseInvoices, cashPayments, purchaseReturns]);
+  }, [suppliers, purchaseInvoices, cashPayments, purchaseReturns, checks]);
 
   const getCustomerBalancesReport = useCallback((fromDate?: string, toDate?: string, categoryId?: string) => {
     let filteredCusts = customers;
@@ -1970,34 +2025,111 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     showToast(locale === "ar" ? "تم حذف سند الصرف بنجاح" : "Payment deleted", "success");
   };
 
-  const addCheck = async (chk: Omit<CheckRecord, "id">): Promise<CheckRecord> => {
+  const addCheck = async (chk: Omit<CheckRecord, "id">, skipAutoJE = false): Promise<CheckRecord> => {
     const res = await persistCheckDB(chk as any);
     if (!res.success || !res.data) throw new Error(res.error || "فشل حفظ الشيك");
     const saved = res.data;
     setChecks(prev => [saved, ...prev]);
-    // Auto generate Journal Entry
-    try {
-      if (accounts.length > 0) {
-        let jeData = null;
-        if (saved.type === "incoming") {
-          jeData = generateReceivableCheckJournal(saved, accounts);
-        } else if (saved.type === "outgoing") {
-          jeData = generatePayableCheckJournal(saved, accounts);
+    // Auto generate Journal Entry if not skipped
+    if (!skipAutoJE) {
+      try {
+        if (accounts.length > 0) {
+          let jeData = null;
+          if (saved.type === "incoming") {
+            jeData = generateReceivableCheckJournal(saved, accounts);
+          } else if (saved.type === "outgoing") {
+            jeData = generatePayableCheckJournal(saved, accounts);
+          }
+          if (jeData) {
+            await persistJournalEntryDB(jeData as any).then(jr => {
+              if (jr.success && jr.data) {
+                const savedJE = jr.data;
+                setJournalEntries(prev => [savedJE, ...prev]);
+              }
+            });
+          }
         }
-        if (jeData) {
-          await persistJournalEntryDB(jeData as any).then(jr => {
-            if (jr.success && jr.data) {
-              const savedJE = jr.data;
-              setJournalEntries(prev => [savedJE, ...prev]);
-            }
-          });
-        }
+      } catch (e) {
+        console.error("Auto JE for check error:", e);
       }
-    } catch (e) {
-      console.error("Auto JE for check error:", e);
     }
     showToast(locale === "ar" ? `تم تسجيل الشيك (${saved.checkNumber}) بنجاح` : "Check added", "success");
     return saved;
+  };
+
+  const addCheckReceiptVoucher = async (voucherData: {
+    voucherNumber: string;
+    voucherDate: string;
+    partyName: string;
+    customerId?: string;
+    accountId?: string;
+    costCenterId?: string;
+    notes?: string;
+    checks: Array<{
+      checkNumber: string;
+      bankName: string;
+      draweeBank?: string;
+      dueDate: string;
+      amount: number;
+    }>;
+  }): Promise<CheckRecord[]> => {
+    const createdChecks: CheckRecord[] = [];
+    for (const item of voucherData.checks) {
+      if (item.amount > 0) {
+        const chk = await addCheck({
+          organizationId: organization.id,
+          branchId: activeBranchId,
+          checkNumber: item.checkNumber,
+          bankName: item.bankName || item.draweeBank || "البنك",
+          draweeBank: item.draweeBank || item.bankName,
+          type: "incoming",
+          partyName: voucherData.partyName,
+          customerId: voucherData.customerId,
+          accountId: voucherData.accountId,
+          costCenterId: voucherData.costCenterId,
+          voucherNumber: voucherData.voucherNumber,
+          amount: item.amount,
+          issueDate: voucherData.voucherDate,
+          dueDate: item.dueDate,
+          status: "in_treasury",
+          notes: voucherData.notes,
+          createdBy: currentUser.name
+        }, true); // skip individual journal entries!
+        createdChecks.push(chk);
+      }
+    }
+
+    // Now generate ONE consolidated journal entry for the whole voucher
+    try {
+      if (accounts.length > 0 && createdChecks.length > 0) {
+        const jeData = generateCheckReceiptVoucherJournal(
+          voucherData.voucherNumber,
+          voucherData.voucherDate,
+          voucherData.checks,
+          voucherData.partyName,
+          voucherData.customerId,
+          voucherData.costCenterId,
+          organization.id,
+          activeBranchId,
+          accounts,
+          currentUser.name,
+          voucherData.notes
+        );
+
+        if (jeData) {
+          const jr = await persistJournalEntryDB(jeData as any);
+          if (jr.success && jr.data) {
+            const savedJE = jr.data as JournalEntry;
+            setJournalEntries(prev => [savedJE, ...prev]);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Consolidated JE error for check voucher:", e);
+    }
+
+    showToast(locale === "ar" ? `تم حفظ سند قبض الشيكات رقم ${voucherData.voucherNumber} وقيده المحاسبي بنجاح` : `Check voucher saved`, "success");
+    return createdChecks;
   };
 
   const updateCheck = async (id: string, chk: Partial<CheckRecord>): Promise<CheckRecord> => {
@@ -2286,7 +2418,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         addTreasuryAccount, updateTreasuryAccount, deleteTreasuryAccount,
         createCashReceipt, addCashReceipt: createCashReceipt, updateCashReceipt, deleteCashReceipt,
         createCashPayment, addCashPayment: createCashPayment, updateCashPayment, deleteCashPayment,
-        addCheck, updateCheck, updateCheckStatus, deleteCheck,
+        addCheck, addCheckReceiptVoucher, updateCheck, updateCheckStatus, deleteCheck,
         accounts, costCenters, journalEntries, addAccount, updateAccount, deleteAccount,
         addCostCenter, updateCostCenter, deleteCostCenter,
         addJournalEntry, deleteJournalEntry, postOpeningEntry,

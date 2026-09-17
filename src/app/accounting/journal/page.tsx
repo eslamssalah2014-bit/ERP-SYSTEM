@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate, generateId } from "@/lib/utils";
+import { computeMonthlyJournalNumbers } from "@/lib/accounting-engine";
 import Modal from "@/components/ui/Modal";
 import JournalVoucherPrintModal from "@/components/ui/JournalVoucherPrintModal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
@@ -15,6 +16,8 @@ import {
 export default function JournalPage() {
   const { journalEntries, accounts, addJournalEntry, organization, activeBranchId, currentUser, locale, showToast, isLoadingData } = useERP();
   const isAr = locale === "ar";
+
+  const monthlyNumbers = useMemo(() => computeMonthlyJournalNumbers(journalEntries), [journalEntries]);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedPrintEntry, setSelectedPrintEntry] = useState<JournalEntry | null>(null);
@@ -146,9 +149,20 @@ export default function JournalPage() {
           <div key={entry.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-3">
-                <span className="font-mono font-bold text-white text-sm bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
-                  {entry.entryNumber}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="font-mono font-bold text-emerald-400 text-xs bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-500/20 shadow-sm"
+                    title={isAr ? "رقم القيد الشهري (الشهر/المسلسل)" : "Monthly Journal Number (Month/Seq)"}
+                  >
+                    {isAr ? "قيد " : "JV "} {monthlyNumbers[entry.id] || "-"}
+                  </span>
+                  <span
+                    className="font-mono font-bold text-slate-400 text-xs bg-slate-950 px-2 py-1 rounded-xl border border-slate-800"
+                    title={isAr ? "الرقم الدفتري المرجعي" : "System Entry Number"}
+                  >
+                    {entry.entryNumber}
+                  </span>
+                </div>
                 <span className="text-xs text-slate-400">{formatDate(entry.date, locale)}</span>
                 <span className="text-xs font-semibold text-slate-300">{entry.description}</span>
               </div>

@@ -238,6 +238,9 @@ export async function deletePurchaseInvoiceDB(id: string) {
 }
 
 // Stock Movements CRUD
+export async function persistStockMovementDB(sm: StockMovement | Omit<StockMovement, "id">) {
+  return mutateERP<StockMovement>("create_stock_movement", sm);
+}
 export async function updateStockMovementDB(id: string, sm: Partial<StockMovement>) {
   return mutateERP<StockMovement>("update_stock_movement", { id, ...sm });
 }

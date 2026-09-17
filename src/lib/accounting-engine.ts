@@ -70,7 +70,10 @@ export function generateSalesInvoiceJournal(
       credit: netSalesAmount,
       description: `إيراد مبيعات بضاعة صافي فاتورة ${invoice.invoiceNumber}`,
     },
-    {
+  ];
+
+  if (invoice.taxTotal > 0) {
+    lines.push({
       id: "jl_vat",
       accountId: vatOutAccount.id,
       accountCode: vatOutAccount.code,
@@ -78,8 +81,8 @@ export function generateSalesInvoiceJournal(
       debit: 0,
       credit: invoice.taxTotal,
       description: `ضريبة القيمة المضافة المستحقة (مخرجات) فاتورة ${invoice.invoiceNumber}`,
-    },
-  ];
+    });
+  }
 
   if (cogsAmount > 0) {
     lines.push(
@@ -148,7 +151,10 @@ export function generatePurchaseInvoiceJournal(
       credit: 0,
       description: `إضافة بضاعة للمخزن بالصافي فاتورة مشتريات ${invoice.invoiceNumber}`,
     },
-    {
+  ];
+
+  if (invoice.taxTotal > 0) {
+    lines.push({
       id: "jl_pinv_vat",
       accountId: vatInAccount.id,
       accountCode: vatInAccount.code,
@@ -156,17 +162,18 @@ export function generatePurchaseInvoiceJournal(
       debit: invoice.taxTotal,
       credit: 0,
       description: `ضريبة مدخلات قابلة للخصم فاتورة ${invoice.invoiceNumber}`,
-    },
-    {
-      id: "jl_pinv_ap",
-      accountId: apAccount.id,
-      accountCode: apAccount.code,
-      accountName: apAccount.nameAr,
-      debit: 0,
-      credit: invoice.grandTotal,
-      description: `استحقاق مورد فاتورة مشتريات ${invoice.invoiceNumber} - ${invoice.supplierName}`,
-    },
-  ];
+    });
+  }
+
+  lines.push({
+    id: "jl_pinv_ap",
+    accountId: apAccount.id,
+    accountCode: apAccount.code,
+    accountName: apAccount.nameAr,
+    debit: 0,
+    credit: invoice.grandTotal,
+    description: `استحقاق مورد فاتورة مشتريات ${invoice.invoiceNumber} - ${invoice.supplierName}`,
+  });
 
   const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
@@ -214,7 +221,10 @@ export function generateSalesReturnJournal(
       credit: 0,
       description: `مردودات مبيعات إشعار دائن ${salesReturn.returnNumber}`,
     },
-    {
+  ];
+
+  if (salesReturn.taxTotal > 0) {
+    lines.push({
       id: "jl_sret_vat",
       accountId: vatOutAccount.id,
       accountCode: vatOutAccount.code,
@@ -222,17 +232,18 @@ export function generateSalesReturnJournal(
       debit: salesReturn.taxTotal,
       credit: 0,
       description: `تخفيض ضريبة القيمة المضافة لمرتجع مبيعات ${salesReturn.returnNumber}`,
-    },
-    {
-      id: "jl_sret_cr",
-      accountId: creditAcc.id,
-      accountCode: creditAcc.code,
-      accountName: creditAcc.nameAr,
-      debit: 0,
-      credit: salesReturn.grandTotal,
-      description: `تسوية مستحقات مرتجع مبيعات ${salesReturn.returnNumber} - ${salesReturn.customerName}`,
-    },
-  ];
+    });
+  }
+
+  lines.push({
+    id: "jl_sret_cr",
+    accountId: creditAcc.id,
+    accountCode: creditAcc.code,
+    accountName: creditAcc.nameAr,
+    debit: 0,
+    credit: salesReturn.grandTotal,
+    description: `تسوية مستحقات مرتجع مبيعات ${salesReturn.returnNumber} - ${salesReturn.customerName}`,
+  });
 
   if (cogsAmount > 0) {
     lines.push(
@@ -309,7 +320,10 @@ export function generatePurchaseReturnJournal(
       credit: purchaseReturn.subtotal,
       description: `إخراج بضاعة مرتجعة من المخزن ${purchaseReturn.returnNumber}`,
     },
-    {
+  ];
+
+  if (purchaseReturn.taxTotal > 0) {
+    lines.push({
       id: "jl_pret_vat",
       accountId: vatInAccount.id,
       accountCode: vatInAccount.code,
@@ -317,8 +331,8 @@ export function generatePurchaseReturnJournal(
       debit: 0,
       credit: purchaseReturn.taxTotal,
       description: `تخفيض ضريبة المدخلات لمرتجع مشتريات ${purchaseReturn.returnNumber}`,
-    },
-  ];
+    });
+  }
 
   const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
@@ -645,6 +659,143 @@ export function generateReceivableCheckJournal(
     status: "posted",
     createdBy: check.createdBy || "النظام",
   };
+}
+
+/**
+ * ITEM 2: Single Journal Entry for Multi-Check Receipt Voucher
+ * Consolidates multiple checks within one voucher into ONE single journal entry
+ * with detailed breakdown lines for each check.
+ */
+export function generateCheckReceiptVoucherJournal(
+  voucherNumber: string,
+  voucherDate: string,
+  checks: Array<{
+    id?: string;
+    checkNumber: string;
+    amount: number;
+    draweeBank?: string;
+    bankName?: string;
+    dueDate?: string;
+    accountId?: string;
+    costCenterId?: string;
+  }>,
+  partyName: string,
+  customerId: string | undefined,
+  costCenterId: string | undefined,
+  organizationId: string,
+  branchId: string,
+  accounts: Account[],
+  createdBy?: string,
+  notes?: string
+): Omit<JournalEntry, "id"> {
+  const defaultNotesRecAccount = findAccount(accounts, ["1102002", "1102", "1120"], "assets");
+  const arAccount = findAccount(accounts, ["1102001", "1102", "1120"], "assets");
+
+  const lines: JournalLine[] = [];
+  let totalVoucherAmount = 0;
+
+  // Add detailed debit lines for each check in the voucher
+  checks.forEach((chk, idx) => {
+    const amt = Number(chk.amount) || 0;
+    if (amt > 0) {
+      totalVoucherAmount += amt;
+      const recAcc = chk.accountId
+        ? (accounts.find(a => a.id === chk.accountId) || defaultNotesRecAccount)
+        : defaultNotesRecAccount;
+
+      const bank = chk.draweeBank || chk.bankName || "البنك المسحوب عليه";
+      lines.push({
+        id: `jl_rcv_dr_${idx}_${chk.checkNumber}`,
+        accountId: recAcc.id,
+        accountCode: recAcc.code,
+        accountName: recAcc.nameAr,
+        debit: amt,
+        credit: 0,
+        costCenterId: chk.costCenterId || costCenterId,
+        description: `أوراق قبض - شيك رقم ${chk.checkNumber} (${bank}) - استحقاق ${chk.dueDate || voucherDate}`,
+      });
+    }
+  });
+
+  // Add single consolidated credit line for the customer/party
+  lines.push({
+    id: "jl_rcv_cr_customer",
+    accountId: arAccount.id,
+    accountCode: arAccount.code,
+    accountName: arAccount.nameAr,
+    debit: 0,
+    credit: totalVoucherAmount,
+    costCenterId: costCenterId,
+    description: `سداد عميل بموجب سند قبض شيكات رقم ${voucherNumber} - ${partyName}`,
+  });
+
+  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+
+  return {
+    organizationId,
+    branchId,
+    entryNumber: `JV-RCV-${voucherNumber}`,
+    date: voucherDate,
+    referenceType: "check_voucher",
+    referenceId: voucherNumber,
+    description: `إثبات سند قبض شيكات رقم ${voucherNumber} بعدد (${checks.filter(c => c.amount > 0).length}) شيك من ${partyName} ${notes ? `(${notes})` : ""}`.trim(),
+    lines,
+    totalDebit,
+    totalCredit,
+    isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+    status: "posted",
+    createdBy: createdBy || "النظام",
+  };
+}
+
+/**
+ * ITEM 9: Monthly Journal Entry Numbering Layer
+ * Format: Month/Sequence (e.g. 1/1, 1/2, 2/1, 3/1...)
+ * Resets sequence to 1 at the beginning of each calendar month.
+ */
+export function computeMonthlyJournalNumbers(
+  entries: JournalEntry[]
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  const monthlyGroups: Record<string, JournalEntry[]> = {};
+
+  // Sort all entries chronologically
+  const sorted = [...entries].sort((a, b) => {
+    const cmp = (a.date || "").localeCompare(b.date || "");
+    if (cmp !== 0) return cmp;
+    return (a.entryNumber || a.id || "").localeCompare(b.entryNumber || b.id || "");
+  });
+
+  sorted.forEach(entry => {
+    const parts = (entry.date || "").split("-");
+    const ym = parts.length >= 2 ? `${parts[0]}-${parts[1]}` : "2026-01";
+    if (!monthlyGroups[ym]) monthlyGroups[ym] = [];
+    monthlyGroups[ym].push(entry);
+  });
+
+  // For each month, assign sequence starting from 1
+  Object.keys(monthlyGroups).forEach(ym => {
+    const monthNum = parseInt(ym.split("-")[1], 10) || 1;
+    const groupEntries = monthlyGroups[ym];
+    groupEntries.forEach((entry, idx) => {
+      const seq = idx + 1;
+      const numStr = `${monthNum}/${seq}`;
+      if (entry.id) result[entry.id] = numStr;
+      if (entry.entryNumber) result[entry.entryNumber] = numStr;
+    });
+  });
+
+  return result;
+}
+
+export function getMonthlyJournalNumber(
+  entry: JournalEntry,
+  allEntries: JournalEntry[]
+): string {
+  if (!entry) return "";
+  const map = computeMonthlyJournalNumbers(allEntries);
+  return map[entry.id] || map[entry.entryNumber] || "";
 }
 
 export function generateCheckStatusJournal(
