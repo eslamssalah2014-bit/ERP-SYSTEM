@@ -122,7 +122,7 @@ export default function ZatcaInvoiceModal({ invoice, isOpen, onClose }: ZatcaInv
               </span>
             </div>
             <div className="flex justify-between text-slate-400">
-              <span>{isAr ? ("ضريبة القيمة المضافة (" + (organization.defaultVatRate || 14) + "%):") : "VAT Total:"}</span>
+              <span>{isAr ? ("ضريبة القيمة المضافة (" + (organization.defaultVatRate ?? 14) + "%):") : "VAT Total:"}</span>
               <span className="font-mono font-bold text-emerald-400">{formatCurrency(invoice.taxTotal, organization.currency, locale)}</span>
             </div>
             <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-slate-800">

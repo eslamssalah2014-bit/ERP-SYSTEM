@@ -1108,6 +1108,33 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // 3. Synchronize stock movements and product stock in memory
+    if (savedInvoice.invoiceType !== "quotation") {
+      const updatedMovements: StockMovement[] = (savedInvoice.items || []).map(item => ({
+        id: generateId(),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "sales_issue",
+        referenceId: savedInvoice.id,
+        referenceNumber: savedInvoice.invoiceNumber,
+        date: savedInvoice.date,
+        quantity: -Math.abs(item.quantity),
+        unitCost: item.costPrice,
+        totalCost: -Math.abs(item.costPrice * item.quantity),
+        balanceQuantity: 0,
+        partnerId: savedInvoice.customerId,
+        partnerName: savedInvoice.customerName,
+        partnerType: "customer",
+        notes: `صرف مبيعات فاتورة ${savedInvoice.invoiceNumber}`,
+      }));
+
+      setStockMovements(prev => [
+        ...updatedMovements,
+        ...prev.filter(sm => sm.referenceId !== savedInvoice.id)
+      ]);
+    }
+
     setSalesInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
 
     addAuditLog({
@@ -1125,10 +1152,30 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteSalesInvoice = async (id: string) => {
+    const targetInvoice = salesInvoices.find(inv => inv.id === id);
     const res = await deleteSalesInvoiceDB(id);
     if (!res.success) {
       throw new Error(res.error || "فشل حذف فاتورة المبيعات من قاعدة البيانات");
     }
+
+    if (targetInvoice && targetInvoice.items) {
+      targetInvoice.items.forEach(item => {
+        setProducts(prev => prev.map(p => {
+          if (p.id === item.productId) {
+            const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
+            return {
+              ...p,
+              warehouseStock: {
+                ...p.warehouseStock,
+                [item.warehouseId]: currentWhStock + item.quantity,
+              }
+            };
+          }
+          return p;
+        }));
+      });
+    }
+
     setSalesInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
     showToast(locale === "ar" ? "تم حذف فاتورة المبيعات بنجاح" : "Sales invoice deleted successfully", "success");
@@ -1294,6 +1341,33 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // 3. Synchronize stock movements in memory
+    if (savedInvoice.invoiceType !== "purchase_order") {
+      const updatedMovements: StockMovement[] = (savedInvoice.items || []).map(item => ({
+        id: generateId(),
+        organizationId: organization.id,
+        productId: item.productId,
+        warehouseId: item.warehouseId,
+        movementType: "purchase_receipt",
+        referenceId: savedInvoice.id,
+        referenceNumber: savedInvoice.invoiceNumber,
+        date: savedInvoice.date,
+        quantity: Math.abs(item.quantity),
+        unitCost: item.unitCost,
+        totalCost: Math.abs(item.unitCost * item.quantity),
+        balanceQuantity: 0,
+        partnerId: savedInvoice.supplierId,
+        partnerName: savedInvoice.supplierName,
+        partnerType: "supplier",
+        notes: `توريد مشتريات فاتورة ${savedInvoice.invoiceNumber}`,
+      }));
+
+      setStockMovements(prev => [
+        ...updatedMovements,
+        ...prev.filter(sm => sm.referenceId !== savedInvoice.id)
+      ]);
+    }
+
     setPurchaseInvoices(prev => prev.map(item => item.id === id ? { ...item, ...savedInvoice } : item));
 
     addAuditLog({
@@ -1311,10 +1385,30 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deletePurchaseInvoice = async (id: string) => {
+    const targetInvoice = purchaseInvoices.find(inv => inv.id === id);
     const res = await deletePurchaseInvoiceDB(id);
     if (!res.success) {
       throw new Error(res.error || "فشل حذف فاتورة المشتريات من قاعدة البيانات");
     }
+
+    if (targetInvoice && targetInvoice.items) {
+      targetInvoice.items.forEach(item => {
+        setProducts(prev => prev.map(p => {
+          if (p.id === item.productId) {
+            const currentWhStock = p.warehouseStock[item.warehouseId] || 0;
+            return {
+              ...p,
+              warehouseStock: {
+                ...p.warehouseStock,
+                [item.warehouseId]: Math.max(0, currentWhStock - item.quantity),
+              }
+            };
+          }
+          return p;
+        }));
+      });
+    }
+
     setPurchaseInvoices(prev => prev.filter(inv => inv.id !== id));
     setStockMovements(prev => prev.filter(sm => sm.referenceId !== id));
     showToast(locale === "ar" ? "تم حذف فاتورة المشتريات بنجاح" : "Purchase invoice deleted successfully", "success");

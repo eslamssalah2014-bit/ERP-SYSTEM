@@ -269,7 +269,16 @@ export default function SalesInvoicesPage() {
         showToast(isAr ? `تم تحديث الفاتورة ${editingInvoice.invoiceNumber} بنجاح` : "Invoice updated successfully", "success");
       } else {
         // CREATE MODE
-        const invoiceNumber = `INV-${new Date().getFullYear()}-${(invoicesList.length + 1).toString().padStart(4, "0")}`;
+        const currentYear = new Date().getFullYear();
+        const yearPrefix = `INV-${currentYear}-`;
+        let maxSeq = 0;
+        invoicesList.forEach(inv => {
+          if (inv.invoiceNumber?.startsWith(yearPrefix)) {
+            const n = parseInt(inv.invoiceNumber.substring(yearPrefix.length), 10);
+            if (!isNaN(n) && n > maxSeq) maxSeq = n;
+          }
+        });
+        const invoiceNumber = `${yearPrefix}${(maxSeq + 1).toString().padStart(4, "0")}`;
 
         const created = await createSalesInvoice({
           organizationId: organization.id,

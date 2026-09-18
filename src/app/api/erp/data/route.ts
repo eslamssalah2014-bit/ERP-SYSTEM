@@ -510,7 +510,7 @@ export function mapOrganization(o: any) {
     commercialRegister: o.commercial_register || undefined,
     country: o.country || "EG",
     currency: o.currency || "EGP",
-    defaultVatRate: Number(o.default_vat_rate) || 14,
+    defaultVatRate: (o.default_vat_rate !== null && o.default_vat_rate !== undefined && !isNaN(Number(o.default_vat_rate))) ? Number(o.default_vat_rate) : 14,
     address: o.address || undefined,
     logoUrl: o.logo_url || undefined,
     planTier: o.plan_tier || "enterprise",
@@ -1536,6 +1536,56 @@ export async function GET() {
 }
 
 // ==========================================
+// SEQUENTIAL NUMBER GENERATOR
+// Guarantees atomic, gapless sequence generation per organization/year.
+// Never uses random string fallback.
+// ==========================================
+async function getNextSequentialNumber(
+  prefix: "INV" | "PINV" | "QUOT" | "PO" | "SRET" | "PRET",
+  tableName: "sales_invoices" | "purchase_invoices" | "sales_returns" | "purchase_returns",
+  numberColumn: string,
+  orgId?: string | null
+): Promise<string> {
+  const currentYear = new Date().getFullYear();
+  const yearPrefix = `${prefix}-${currentYear}-`;
+  const effectiveOrgId = orgId || DEFAULT_ORG_ID;
+
+  if (!supabaseAdmin) return `${yearPrefix}0001`;
+
+  const { data: rows } = await supabaseAdmin
+    .from(tableName)
+    .select(numberColumn)
+    .eq("organization_id", effectiveOrgId);
+
+  let maxSeq = 0;
+  if (rows && rows.length > 0) {
+    for (const r of rows) {
+      const numStr = (r as any)[numberColumn];
+      if (typeof numStr === "string") {
+        if (numStr.startsWith(yearPrefix)) {
+          const suffix = numStr.substring(yearPrefix.length);
+          const val = parseInt(suffix, 10);
+          if (!isNaN(val) && val > maxSeq) {
+            maxSeq = val;
+          }
+        } else if (numStr.startsWith(`${prefix}-`)) {
+          const matches = numStr.match(/(\d+)$/);
+          if (matches) {
+            const val = parseInt(matches[1], 10);
+            if (!isNaN(val) && val < 10000 && val > maxSeq) {
+              maxSeq = val;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const nextSeq = maxSeq + 1;
+  return `${yearPrefix}${nextSeq.toString().padStart(4, "0")}`;
+}
+
+// ==========================================
 // POST: ATOMIC DB MUTATIONS (STANDARDIZED & PERSISTED)
 // ==========================================
 export async function POST(request: Request) {
@@ -2471,10 +2521,16 @@ export async function POST(request: Request) {
 
         const taggedNotes = `[TYPE:${invType}][DISC:${discountType || "percentage"}:${Number(discountValue) || 0}] ${notes || ""}`.trim();
 
+        let finalInvoiceNumber = (invoiceNumber || "").trim();
+        if (!finalInvoiceNumber || /^INV-\d{6}$/.test(finalInvoiceNumber) || /^QUOT-\d{6}$/.test(finalInvoiceNumber)) {
+          const pfx = invType === "quotation" ? "QUOT" : "INV";
+          finalInvoiceNumber = await getNextSequentialNumber(pfx, "sales_invoices", "invoice_number", validOrgId);
+        }
+
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber || (invType === "quotation" ? ("QUOT-" + Date.now().toString().slice(-6)) : ("INV-" + Date.now().toString().slice(-6))),
+          invoice_number: finalInvoiceNumber,
           date: date || new Date().toISOString().split("T")[0],
           due_date: dueDate || date || new Date().toISOString().split("T")[0],
           customer_id: validCustId,
@@ -2504,9 +2560,37 @@ export async function POST(request: Request) {
 
         if (invErr) throw invErr;
 
-        // If updating an existing invoice, clear old items before inserting updated ones
+        // If updating an existing invoice, restore previously deducted warehouse stock & delete old stock movements and items
         if (validId) {
-          await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", inv.id);
+          const { data: previousItems } = await supabaseAdmin
+            .from("sales_invoice_items")
+            .select("product_id, warehouse_id, quantity")
+            .eq("sales_invoice_id", validId);
+
+          if (previousItems && previousItems.length > 0 && invType !== "quotation") {
+            for (const prevIt of previousItems) {
+              if (prevIt.product_id && prevIt.warehouse_id) {
+                const { data: currStock } = await supabaseAdmin
+                  .from("product_warehouse_stock")
+                  .select("quantity")
+                  .eq("product_id", prevIt.product_id)
+                  .eq("warehouse_id", prevIt.warehouse_id)
+                  .maybeSingle();
+
+                const restoredQty = (Number(currStock?.quantity) || 0) + Number(prevIt.quantity);
+                await supabaseAdmin
+                  .from("product_warehouse_stock")
+                  .upsert([{
+                    product_id: prevIt.product_id,
+                    warehouse_id: prevIt.warehouse_id,
+                    quantity: restoredQty,
+                  }], { onConflict: "product_id,warehouse_id" });
+              }
+            }
+          }
+
+          await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
+          await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
         }
 
         const mappedItems: any[] = [];
@@ -2518,22 +2602,25 @@ export async function POST(request: Request) {
             return {
               id: rowId,
               sales_invoice_id: inv.id,
-              product_id: cleanUUID(it.productId, null),
-              product_name: it.productName || "صنف",
-              warehouse_id: cleanUUID(it.warehouseId, validWhId),
+              product_id: cleanUUID(it.productId || it.product_id, null),
+              product_name: it.productName || it.product_name || "صنف",
+              warehouse_id: cleanUUID(it.warehouseId || it.warehouse_id, validWhId),
               quantity: Number(it.quantity) || 1,
-              unit_price: Number(it.unitPrice) || 0,
-              cost_price: Number(it.costPrice) || 0,
-              discount_percent: Number(it.discountPercent) || 0,
-              discount_amount: Number(it.discountAmount) || 0,
-              tax_rate: Number(it.taxRate) || 14,
-              tax_amount: Number(it.taxAmount) || 0,
+              unit_price: Number(it.unitPrice || it.unit_price) || 0,
+              cost_price: Number(it.costPrice || it.cost_price) || 0,
+              discount_percent: Number(it.discountPercent || it.discount_percent) || 0,
+              discount_amount: Number(it.discountAmount || it.discount_amount) || 0,
+              tax_rate: Number(it.taxRate !== undefined ? it.taxRate : it.tax_rate) || 14,
+              tax_amount: Number(it.taxAmount || it.tax_amount) || 0,
               total: Number(it.total) || 0,
             };
           });
 
           const { error: itemsErr } = await supabaseAdmin.from("sales_invoice_items").insert(itemRows);
-          if (itemsErr) console.error("Error inserting invoice items:", itemsErr);
+          if (itemsErr) {
+            console.error("Error inserting invoice items:", itemsErr);
+            throw new Error("Failed to insert sales invoice items: " + itemsErr.message);
+          }
 
           for (const it of itemRows) {
             mappedItems.push({
@@ -2578,15 +2665,14 @@ export async function POST(request: Request) {
                 .eq("warehouse_id", it.warehouse_id)
                 .maybeSingle();
 
-              if (currentStockRow) {
-                await supabaseAdmin
-                  .from("product_warehouse_stock")
-                  .update({
-                    quantity: Math.max(0, (Number(currentStockRow.quantity) || 0) - it.quantity)
-                  })
-                  .eq("product_id", it.product_id)
-                  .eq("warehouse_id", it.warehouse_id);
-              }
+              const newQty = Math.max(0, (Number(currentStockRow?.quantity) || 0) - it.quantity);
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: newQty,
+                }], { onConflict: "product_id,warehouse_id" });
             }
           }
         }
@@ -2619,6 +2705,34 @@ export async function POST(request: Request) {
         const rawId = extractEntityId(payload);
         const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid sales invoice ID is required" }, 400);
+
+        // 1. Restore product warehouse stock before deleting
+        const { data: oldItems } = await supabaseAdmin
+          .from("sales_invoice_items")
+          .select("product_id, warehouse_id, quantity")
+          .eq("sales_invoice_id", validId);
+
+        if (oldItems && oldItems.length > 0) {
+          for (const it of oldItems) {
+            if (it.product_id && it.warehouse_id) {
+              const { data: currStock } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              const restoredQty = (Number(currStock?.quantity) || 0) + Number(it.quantity);
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: restoredQty,
+                }], { onConflict: "product_id,warehouse_id" });
+            }
+          }
+        }
 
         await supabaseAdmin.from("sales_invoice_items").delete().eq("sales_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
@@ -2842,10 +2956,16 @@ export async function POST(request: Request) {
 
         const taggedNotes = `[TYPE:${pType}][DISC:${discountType || "percentage"}:${Number(discountValue) || 0}] ${notes || ""}`.trim();
 
+        let finalInvoiceNumber = (invoiceNumber || "").trim();
+        if (!finalInvoiceNumber || /^PINV-\d{6}$/.test(finalInvoiceNumber) || /^PO-\d{6}$/.test(finalInvoiceNumber)) {
+          const pfx = pType === "purchase_order" ? "PO" : "PINV";
+          finalInvoiceNumber = await getNextSequentialNumber(pfx, "purchase_invoices", "invoice_number", validOrgId);
+        }
+
         const insertRow: any = {
           organization_id: validOrgId,
           branch_id: validBranchId,
-          invoice_number: invoiceNumber || (pType === "purchase_order" ? ("PO-" + Date.now().toString().slice(-6)) : ("PINV-" + Date.now().toString().slice(-6))),
+          invoice_number: finalInvoiceNumber,
           supplier_invoice_ref: supplierInvoiceRef || null,
           date: date || new Date().toISOString().split("T")[0],
           due_date: dueDate || date || new Date().toISOString().split("T")[0],
@@ -2874,8 +2994,37 @@ export async function POST(request: Request) {
 
         if (pinvErr) throw pinvErr;
 
+        // If updating an existing invoice, revert previously added stock & delete old stock movements and items
         if (validId) {
-          await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", pinv.id);
+          const { data: previousItems } = await supabaseAdmin
+            .from("purchase_invoice_items")
+            .select("product_id, warehouse_id, quantity")
+            .eq("purchase_invoice_id", validId);
+
+          if (previousItems && previousItems.length > 0 && pType !== "purchase_order") {
+            for (const prevIt of previousItems) {
+              if (prevIt.product_id && prevIt.warehouse_id) {
+                const { data: currStock } = await supabaseAdmin
+                  .from("product_warehouse_stock")
+                  .select("quantity")
+                  .eq("product_id", prevIt.product_id)
+                  .eq("warehouse_id", prevIt.warehouse_id)
+                  .maybeSingle();
+
+                const revertedQty = Math.max(0, (Number(currStock?.quantity) || 0) - Number(prevIt.quantity));
+                await supabaseAdmin
+                  .from("product_warehouse_stock")
+                  .upsert([{
+                    product_id: prevIt.product_id,
+                    warehouse_id: prevIt.warehouse_id,
+                    quantity: revertedQty,
+                  }], { onConflict: "product_id,warehouse_id" });
+              }
+            }
+          }
+
+          await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
+          await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);
         }
 
         const mappedItems: any[] = [];
@@ -2886,49 +3035,56 @@ export async function POST(request: Request) {
             return sanitizeRowForTable("purchase_invoice_items", {
               id: rowId,
               purchase_invoice_id: pinv.id,
-              product_id: cleanUUID(it.productId, null),
-              product_name: it.productName || "صنف",
-              warehouse_id: cleanUUID(it.warehouseId, validWhId),
+              product_id: cleanUUID(it.productId || it.product_id, null),
+              product_name: it.productName || it.product_name || "صنف",
+              warehouse_id: cleanUUID(it.warehouseId || it.warehouse_id, validWhId),
               quantity: Number(it.quantity) || 1,
-              unit_cost: Number(it.unitCost) || 0,
-              discount_amount: Number(it.discountAmount) || 0,
+              unit_cost: Number(it.unitCost || it.unit_cost) || 0,
+              discount_percent: Number(it.discountPercent || it.discount_percent) || 0,
+              discount_amount: Number(it.discountAmount || it.discount_amount) || 0,
               tax_rate: (it.taxRate !== undefined && it.taxRate !== null && !isNaN(Number(it.taxRate))) ? Number(it.taxRate) : 14,
-              tax_amount: Number(it.taxAmount) || 0,
+              tax_amount: Number(it.taxAmount || it.tax_amount) || 0,
               total: Number(it.total) || 0,
             });
           });
 
           const { error: piErr } = await supabaseAdmin.from("purchase_invoice_items").insert(itemRows);
-          if (piErr) console.error("Error inserting purchase invoice items:", piErr);
+          if (piErr) {
+            console.error("Error inserting purchase invoice items:", piErr);
+            throw new Error("Failed to insert purchase invoice items: " + piErr.message);
+          }
 
           for (const it of items) {
+            const effectivePId = cleanUUID(it.productId || it.product_id, null);
+            const effectiveWId = cleanUUID(it.warehouseId || it.warehouse_id, validWhId);
+
             mappedItems.push({
               id: it.id,
-              productId: it.productId,
-              productName: it.productName,
-              warehouseId: it.warehouseId,
-              quantity: it.quantity,
-              unitCost: it.unitCost,
-              discountPercent: it.discountPercent,
-              discountAmount: it.discountAmount,
+              productId: effectivePId,
+              productName: it.productName || it.product_name,
+              warehouseId: effectiveWId,
+              quantity: Number(it.quantity) || 1,
+              unitCost: Number(it.unitCost || it.unit_cost) || 0,
+              discountPercent: Number(it.discountPercent || it.discount_percent) || 0,
+              discountAmount: Number(it.discountAmount || it.discount_amount) || 0,
               taxRate: (it.taxRate !== undefined && it.taxRate !== null && !isNaN(Number(it.taxRate))) ? Number(it.taxRate) : 14,
-              taxAmount: it.taxAmount,
-              total: it.total,
+              taxAmount: Number(it.taxAmount || it.tax_amount) || 0,
+              total: Number(it.total) || 0,
             });
 
             // If actual purchase invoice, increment stock
-            if (it.productId && pType !== "purchase_order") {
+            if (effectivePId && pType !== "purchase_order") {
               const movRow = sanitizeRowForTable("stock_movements", {
                 organization_id: validOrgId,
-                product_id: cleanUUID(it.productId, null),
-                warehouse_id: cleanUUID(it.warehouseId, validWhId),
+                product_id: effectivePId,
+                warehouse_id: effectiveWId,
                 movement_type: "purchase_receipt",
                 reference_id: pinv.id,
                 reference_number: pinv.invoice_number,
                 date: pinv.date,
-                quantity: Math.abs(it.quantity),
-                unit_cost: Number(it.unitCost) || 0,
-                total_cost: Math.abs((Number(it.unitCost) || 0) * (Number(it.quantity) || 1)),
+                quantity: Math.abs(Number(it.quantity) || 1),
+                unit_cost: Number(it.unitCost || it.unit_cost) || 0,
+                total_cost: Math.abs((Number(it.unitCost || it.unit_cost) || 0) * (Number(it.quantity) || 1)),
                 balance_quantity: 0,
                 notes: `[PARTNER:supplier:${validSuppId || ""}:${supplierName || ""}] توريد مشتريات فاتورة ${pinv.invoice_number}`,
               });
@@ -2939,16 +3095,16 @@ export async function POST(request: Request) {
               const { data: currentStockRow } = await supabaseAdmin
                 .from("product_warehouse_stock")
                 .select("quantity")
-                .eq("product_id", it.product_id)
-                .eq("warehouse_id", it.warehouse_id)
+                .eq("product_id", effectivePId)
+                .eq("warehouse_id", effectiveWId)
                 .maybeSingle();
 
-              const newQty = (Number(currentStockRow?.quantity) || 0) + it.quantity;
+              const newQty = (Number(currentStockRow?.quantity) || 0) + Number(it.quantity);
               await supabaseAdmin
                 .from("product_warehouse_stock")
                 .upsert([{
-                  product_id: it.product_id,
-                  warehouse_id: it.warehouse_id,
+                  product_id: effectivePId,
+                  warehouse_id: effectiveWId,
                   quantity: newQty,
                 }], { onConflict: "product_id,warehouse_id" });
             }
@@ -2983,6 +3139,34 @@ export async function POST(request: Request) {
         const rawId = extractEntityId(payload);
         const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid purchase invoice ID is required" }, 400);
+
+        // 1. Revert product warehouse stock before deleting
+        const { data: oldItems } = await supabaseAdmin
+          .from("purchase_invoice_items")
+          .select("product_id, warehouse_id, quantity")
+          .eq("purchase_invoice_id", validId);
+
+        if (oldItems && oldItems.length > 0) {
+          for (const it of oldItems) {
+            if (it.product_id && it.warehouse_id) {
+              const { data: currStock } = await supabaseAdmin
+                .from("product_warehouse_stock")
+                .select("quantity")
+                .eq("product_id", it.product_id)
+                .eq("warehouse_id", it.warehouse_id)
+                .maybeSingle();
+
+              const revertedQty = Math.max(0, (Number(currStock?.quantity) || 0) - Number(it.quantity));
+              await supabaseAdmin
+                .from("product_warehouse_stock")
+                .upsert([{
+                  product_id: it.product_id,
+                  warehouse_id: it.warehouse_id,
+                  quantity: revertedQty,
+                }], { onConflict: "product_id,warehouse_id" });
+            }
+          }
+        }
 
         await supabaseAdmin.from("purchase_invoice_items").delete().eq("purchase_invoice_id", validId);
         await supabaseAdmin.from("stock_movements").delete().eq("reference_id", validId);

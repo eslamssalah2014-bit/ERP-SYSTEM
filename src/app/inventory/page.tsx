@@ -105,7 +105,7 @@ export default function InventoryPage() {
         unitId: activeUnitId,
         costPrice,
         sellingPrice,
-        taxRate: organization.defaultVatRate || 14,
+        taxRate: organization.defaultVatRate ?? 14,
         minStockLevel,
         status: "active",
         warehouseStock: initialWarehouseStock,

@@ -263,7 +263,16 @@ export default function PurchasesPage() {
         showToast(isAr ? `تم تحديث فاتورة المشتريات ${editingInvoice.invoiceNumber} بنجاح` : "Purchase invoice updated successfully", "success");
       } else {
         // CREATE MODE
-        const invoiceNumber = `PINV-${new Date().getFullYear()}-${(invoicesList.length + 1).toString().padStart(4, "0")}`;
+        const currentYear = new Date().getFullYear();
+        const yearPrefix = `PINV-${currentYear}-`;
+        let maxSeq = 0;
+        invoicesList.forEach(inv => {
+          if (inv.invoiceNumber?.startsWith(yearPrefix)) {
+            const n = parseInt(inv.invoiceNumber.substring(yearPrefix.length), 10);
+            if (!isNaN(n) && n > maxSeq) maxSeq = n;
+          }
+        });
+        const invoiceNumber = `${yearPrefix}${(maxSeq + 1).toString().padStart(4, "0")}`;
 
         const created = await createPurchaseInvoice({
           organizationId: organization.id,
