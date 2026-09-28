@@ -7,7 +7,7 @@ import {
   SalesInvoice, PurchaseInvoice, StockMovement, JournalEntry, Notification,
   AuditLog, Language, Direction, Theme, CheckStatus, Warehouse, CashReceipt, CashPayment,
   ProductChangeLog, PeriodClosing, UserRole, CustomerCategory, SalesReturn,
-  PurchaseReturn, PartnerStatement, StatementTransaction, FixedAsset
+  PurchaseReturn, PartnerStatement, StatementTransaction, FixedAsset, DepreciationSetting
 } from "@/types/erp";
 import {
   initialOrganization, initialBranches, initialUsers, initialCategories,
@@ -98,7 +98,9 @@ import {
   updateOrganizationDB,
   persistFixedAssetDB,
   updateFixedAssetDB,
-  deleteFixedAssetDB
+  deleteFixedAssetDB,
+  persistDepreciationSettingDB,
+  deleteDepreciationSettingDB
 } from "@/lib/erp-service";
 import { ToastContainer, ToastMessage } from "@/components/ui/Toast";
 
@@ -261,13 +263,17 @@ interface ERPContextType {
   deleteJournalEntry: (id: string) => Promise<void>;
   postOpeningEntry: (entry: Omit<JournalEntry, "id">) => Promise<JournalEntry>;
 
-  // Fixed Assets & Depreciation (Report 10)
+  // Fixed Assets & Depreciation (Report 10 & Addendum)
   fixedAssets: FixedAsset[];
   addFixedAsset: (fa: Omit<FixedAsset, "id">) => Promise<FixedAsset>;
   updateFixedAsset: (id: string, fa: Partial<FixedAsset>) => Promise<FixedAsset>;
   deleteFixedAsset: (id: string) => Promise<void>;
   postAssetDepreciation: (assetId: string, periodEndDate?: string) => Promise<JournalEntry | null>;
   postAllActiveAssetsDepreciation: (periodEndDate?: string) => Promise<number>;
+  depreciationSettings: DepreciationSetting[];
+  saveDepreciationSetting: (setting: Omit<DepreciationSetting, "id"> | DepreciationSetting) => Promise<DepreciationSetting>;
+  deleteDepreciationSetting: (idOrAccountId: string) => Promise<void>;
+  getAccountDepreciationRate: (accountId: string) => number;
 
   // Audit & Notifications
   auditLogs: AuditLog[];
@@ -347,6 +353,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   const [productChangeLogs, setProductChangeLogs] = useState<ProductChangeLog[]>([]);
   const [periodClosings, setPeriodClosings] = useState<PeriodClosing[]>([]);
   const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
+  const [depreciationSettings, setDepreciationSettings] = useState<DepreciationSetting[]>([]);
 
   // ==========================================
   // HYDRATE FROM SUPABASE
@@ -391,6 +398,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         setStockMovements(liveData.stockMovements || []);
         setAuditLogs(liveData.auditLogs || []);
         if (liveData.fixedAssets) setFixedAssets(liveData.fixedAssets);
+        if (liveData.depreciationSettings) setDepreciationSettings(liveData.depreciationSettings);
       } else {
         setIsDbConnected(false);
       }
@@ -2477,10 +2485,13 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ==========================================
-  // FIXED ASSETS & DEPRECIATION (REPORT 10)
+  // FIXED ASSETS & DEPRECIATION (REPORT 10 & ADDENDUM)
   // ==========================================
   const addFixedAsset = async (fa: Omit<FixedAsset, "id">): Promise<FixedAsset> => {
-    const res = await persistFixedAssetDB(fa);
+    const assetCode = (fa.code || "").trim() || `AST-${Date.now().toString().slice(-4)}`;
+    const assetToSave = { ...fa, code: assetCode };
+
+    const res = await persistFixedAssetDB(assetToSave);
     if (!res.success || !res.data) throw new Error(res.error || "فشل إضافة الأصل الثابت");
     const saved = res.data;
     setFixedAssets(prev => [saved, ...prev]);
@@ -2491,7 +2502,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       action: "create",
       entityType: "FixedAsset",
       entityId: saved.id,
-      details: `إضافة أصل جديد: ${saved.name} (قيمة الشراء: ${saved.purchaseValue}, نسبة الإهلاك: ${saved.depreciationRate}%)`,
+      details: `إضافة أصل جديد: [${saved.code}] ${saved.name} (قيمة الشراء: ${saved.purchaseValue}, نسبة الإهلاك: ${saved.depreciationRate}%)`,
     });
 
     showToast(locale === "ar" ? `تم حفظ الأصل (${saved.name}) بنجاح` : `Asset (${saved.name}) saved`, "success");
@@ -2597,6 +2608,60 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return count;
   };
 
+  // Depreciation Settings & Parent Account Inheritance Rules (Report 10 Addendum)
+  const getAccountDepreciationRate = useCallback((targetAccountId: string): number => {
+    if (!targetAccountId) return 0;
+    // 1. Direct setting on account
+    const direct = depreciationSettings.find(s => s.accountId === targetAccountId);
+    if (direct && Number(direct.depreciationRate) > 0) {
+      return Number(direct.depreciationRate);
+    }
+
+    // 2. Traverse parent account hierarchy
+    let current = accounts.find(a => a.id === targetAccountId);
+    let attempts = 0;
+    while (current && current.parentId && attempts < 10) {
+      attempts++;
+      const parentSetting = depreciationSettings.find(s => s.accountId === current!.parentId);
+      if (parentSetting && Number(parentSetting.depreciationRate) > 0) {
+        return Number(parentSetting.depreciationRate);
+      }
+      current = accounts.find(a => a.id === current!.parentId);
+    }
+
+    return 0;
+  }, [accounts, depreciationSettings]);
+
+  const saveDepreciationSetting = async (setting: Omit<DepreciationSetting, "id"> | DepreciationSetting): Promise<DepreciationSetting> => {
+    const res = await persistDepreciationSettingDB(setting);
+    if (!res.success || !res.data) throw new Error(res.error || "فشل حفظ إعداد نسبة الإهلاك");
+    const saved = res.data;
+    setDepreciationSettings(prev => {
+      const filtered = prev.filter(s => s.id !== saved.id && s.accountId !== saved.accountId);
+      return [saved, ...filtered];
+    });
+
+    await addAuditLog({
+      organizationId: organization.id,
+      userName: currentUser.name,
+      action: "create",
+      entityType: "DepreciationSetting",
+      entityId: saved.id,
+      details: `تحديد نسبة إهلاك للحساب [${saved.accountCode}] ${saved.accountNameAr}: ${saved.depreciationRate}% مع سريانها على الحسابات التابعة تلقائياً`,
+    });
+
+    showToast(locale === "ar" ? `تم حفظ نسبة الإهلاك بنجاح (${saved.depreciationRate}%)` : `Depreciation rate saved (${saved.depreciationRate}%)`, "success");
+    return saved;
+  };
+
+  const deleteDepreciationSetting = async (idOrAccountId: string): Promise<void> => {
+    const res = await deleteDepreciationSettingDB(idOrAccountId);
+    if (!res.success) throw new Error(res.error || "فشل حذف إعداد نسبة الإهلاك");
+    setDepreciationSettings(prev => prev.filter(s => s.id !== idOrAccountId && s.accountId !== idOrAccountId));
+
+    showToast(locale === "ar" ? "تم حذف إعداد نسبة الإهلاك بنجاح" : "Depreciation setting deleted", "success");
+  };
+
   const resetToDemoData = () => {
     setProducts(initialProducts);
     setCategories(initialCategories);
@@ -2654,6 +2719,7 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
         addCostCenter, updateCostCenter, deleteCostCenter,
         addJournalEntry, deleteJournalEntry, postOpeningEntry,
         fixedAssets, addFixedAsset, updateFixedAsset, deleteFixedAsset, postAssetDepreciation, postAllActiveAssetsDepreciation,
+        depreciationSettings, saveDepreciationSetting, deleteDepreciationSetting, getAccountDepreciationRate,
         auditLogs, notifications, addAuditLog, markNotificationRead, resetToDemoData
       }}
     >

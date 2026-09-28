@@ -3,7 +3,7 @@ import {
   Warehouse, CostCenter, CheckRecord, JournalEntry, Account, TreasuryAccount,
   StockMovement, AuditLog, ProductChangeLog, PeriodClosing, ProductCategory,
   ProductUnit, Organization, Branch, User, CashReceipt, CashPayment,
-  CustomerCategory, SalesReturn, PurchaseReturn, FixedAsset
+  CustomerCategory, SalesReturn, PurchaseReturn, FixedAsset, DepreciationSetting
 } from "@/types/erp";
 
 export interface HydratedERPData {
@@ -28,6 +28,7 @@ export interface HydratedERPData {
   stockMovements: StockMovement[];
   auditLogs?: AuditLog[];
   fixedAssets?: FixedAsset[];
+  depreciationSettings?: DepreciationSetting[];
   productChangeLogs?: ProductChangeLog[];
   periodClosings?: PeriodClosing[];
   organization?: Organization;
@@ -321,3 +322,12 @@ export async function updateFixedAssetDB(id: string, fa: Partial<FixedAsset>) {
 export async function deleteFixedAssetDB(id: string) {
   return mutateERP("delete_fixed_asset", { id });
 }
+
+// Depreciation Settings (Report 10 Addendum)
+export async function persistDepreciationSettingDB(setting: DepreciationSetting | Omit<DepreciationSetting, "id">) {
+  return mutateERP<DepreciationSetting>("save_depreciation_setting", setting);
+}
+export async function deleteDepreciationSettingDB(idOrAccountId: string) {
+  return mutateERP("delete_depreciation_setting", { id: idOrAccountId });
+}
+

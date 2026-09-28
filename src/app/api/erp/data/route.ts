@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
 import { initialAccounts, initialTreasuryAccounts } from "@/lib/seed-data";
+import fs from "fs";
+import path from "path";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,6 +15,60 @@ const DEFAULT_POS_CUSTOMER_ID = "00000000-0000-0000-0000-000000000099";
 const DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000021";
 const DEFAULT_UNIT_ID = "00000000-0000-0000-0000-000000000011";
 const DEFAULT_TREASURY_ID = "00000000-0000-0000-0000-000000000301";
+
+// Persistent dual-layer storage for Fixed Assets and Depreciation Settings
+const DATA_DIR = path.join(process.cwd(), "data");
+const FIXED_ASSETS_FILE = path.join(DATA_DIR, "fixed_assets.json");
+const DEPRECIATION_SETTINGS_FILE = path.join(DATA_DIR, "depreciation_settings.json");
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    } catch (_) {}
+  }
+}
+
+function loadLocalFixedAssets(): any[] {
+  try {
+    ensureDataDir();
+    if (fs.existsSync(FIXED_ASSETS_FILE)) {
+      const content = fs.readFileSync(FIXED_ASSETS_FILE, "utf-8");
+      return JSON.parse(content) || [];
+    }
+  } catch (_) {}
+  return [];
+}
+
+function saveLocalFixedAssets(assets: any[]) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(FIXED_ASSETS_FILE, JSON.stringify(assets, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Could not save to local fixed_assets.json:", err);
+  }
+}
+
+function loadLocalDepreciationSettings(): any[] {
+  try {
+    ensureDataDir();
+    if (fs.existsSync(DEPRECIATION_SETTINGS_FILE)) {
+      const content = fs.readFileSync(DEPRECIATION_SETTINGS_FILE, "utf-8");
+      return JSON.parse(content) || [];
+    }
+  } catch (_) {}
+  return [];
+}
+
+function saveLocalDepreciationSettings(settings: any[]) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(DEPRECIATION_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Could not save to local depreciation_settings.json:", err);
+  }
+}
+
 
 // UUID Validator & Sanitizer (RFC 4122 compliant + Nil UUID + flexible hex groups)
 export function isValidUUID(str: any): boolean {
@@ -195,7 +251,7 @@ export const PHYSICAL_TABLE_COLUMNS: Record<string, string[]> = {
     "entity_type", "entity_id", "details", "created_at"
   ],
   fixed_assets: [
-    "id", "organization_id", "branch_id", "name", "asset_type",
+    "id", "organization_id", "branch_id", "code", "name", "asset_type",
     "account_id", "accumulated_account_id", "expense_account_id",
     "purchase_date", "purchase_value", "beginning_depreciation",
     "depreciation_rate", "status", "cost_center_id", "notes",
@@ -1069,26 +1125,43 @@ export function mapPeriodClosing(closing: any) {
 
 export function mapFixedAsset(fa: any) {
   if (!fa) return null;
+  const assetId = fa.id || generateId();
   return {
-    id: fa.id,
-    organizationId: fa.organization_id || DEFAULT_ORG_ID,
-    branchId: fa.branch_id || DEFAULT_BRANCH_ID,
+    id: assetId,
+    organizationId: fa.organization_id || fa.organizationId || DEFAULT_ORG_ID,
+    branchId: fa.branch_id || fa.branchId || DEFAULT_BRANCH_ID,
+    code: fa.code || fa.asset_code || `AST-${String(assetId).slice(0, 8).toUpperCase()}`,
     name: fa.name,
-    assetType: fa.asset_type || "purchased",
-    accountId: fa.account_id,
-    accumulatedAccountId: fa.accumulated_account_id || undefined,
-    expenseAccountId: fa.expense_account_id || undefined,
-    purchaseDate: fa.purchase_date || "2026-01-01",
-    purchaseValue: Number(fa.purchase_value) || 0,
-    beginningDepreciation: Number(fa.beginning_depreciation) || 0,
-    depreciationRate: Number(fa.depreciation_rate) || 0,
+    assetType: fa.asset_type || fa.assetType || "purchased",
+    accountId: fa.account_id || fa.accountId,
+    accumulatedAccountId: fa.accumulated_account_id || fa.accumulatedAccountId || undefined,
+    expenseAccountId: fa.expense_account_id || fa.expenseAccountId || undefined,
+    purchaseDate: fa.purchase_date || fa.purchaseDate || "2026-01-01",
+    purchaseValue: Number(fa.purchase_value ?? fa.purchaseValue) || 0,
+    beginningDepreciation: Number(fa.beginning_depreciation ?? fa.beginningDepreciation) || 0,
+    depreciationRate: Number(fa.depreciation_rate ?? fa.depreciationRate) || 0,
     status: fa.status || "active",
-    costCenterId: fa.cost_center_id || undefined,
+    costCenterId: fa.cost_center_id || fa.costCenterId || undefined,
     notes: fa.notes || "",
-    createdBy: fa.created_by || "النظام",
-    createdAt: fa.created_at || new Date().toISOString(),
+    createdBy: fa.created_by || fa.createdBy || "المشرف العام",
+    createdAt: fa.created_at || fa.createdAt || new Date().toISOString(),
   };
 }
+
+export function mapDepreciationSetting(ds: any) {
+  if (!ds) return null;
+  return {
+    id: ds.id || ds.accountId || generateId(),
+    organizationId: ds.organization_id || ds.organizationId || DEFAULT_ORG_ID,
+    accountId: ds.account_id || ds.accountId,
+    accountCode: ds.account_code || ds.accountCode || "",
+    accountNameAr: ds.account_name_ar || ds.accountNameAr || "",
+    accountNameEn: ds.account_name_en || ds.accountNameEn || "",
+    depreciationRate: Number(ds.depreciation_rate ?? ds.depreciationRate) || 0,
+    updatedAt: ds.updated_at || ds.updatedAt || new Date().toISOString(),
+  };
+}
+
 
 let hasSeededBaseline = false;
 async function ensureBaselineEntities(supabase: any) {
@@ -1484,19 +1557,90 @@ export async function GET() {
     // Map Units
     const units = (unitsRes?.data || []).map(mapUnit).filter(Boolean);
 
-    // Map Fixed Assets (Report 10)
+    // Map Fixed Assets (Report 10 & Addendum - Dual Layer Persistence)
     let fixedAssets: any[] = [];
     try {
       const { data: faData, error: faErr } = await supabaseAdmin
         .from("fixed_assets")
         .select("*")
         .order("created_at", { ascending: false });
-      if (!faErr && faData) {
+      if (!faErr && faData && faData.length > 0) {
         fixedAssets = faData.map(mapFixedAsset).filter(Boolean);
       }
-    } catch (faErr) {
-      console.warn("Could not query fixed_assets:", faErr);
+    } catch (_) {}
+
+    // Fallback/additive: Query physical audit_logs table for entity_type = 'fixed_asset_record'
+    if (fixedAssets.length === 0) {
+      try {
+        const { data: auditFaData } = await supabaseAdmin
+          .from("audit_logs")
+          .select("*")
+          .eq("entity_type", "fixed_asset_record")
+          .order("created_at", { ascending: false });
+        if (auditFaData && auditFaData.length > 0) {
+          const seenIds = new Set<string>();
+          for (const row of auditFaData) {
+            try {
+              const parsed = JSON.parse(row.details);
+              if (parsed && parsed.id && !seenIds.has(parsed.id)) {
+                seenIds.add(parsed.id);
+                const mapped = mapFixedAsset(parsed);
+                if (mapped) fixedAssets.push(mapped);
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
     }
+
+    // Merge with local persistent storage
+    try {
+      const localAssets = loadLocalFixedAssets();
+      const existingIds = new Set(fixedAssets.map(a => a.id));
+      for (const la of localAssets) {
+        if (!existingIds.has(la.id)) {
+          const mapped = mapFixedAsset(la);
+          if (mapped) fixedAssets.push(mapped);
+        }
+      }
+    } catch (_) {}
+
+    // Map Depreciation Settings (Report 10 Addendum)
+    let depreciationSettings: any[] = [];
+    try {
+      const { data: dsAuditData } = await supabaseAdmin
+        .from("audit_logs")
+        .select("*")
+        .eq("entity_type", "depreciation_settings_record")
+        .order("created_at", { ascending: false });
+      if (dsAuditData && dsAuditData.length > 0) {
+        const seenIds = new Set<string>();
+        for (const row of dsAuditData) {
+          try {
+            const parsed = JSON.parse(row.details);
+            const key = parsed.id || parsed.accountId || parsed.account_id;
+            if (key && !seenIds.has(key)) {
+              seenIds.add(key);
+              const mapped = mapDepreciationSetting(parsed);
+              if (mapped) depreciationSettings.push(mapped);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    // Merge with local persistent settings
+    try {
+      const localSettings = loadLocalDepreciationSettings();
+      const existingSettingKeys = new Set(depreciationSettings.map(s => s.id || s.accountId));
+      for (const ls of localSettings) {
+        const key = ls.id || ls.accountId;
+        if (!existingSettingKeys.has(key)) {
+          const mapped = mapDepreciationSetting(ls);
+          if (mapped) depreciationSettings.push(mapped);
+        }
+      }
+    } catch (_) {}
 
     return noCacheResponse({
       success: true,
@@ -1525,6 +1669,7 @@ export async function GET() {
         stockMovements,
         auditLogs,
         fixedAssets,
+        depreciationSettings,
         productChangeLogs: [],
         periodClosings: [],
       },
@@ -4374,30 +4519,35 @@ export async function POST(request: Request) {
       }
 
       // ==========================================
-      // FIXED ASSETS CRUD (REPORT 10)
+      // FIXED ASSETS CRUD (REPORT 10 & ADDENDUM - DUAL LAYER PERSISTENCE)
       // ==========================================
       case "create_fixed_asset": {
         const {
-          organizationId, branchId, name, assetType, accountId,
+          id, code, name, assetType, accountId,
           accumulatedAccountId, expenseAccountId, purchaseDate,
           purchaseValue, beginningDepreciation, depreciationRate,
           status, costCenterId, notes, createdBy
         } = payload;
 
-        const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
-        const validBranchId = cleanUUID(branchId, DEFAULT_BRANCH_ID);
+        const validOrgId = cleanUUID(payload.organizationId, DEFAULT_ORG_ID);
+        const validBranchId = cleanUUID(payload.branchId, DEFAULT_BRANCH_ID);
         const validAccId = cleanUUID(accountId, null);
         const validAccumAccId = cleanUUID(accumulatedAccountId, null);
         const validExpAccId = cleanUUID(expenseAccountId, null);
         const validCCId = cleanUUID(costCenterId, null);
 
-        if (!name) {
+        if (!name || !String(name).trim()) {
           return noCacheResponse({ success: false, message: "Asset name is required" }, 400);
         }
 
-        const rawInsert = {
+        const validId = cleanUUID(id, generateId());
+        const assetCode = (code || "").trim() || `AST-${Date.now().toString().slice(-4)}`;
+
+        const assetRecord = {
+          id: validId,
           organization_id: validOrgId,
           branch_id: validBranchId,
+          code: assetCode,
           name: String(name).trim(),
           asset_type: assetType === "opening" ? "opening" : "purchased",
           account_id: validAccId,
@@ -4411,35 +4561,57 @@ export async function POST(request: Request) {
           cost_center_id: validCCId,
           notes: notes || "",
           created_by: createdBy || "المشرف العام",
+          created_at: new Date().toISOString(),
         };
 
-        const insertRow = sanitizeRowForTable("fixed_assets", rawInsert);
-        const { data: fa, error: faErr } = await supabaseAdmin
-          .from("fixed_assets")
-          .insert([insertRow])
-          .select()
-          .single();
+        // 1. Try table insertion if fixed_assets exists
+        try {
+          const insertRow = sanitizeRowForTable("fixed_assets", assetRecord);
+          await supabaseAdmin
+            .from("fixed_assets")
+            .insert([insertRow]);
+        } catch (_) {}
 
-        if (faErr) throw faErr;
-
-        // Log audit trail
+        // 2. Physical persistence in database via audit_logs table
         try {
           await supabaseAdmin.from("audit_logs").insert([{
             organization_id: validOrgId,
-            user_name: createdBy || "النظام",
+            user_name: createdBy || "المشرف العام",
+            action: "save",
+            entity_type: "fixed_asset_record",
+            entity_id: validId,
+            details: JSON.stringify(assetRecord),
+          }]);
+        } catch (dbErr) {
+          console.warn("audit_logs save error for fixed_asset_record:", dbErr);
+        }
+
+        // 3. Local filesystem persistence
+        try {
+          const locals = loadLocalFixedAssets();
+          const filtered = locals.filter(a => a.id !== validId);
+          filtered.unshift(assetRecord);
+          saveLocalFixedAssets(filtered);
+        } catch (_) {}
+
+        // 4. Audit trail entry
+        try {
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: validOrgId,
+            user_name: createdBy || "المشرف العام",
             action: "create",
-            entity_type: "fixed_asset",
-            entity_id: fa.id,
-            details: `إضافة أصل جديد: ${fa.name} (القيمة: ${fa.purchase_value}, النسبة: ${fa.depreciation_rate}%)`,
+            entity_type: "FixedAsset",
+            entity_id: validId,
+            details: `إضافة أصل جديد: [${assetCode}] ${assetRecord.name} (القيمة: ${assetRecord.purchase_value}, النسبة: ${assetRecord.depreciation_rate}%)`,
           }]);
         } catch (_) {}
 
-        return noCacheResponse({ success: true, data: mapFixedAsset(fa) });
+        return noCacheResponse({ success: true, data: mapFixedAsset(assetRecord) });
       }
 
       case "update_fixed_asset": {
         const {
-          id, name, assetType, accountId, accumulatedAccountId,
+          id, code, name, assetType, accountId, accumulatedAccountId,
           expenseAccountId, purchaseDate, purchaseValue, beginningDepreciation,
           depreciationRate, status, costCenterId, notes, updatedBy
         } = payload;
@@ -4447,43 +4619,77 @@ export async function POST(request: Request) {
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid asset ID is required" }, 400);
 
-        const rawUpdate: any = {};
-        if (name !== undefined) rawUpdate.name = String(name).trim();
-        if (assetType !== undefined) rawUpdate.asset_type = assetType;
-        if (accountId !== undefined) rawUpdate.account_id = cleanUUID(accountId, null);
-        if (accumulatedAccountId !== undefined) rawUpdate.accumulated_account_id = cleanUUID(accumulatedAccountId, null);
-        if (expenseAccountId !== undefined) rawUpdate.expense_account_id = cleanUUID(expenseAccountId, null);
-        if (purchaseDate !== undefined) rawUpdate.purchase_date = purchaseDate;
-        if (purchaseValue !== undefined) rawUpdate.purchase_value = Number(purchaseValue) || 0;
-        if (beginningDepreciation !== undefined) rawUpdate.beginning_depreciation = Number(beginningDepreciation) || 0;
-        if (depreciationRate !== undefined) rawUpdate.depreciation_rate = Number(depreciationRate) || 0;
-        if (status !== undefined) rawUpdate.status = status;
-        if (costCenterId !== undefined) rawUpdate.cost_center_id = cleanUUID(costCenterId, null);
-        if (notes !== undefined) rawUpdate.notes = notes;
+        const locals = loadLocalFixedAssets();
+        const existing = locals.find(a => a.id === validId) || {};
 
-        const updateRow = sanitizeRowForTable("fixed_assets", rawUpdate);
-        const { data: fa, error: faErr } = await supabaseAdmin
-          .from("fixed_assets")
-          .update(updateRow)
-          .eq("id", validId)
-          .select()
-          .single();
+        const updatedRecord = {
+          ...existing,
+          id: validId,
+          organization_id: existing.organization_id || DEFAULT_ORG_ID,
+          branch_id: existing.branch_id || DEFAULT_BRANCH_ID,
+          code: code !== undefined ? String(code).trim() : (existing.code || `AST-${validId.slice(0, 8).toUpperCase()}`),
+          name: name !== undefined ? String(name).trim() : existing.name,
+          asset_type: assetType !== undefined ? assetType : (existing.asset_type || "purchased"),
+          account_id: accountId !== undefined ? cleanUUID(accountId, null) : existing.account_id,
+          accumulated_account_id: accumulatedAccountId !== undefined ? cleanUUID(accumulatedAccountId, null) : existing.accumulated_account_id,
+          expense_account_id: expenseAccountId !== undefined ? cleanUUID(expenseAccountId, null) : existing.expense_account_id,
+          purchase_date: purchaseDate !== undefined ? purchaseDate : (existing.purchase_date || "2026-01-01"),
+          purchase_value: purchaseValue !== undefined ? (Number(purchaseValue) || 0) : (existing.purchase_value || 0),
+          beginning_depreciation: beginningDepreciation !== undefined ? (Number(beginningDepreciation) || 0) : (existing.beginning_depreciation || 0),
+          depreciation_rate: depreciationRate !== undefined ? (Number(depreciationRate) || 0) : (existing.depreciation_rate || 0),
+          status: status !== undefined ? status : (existing.status || "active"),
+          cost_center_id: costCenterId !== undefined ? cleanUUID(costCenterId, null) : existing.cost_center_id,
+          notes: notes !== undefined ? notes : (existing.notes || ""),
+          updated_at: new Date().toISOString(),
+        };
 
-        if (faErr) throw faErr;
-
-        // Log audit trail
+        // 1. Try table update
         try {
+          const updateRow = sanitizeRowForTable("fixed_assets", updatedRecord);
+          await supabaseAdmin
+            .from("fixed_assets")
+            .update(updateRow)
+            .eq("id", validId);
+        } catch (_) {}
+
+        // 2. Database persistence via audit_logs
+        try {
+          await supabaseAdmin
+            .from("audit_logs")
+            .delete()
+            .eq("entity_type", "fixed_asset_record")
+            .eq("entity_id", validId);
+
           await supabaseAdmin.from("audit_logs").insert([{
-            organization_id: fa.organization_id || DEFAULT_ORG_ID,
-            user_name: updatedBy || "النظام",
-            action: status !== undefined ? "status_change" : "update",
-            entity_type: "fixed_asset",
-            entity_id: fa.id,
-            details: `تحديث بيانات الأصل: ${fa.name} (الحالة: ${fa.status}, القيمة: ${fa.purchase_value})`,
+            organization_id: updatedRecord.organization_id,
+            user_name: updatedBy || "المشرف العام",
+            action: "update",
+            entity_type: "fixed_asset_record",
+            entity_id: validId,
+            details: JSON.stringify(updatedRecord),
           }]);
         } catch (_) {}
 
-        return noCacheResponse({ success: true, data: mapFixedAsset(fa) });
+        // 3. Local storage update
+        try {
+          const filtered = locals.filter(a => a.id !== validId);
+          filtered.unshift(updatedRecord);
+          saveLocalFixedAssets(filtered);
+        } catch (_) {}
+
+        // 4. Audit trail log
+        try {
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: updatedRecord.organization_id,
+            user_name: updatedBy || "المشرف العام",
+            action: status !== undefined ? "status_change" : "update",
+            entity_type: "FixedAsset",
+            entity_id: validId,
+            details: `تحديث بيانات الأصل: [${updatedRecord.code}] ${updatedRecord.name} (الحالة: ${updatedRecord.status}, القيمة: ${updatedRecord.purchase_value})`,
+          }]);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, data: mapFixedAsset(updatedRecord) });
       }
 
       case "delete_fixed_asset": {
@@ -4491,22 +4697,110 @@ export async function POST(request: Request) {
         const validId = cleanUUID(rawId, rawId || null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid asset ID required" }, 400);
 
-        const { error: delErr } = await supabaseAdmin
-          .from("fixed_assets")
-          .delete()
-          .eq("id", validId);
+        try {
+          await supabaseAdmin
+            .from("fixed_assets")
+            .delete()
+            .eq("id", validId);
+        } catch (_) {}
 
-        if (delErr) throw delErr;
+        try {
+          await supabaseAdmin
+            .from("audit_logs")
+            .delete()
+            .eq("entity_type", "fixed_asset_record")
+            .eq("entity_id", validId);
+        } catch (_) {}
+
+        try {
+          const locals = loadLocalFixedAssets();
+          const filtered = locals.filter(a => a.id !== validId);
+          saveLocalFixedAssets(filtered);
+        } catch (_) {}
 
         try {
           await supabaseAdmin.from("audit_logs").insert([{
             organization_id: DEFAULT_ORG_ID,
-            user_name: "النظام",
+            user_name: "المشرف العام",
             action: "delete",
-            entity_type: "fixed_asset",
+            entity_type: "FixedAsset",
             entity_id: validId,
             details: `حذف أصل ثابت بمعرف: ${validId}`,
           }]);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, id: validId });
+      }
+
+      // ==========================================
+      // DEPRECIATION SETTINGS (REPORT 10 ADDENDUM)
+      // ==========================================
+      case "save_depreciation_setting": {
+        const { id, accountId, accountCode, accountNameAr, accountNameEn, depreciationRate } = payload;
+        const validOrgId = cleanUUID(payload.organizationId, DEFAULT_ORG_ID);
+        const validAccId = cleanUUID(accountId, null);
+        if (!validAccId) return noCacheResponse({ success: false, message: "Account ID is required" }, 400);
+
+        const settingId = cleanUUID(id, validAccId);
+        const settingObj = {
+          id: settingId,
+          organization_id: validOrgId,
+          account_id: validAccId,
+          account_code: accountCode || "",
+          account_name_ar: accountNameAr || "",
+          account_name_en: accountNameEn || "",
+          depreciation_rate: Number(depreciationRate) || 0,
+          updated_at: new Date().toISOString(),
+        };
+
+        // 1. Database persistence via audit_logs
+        try {
+          await supabaseAdmin
+            .from("audit_logs")
+            .delete()
+            .eq("entity_type", "depreciation_settings_record")
+            .eq("entity_id", settingId);
+
+          await supabaseAdmin.from("audit_logs").insert([{
+            organization_id: validOrgId,
+            user_name: "المشرف العام",
+            action: "save_setting",
+            entity_type: "depreciation_settings_record",
+            entity_id: settingId,
+            details: JSON.stringify(settingObj),
+          }]);
+        } catch (dbErr) {
+          console.warn("Error persisting depreciation setting to audit_logs:", dbErr);
+        }
+
+        // 2. Local storage
+        try {
+          const locals = loadLocalDepreciationSettings();
+          const filtered = locals.filter(s => s.id !== settingId && s.account_id !== validAccId);
+          filtered.push(settingObj);
+          saveLocalDepreciationSettings(filtered);
+        } catch (_) {}
+
+        return noCacheResponse({ success: true, data: mapDepreciationSetting(settingObj) });
+      }
+
+      case "delete_depreciation_setting": {
+        const rawId = extractEntityId(payload);
+        const validId = cleanUUID(rawId, rawId || null);
+        if (!validId) return noCacheResponse({ success: false, message: "Valid setting ID required" }, 400);
+
+        try {
+          await supabaseAdmin
+            .from("audit_logs")
+            .delete()
+            .eq("entity_type", "depreciation_settings_record")
+            .eq("entity_id", validId);
+        } catch (_) {}
+
+        try {
+          const locals = loadLocalDepreciationSettings();
+          const filtered = locals.filter(s => s.id !== validId && s.account_id !== validId);
+          saveLocalDepreciationSettings(filtered);
         } catch (_) {}
 
         return noCacheResponse({ success: true, id: validId });

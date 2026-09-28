@@ -8,7 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportTableToExcel } from "@/lib/excel-export";
 import Modal from "@/components/ui/Modal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
-import { ReportPrintHeader, ReportPrintFooter } from "@/components/ui/ReportPrintHeader";
+import { ReportPrintHeader } from "@/components/ui/ReportPrintHeader";
 import {
   Building,
   Building2,
@@ -35,7 +35,10 @@ import {
   Wrench,
   Landmark,
   ArrowRight,
-  Filter
+  Filter,
+  Check,
+  HelpCircle,
+  Hash
 } from "lucide-react";
 
 export default function FixedAssetDepreciationPage() {
@@ -55,6 +58,10 @@ export default function FixedAssetDepreciationPage() {
     showToast,
     isLoadingData,
     auditLogs,
+    journalEntries,
+    purchaseInvoices,
+    depreciationSettings,
+    getAccountDepreciationRate,
   } = useERP();
 
   const isAr = locale === "ar";
@@ -76,14 +83,24 @@ export default function FixedAssetDepreciationPage() {
   const [reportFromDate, setReportFromDate] = useState<string>(defaultFiscalStart);
   const [reportToDate, setReportToDate] = useState<string>(todayStr);
 
-  // Modal State: Create / Edit Purchased Asset
+  // Modal State: Create / Edit Purchased Asset & Opening Asset
   const [isPurchasedModalOpen, setIsPurchasedModalOpen] = useState(false);
   const [isOpeningModalOpen, setIsOpeningModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
 
-  // Form Fields
-  const [formName, setFormName] = useState("");
+  // Review Screen & Confirmation Dialog State (Sections 6 & 7)
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isClosingConfirmDialogOpen, setIsClosingConfirmDialogOpen] = useState(false);
+  const [reviewPeriodEndDate, setReviewPeriodEndDate] = useState(todayStr);
+  const [selectedAssetForReview, setSelectedAssetForReview] = useState<FixedAsset | null>(null);
+
+  // Form Fields - Strictly following Section 1 & Section 4 order:
+  // Field 1: Main Asset Account
+  // Field 2: Asset Name
+  // Field 3: Asset Code
   const [formAccountId, setFormAccountId] = useState("");
+  const [formName, setFormName] = useState("");
+  const [formCode, setFormCode] = useState("");
   const [formPurchaseValue, setFormPurchaseValue] = useState<number | "">("");
   const [formBeginningDeprec, setFormBeginningDeprec] = useState<number | "">("");
   const [formPurchaseDate, setFormPurchaseDate] = useState(todayStr);
@@ -116,9 +133,9 @@ export default function FixedAssetDepreciationPage() {
         acc.nameAr.includes("أجهزة") ||
         acc.nameAr.includes("حاسب") ||
         acc.nameAr.includes("أثاث");
-      // Only include leaf accounts or level >= 3
+      // Include parent asset accounts or leaf accounts with debit nature
       return (isCodeMatch || isNameMatch) && acc.level >= 3 && acc.nature === "debit";
-    });
+    }).sort((a, b) => (a.code || "").localeCompare(b.code || ""));
   }, [accounts]);
 
   // Account icon selector
@@ -133,14 +150,115 @@ export default function FixedAssetDepreciationPage() {
   };
 
   // -------------------------------------------------------------
+  // Automatic Asset Data Discovery (Section 2 & Section 4)
+  // When Main Asset Account is selected, scans Journal Entries,
+  // General Ledger, Trial Balance, and Purchase Invoices
+  // to present candidate assets that can be auto-loaded!
+  // -------------------------------------------------------------
+  const discoveredAccountingAssets = useMemo(() => {
+    if (!formAccountId) return [];
+    const selectedAcc = accounts.find(a => a.id === formAccountId);
+    if (!selectedAcc) return [];
+
+    const candidates: Array<{
+      id: string;
+      code: string;
+      name: string;
+      purchaseValue: number;
+      beginningDepreciation: number;
+      purchaseDate: string;
+      source: string;
+      reference: string;
+    }> = [];
+
+    const matchingAccountIds = new Set<string>([selectedAcc.id]);
+    accounts.forEach(a => {
+      if (a.parentId === selectedAcc.id || (selectedAcc.code && a.code.startsWith(selectedAcc.code))) {
+        matchingAccountIds.add(a.id);
+      }
+    });
+
+    let seq = 1;
+    // 1. Scan Journal Entries & Lines
+    journalEntries.forEach(je => {
+      je.lines.forEach(line => {
+        if (matchingAccountIds.has(line.accountId) && line.debit > 0) {
+          const isOpening = je.referenceType === "opening" || je.entryNumber?.startsWith("OPENING");
+          let begDeprec = 0;
+          if (isOpening) {
+            const contraLine = je.lines.find(l => l.accountCode.startsWith("1202") && l.credit > 0);
+            if (contraLine) begDeprec = contraLine.credit;
+          }
+
+          const baseCode = `AST-${selectedAcc.code}-${String(seq).padStart(2, "0")}`;
+          candidates.push({
+            id: `je-${je.id}-${line.id}`,
+            code: baseCode,
+            name: line.description || `${selectedAcc.nameAr} - ${je.entryNumber}`,
+            purchaseValue: line.debit,
+            beginningDepreciation: begDeprec,
+            purchaseDate: isOpening ? defaultFiscalStart : (je.date || todayStr),
+            source: isOpening ? (isAr ? "القيد الافتتاحي" : "Opening Entry") : (isAr ? `قيد يومية ${je.entryNumber}` : `Journal ${je.entryNumber}`),
+            reference: je.entryNumber,
+          });
+          seq++;
+        }
+      });
+    });
+
+    // 2. Scan Purchase Invoices
+    purchaseInvoices.forEach(inv => {
+      inv.items?.forEach(item => {
+        const keywords = [selectedAcc.nameAr, selectedAcc.nameEn || "", "سيار", "معد", "أثاث", "حاسب", "كمبيوتر", "مبنى", "أصل"].filter(Boolean);
+        const isMatch = keywords.some(k => k && (item.productName?.includes(k) || inv.notes?.includes(k)));
+        if (isMatch) {
+          const baseCode = `AST-${selectedAcc.code}-${String(seq).padStart(2, "0")}`;
+          candidates.push({
+            id: `pinv-${inv.id}-${item.id}`,
+            code: baseCode,
+            name: item.productName || `${selectedAcc.nameAr} - ${inv.invoiceNumber}`,
+            purchaseValue: item.total || (item.quantity * item.unitCost),
+            beginningDepreciation: 0,
+            purchaseDate: inv.date || todayStr,
+            source: isAr ? `فاتورة مشتريات ${inv.invoiceNumber}` : `Purchase ${inv.invoiceNumber}`,
+            reference: inv.invoiceNumber,
+          });
+          seq++;
+        }
+      });
+    });
+
+    return candidates;
+  }, [formAccountId, accounts, journalEntries, purchaseInvoices, todayStr, defaultFiscalStart, isAr]);
+
+  // Handle selecting an auto-loaded discovered asset
+  const handleSelectDiscoveredAsset = (cand: typeof discoveredAccountingAssets[0]) => {
+    setFormName(cand.name);
+    setFormCode(cand.code);
+    setFormPurchaseValue(cand.purchaseValue);
+    setFormPurchaseDate(cand.purchaseDate);
+    if (cand.beginningDepreciation > 0) {
+      setFormBeginningDeprec(cand.beginningDepreciation);
+    }
+    // Auto-load parent depreciation rate if configured
+    if (formAccountId) {
+      const rate = getAccountDepreciationRate(formAccountId);
+      if (rate > 0) setFormRate(rate);
+    }
+    showToast(isAr ? `تم تحميل بيانات الأصل تلقائياً من [${cand.source}]` : `Asset data auto-loaded from [${cand.source}]`, "info");
+  };
+
+  // -------------------------------------------------------------
   // Calculate Live Depreciation and Valuations for all assets
   // -------------------------------------------------------------
   const calculatedAssets = useMemo(() => {
     return fixedAssets.map(asset => {
       const calc = computeAssetDepreciation(asset, todayStr);
       const mainAcc = accounts.find(a => a.id === asset.accountId);
+      const safeCode = asset.code || `AST-${String(asset.id).slice(0, 8).toUpperCase()}`;
       return {
         ...asset,
+        code: safeCode,
         calc,
         mainAccount: mainAcc,
       };
@@ -166,16 +284,17 @@ export default function FixedAssetDepreciationPage() {
     };
   }, [fixedAssets, calculatedAssets]);
 
-  // Filtered lists
+  // Filtered lists with Asset Code treated as primary identifier (Section 10)
   const purchasedAssetsList = useMemo(() => {
     return calculatedAssets.filter(a => {
       if (a.assetType === "opening") return false;
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
+        const matchCode = (a.code || "").toLowerCase().includes(q);
         const matchName = a.name.toLowerCase().includes(q);
-        const matchAcc = a.mainAccount?.nameAr.toLowerCase().includes(q) || a.mainAccount?.code.includes(q);
-        if (!matchName && !matchAcc) return false;
+        const matchAcc = (a.mainAccount?.nameAr || "").toLowerCase().includes(q) || (a.mainAccount?.code || "").includes(q);
+        if (!matchCode && !matchName && !matchAcc) return false;
       }
       return true;
     });
@@ -187,32 +306,34 @@ export default function FixedAssetDepreciationPage() {
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
+        const matchCode = (a.code || "").toLowerCase().includes(q);
         const matchName = a.name.toLowerCase().includes(q);
-        const matchAcc = a.mainAccount?.nameAr.toLowerCase().includes(q) || a.mainAccount?.code.includes(q);
-        if (!matchName && !matchAcc) return false;
+        const matchAcc = (a.mainAccount?.nameAr || "").toLowerCase().includes(q) || (a.mainAccount?.code || "").includes(q);
+        if (!matchCode && !matchName && !matchAcc) return false;
       }
       return true;
     });
   }, [calculatedAssets, statusFilter, searchQuery]);
 
-  // Report Rows Calculation
+  // Report Rows Calculation with Asset Code (Section 10)
   const reportRows = useMemo(() => {
     return calculatedAssets
       .filter(a => {
         if (reportAssetFilter !== "all" && a.id !== reportAssetFilter) return false;
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
+          const matchCode = (a.code || "").toLowerCase().includes(q);
           const matchName = a.name.toLowerCase().includes(q);
-          const matchAcc = a.mainAccount?.nameAr.toLowerCase().includes(q) || a.mainAccount?.code.includes(q);
-          if (!matchName && !matchAcc) return false;
+          const matchAcc = (a.mainAccount?.nameAr || "").toLowerCase().includes(q) || (a.mainAccount?.code || "").includes(q);
+          if (!matchCode && !matchName && !matchAcc) return false;
         }
         return true;
       })
       .map(a => {
-        // Calculate within custom date window [reportFromDate, reportToDate]
         const periodCalc = computeAssetDepreciation(a, undefined, reportFromDate, reportToDate);
         return {
           id: a.id,
+          code: a.code,
           name: a.name,
           mainAccountCode: a.mainAccount?.code || "-",
           mainAccountName: a.mainAccount ? (isAr ? a.mainAccount.nameAr : a.mainAccount.nameEn) : (isAr ? "أصول ثابتة" : "Fixed Assets"),
@@ -252,16 +373,66 @@ export default function FixedAssetDepreciationPage() {
   }, [reportRows]);
 
   // -------------------------------------------------------------
-  // Handlers: Open Modals
+  // Review Rows Calculation for Closing Review Screen (Section 6)
+  // -------------------------------------------------------------
+  const closingReviewRows = useMemo(() => {
+    const listToReview = selectedAssetForReview
+      ? calculatedAssets.filter(a => a.id === selectedAssetForReview.id)
+      : calculatedAssets.filter(a => a.status === "active");
+
+    return listToReview.map(asset => {
+      const calc = computeAssetDepreciation(asset, reviewPeriodEndDate);
+      return {
+        id: asset.id,
+        code: asset.code,
+        name: asset.name,
+        mainAccountCode: asset.mainAccount?.code || "-",
+        mainAccountName: asset.mainAccount ? (isAr ? asset.mainAccount.nameAr : asset.mainAccount.nameEn) : (isAr ? "أصول ثابتة" : "Fixed Assets"),
+        openingDepreciation: Number(asset.beginningDepreciation) || 0,
+        originalCost: Number(asset.purchaseValue) || 0,
+        currentPeriodDepreciation: calc.currentPeriodDepreciation,
+        accumulatedDepreciation: calc.accumulatedDepreciation,
+        closingAssetValue: calc.currentAssetValue,
+        status: asset.status,
+      };
+    });
+  }, [calculatedAssets, selectedAssetForReview, reviewPeriodEndDate, isAr]);
+
+  const closingReviewTotals = useMemo(() => {
+    return closingReviewRows.reduce(
+      (acc, r) => ({
+        originalCost: acc.originalCost + r.originalCost,
+        openingDepreciation: acc.openingDepreciation + r.openingDepreciation,
+        currentPeriodDepreciation: acc.currentPeriodDepreciation + r.currentPeriodDepreciation,
+        accumulatedDepreciation: acc.accumulatedDepreciation + r.accumulatedDepreciation,
+        closingAssetValue: acc.closingAssetValue + r.closingAssetValue,
+      }),
+      {
+        originalCost: 0,
+        openingDepreciation: 0,
+        currentPeriodDepreciation: 0,
+        accumulatedDepreciation: 0,
+        closingAssetValue: 0,
+      }
+    );
+  }, [closingReviewRows]);
+
+  // -------------------------------------------------------------
+  // Form Openers
   // -------------------------------------------------------------
   const openAddPurchasedModal = () => {
     setEditingAsset(null);
+    const initialAccId = fixedAssetAccounts[0]?.id || "";
+    setFormAccountId(initialAccId);
     setFormName("");
-    setFormAccountId(fixedAssetAccounts[0]?.id || "");
+    const initialAcc = fixedAssetAccounts.find(a => a.id === initialAccId);
+    const initialCode = `AST-${initialAcc ? initialAcc.code : "1201"}-${String(fixedAssets.length + 1).padStart(2, "0")}`;
+    setFormCode(initialCode);
     setFormPurchaseValue("");
     setFormBeginningDeprec(0);
     setFormPurchaseDate(todayStr);
-    setFormRate(10);
+    const inheritedRate = getAccountDepreciationRate(initialAccId);
+    setFormRate(inheritedRate > 0 ? inheritedRate : 10);
     setFormStatus("active");
     setFormCostCenterId("");
     setFormNotes("");
@@ -271,12 +442,17 @@ export default function FixedAssetDepreciationPage() {
 
   const openAddOpeningModal = () => {
     setEditingAsset(null);
+    const initialAccId = fixedAssetAccounts[0]?.id || "";
+    setFormAccountId(initialAccId);
     setFormName("");
-    setFormAccountId(fixedAssetAccounts[0]?.id || "");
+    const initialAcc = fixedAssetAccounts.find(a => a.id === initialAccId);
+    const initialCode = `AST-OP-${initialAcc ? initialAcc.code : "1201"}-${String(fixedAssets.length + 1).padStart(2, "0")}`;
+    setFormCode(initialCode);
     setFormPurchaseValue("");
     setFormBeginningDeprec("");
     setFormPurchaseDate(defaultFiscalStart); // Auto-assigns 01/01/Current Fiscal Year
-    setFormRate(10);
+    const inheritedRate = getAccountDepreciationRate(initialAccId);
+    setFormRate(inheritedRate > 0 ? inheritedRate : 10);
     setFormStatus("active");
     setFormCostCenterId("");
     setFormNotes("");
@@ -286,8 +462,9 @@ export default function FixedAssetDepreciationPage() {
 
   const openEditModal = (asset: FixedAsset) => {
     setEditingAsset(asset);
-    setFormName(asset.name);
     setFormAccountId(asset.accountId || "");
+    setFormName(asset.name);
+    setFormCode(asset.code || `AST-${String(asset.id).slice(0, 8).toUpperCase()}`);
     setFormPurchaseValue(asset.purchaseValue);
     setFormBeginningDeprec(asset.beginningDepreciation);
     setFormPurchaseDate(asset.purchaseDate);
@@ -304,12 +481,36 @@ export default function FixedAssetDepreciationPage() {
     }
   };
 
+  // When account changes in form, update code and inherited rate
+  const handleAccountChange = (accId: string) => {
+    setFormAccountId(accId);
+    const acc = fixedAssetAccounts.find(a => a.id === accId);
+    if (acc) {
+      if (!formCode || formCode.startsWith("AST-")) {
+        const prefix = editingAsset?.assetType === "opening" ? "AST-OP" : "AST";
+        setFormCode(`${prefix}-${acc.code}-${String(fixedAssets.length + 1).padStart(2, "0")}`);
+      }
+      const inheritedRate = getAccountDepreciationRate(accId);
+      if (inheritedRate > 0) {
+        setFormRate(inheritedRate);
+      }
+    }
+  };
+
   // -------------------------------------------------------------
-  // Form Submit Handler
+  // Form Submit Handler (Sections 3 & 5)
   // -------------------------------------------------------------
   const handleSaveAsset = async (type: FixedAssetType) => {
+    if (!formAccountId) {
+      setFormError(isAr ? "يرجى تحديد الحساب الرئيسي للأصل من شجرة الحسابات" : "Main asset account is required");
+      return;
+    }
     if (!formName.trim()) {
-      setFormError(isAr ? "يرجى إدخال اسم الأصل" : "Asset name is required");
+      setFormError(isAr ? "يرجى إدخال أو اختيار اسم الأصل" : "Asset name is required");
+      return;
+    }
+    if (!formCode.trim()) {
+      setFormError(isAr ? "كود الأصل إلزامي - يرجى إدخال كود الأصل" : "Asset Code is mandatory");
       return;
     }
     const pVal = Number(formPurchaseValue);
@@ -334,6 +535,7 @@ export default function FixedAssetDepreciationPage() {
     try {
       if (editingAsset) {
         await updateFixedAsset(editingAsset.id, {
+          code: formCode.trim(),
           name: formName.trim(),
           accountId: formAccountId || undefined,
           purchaseValue: pVal,
@@ -348,6 +550,7 @@ export default function FixedAssetDepreciationPage() {
         await addFixedAsset({
           organizationId: organization.id,
           branchId: activeBranchId,
+          code: formCode.trim(),
           name: formName.trim(),
           assetType: type,
           accountId: formAccountId || fixedAssetAccounts[0]?.id,
@@ -366,7 +569,7 @@ export default function FixedAssetDepreciationPage() {
       setIsOpeningModalOpen(false);
       setEditingAsset(null);
     } catch (err: any) {
-      setFormError(err.message || (isAr ? "حدث خطأ أثناء الحفظ" : "Save failed"));
+      setFormError(err.message || (isAr ? "حدث خطأ أثناء الحفظ في قاعدة البيانات" : "Save failed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -378,15 +581,15 @@ export default function FixedAssetDepreciationPage() {
     try {
       await updateFixedAsset(asset.id, { status: nextStatus });
     } catch (err: any) {
-      showToast(err.message || (isAr ? "فشل تعديل الحالة" : "Status update failed"), "error");
+      showToast(err.message || (isAr ? "فشل تعديل حالة الأصل" : "Status update failed"), "error");
     }
   };
 
   // Delete handler
   const handleDeleteAsset = async (asset: FixedAsset) => {
     const confirmMsg = isAr
-      ? `هل أنت متأكد من حذف الأصل (${asset.name})؟ لن يؤثر هذا على القيود المسجلة مسبقاً.`
-      : `Are you sure you want to delete asset (${asset.name})?`;
+      ? `هل أنت متأكد من حذف الأصل [${asset.code}] «${asset.name}»؟ لا يمكن التراجع عن هذه العملية.`
+      : `Are you sure you want to delete asset [${asset.code}] ${asset.name}?`;
     if (!window.confirm(confirmMsg)) return;
 
     try {
@@ -396,32 +599,42 @@ export default function FixedAssetDepreciationPage() {
     }
   };
 
-  // Single post depreciation
-  const handlePostSingleDepreciation = async (asset: FixedAsset) => {
-    try {
-      await postAssetDepreciation(asset.id, todayStr);
-    } catch (err: any) {
-      showToast(err.message || (isAr ? "فشل ترحيل الإهلاك" : "Depreciation post failed"), "error");
-    }
+  // -------------------------------------------------------------
+  // Period Closing Workflow (Sections 6 & 7)
+  // Step 1: Open Review Screen
+  // Step 2: User confirms review -> Open confirmation dialog
+  // Step 3: User confirms dialog -> Post depreciation
+  // -------------------------------------------------------------
+  const handleOpenClosingReview = (singleAsset?: FixedAsset) => {
+    setSelectedAssetForReview(singleAsset || null);
+    setReviewPeriodEndDate(todayStr);
+    setIsReviewModalOpen(true);
   };
 
-  // Post all active depreciation
-  const handlePostAllActive = async () => {
-    const confirmMsg = isAr
-      ? `هل ترغب في احتساب وترحيل إهلاك الفترة لكافة الأصول النشطة وتوليد القيود المحاسبية تلقائياً؟`
-      : `Post depreciation for all active assets?`;
-    if (!window.confirm(confirmMsg)) return;
+  const handlePromptClosingConfirmation = () => {
+    setIsClosingConfirmDialogOpen(true);
+  };
 
+  const handleExecuteConfirmedPosting = async () => {
     setIsPostingAll(true);
     try {
-      await postAllActiveAssetsDepreciation(todayStr);
+      if (selectedAssetForReview) {
+        await postAssetDepreciation(selectedAssetForReview.id, reviewPeriodEndDate);
+      } else {
+        await postAllActiveAssetsDepreciation(reviewPeriodEndDate);
+      }
+      setIsClosingConfirmDialogOpen(false);
+      setIsReviewModalOpen(false);
+      setSelectedAssetForReview(null);
+    } catch (err: any) {
+      showToast(err.message || (isAr ? "فشل ترحيل قيد الإهلاك" : "Posting failed"), "error");
     } finally {
       setIsPostingAll(false);
     }
   };
 
   // -------------------------------------------------------------
-  // Excel Export Handler
+  // Excel Export Handler (Section 10)
   // -------------------------------------------------------------
   const handleExportExcel = () => {
     exportTableToExcel({
@@ -430,6 +643,7 @@ export default function FixedAssetDepreciationPage() {
       title: isAr ? "تقرير أرصدة وإهلاك الأصول الثابتة" : "Fixed Asset Balances & Depreciation Report",
       organizationName: isAr ? organization.nameAr : organization.nameEn,
       columns: [
+        { header: isAr ? "كود الأصل" : "Asset Code", key: "code", width: 16 },
         { header: isAr ? "اسم الأصل" : "Asset Name", key: "name", width: 25 },
         { header: isAr ? "الحساب الرئيسي" : "Main Account", key: "account", width: 22 },
         { header: isAr ? "تاريخ الشراء" : "Purchase Date", key: "purchaseDate", width: 14 },
@@ -443,6 +657,7 @@ export default function FixedAssetDepreciationPage() {
         { header: isAr ? "الحالة" : "Status", key: "status", width: 12 },
       ],
       data: reportRows.map(r => ({
+        code: r.code,
         name: r.name,
         account: `${r.mainAccountCode} - ${r.mainAccountName}`,
         purchaseDate: r.purchaseDate,
@@ -477,13 +692,13 @@ export default function FixedAssetDepreciationPage() {
               <h1 className="text-xl font-black text-white flex items-center gap-2">
                 {isAr ? "إدارة وإهلاك الأصول الثابتة" : "Fixed Assets & Depreciation"}
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  {isAr ? "تقرير 10" : "Report 10"}
+                  {isAr ? "تقرير 10 وملاحقه" : "Report 10 Addendum"}
                 </span>
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
                 {isAr
-                  ? "متابعة دورة حياة الأصول، احتساب الإهلاك الآلي، والتأثير الفوري على القوائم المالية والتقارير الختامية"
-                  : "Track fixed asset lifecycle, automated straight-line depreciation & real-time financial reporting"}
+                  ? "تسجيل الأصول، ربطها بدليل الحسابات، التحميل التلقائي من القيود، شاشة مراجعة الإقفال، والتأثير الفوري على القوائم المالية"
+                  : "Fixed asset entry, automated COA linking, period closing review screen & real-time GL integration"}
               </p>
             </div>
           </div>
@@ -507,13 +722,13 @@ export default function FixedAssetDepreciationPage() {
           </button>
 
           <button
-            onClick={handlePostAllActive}
+            onClick={() => handleOpenClosingReview()}
             disabled={isPostingAll || kpis.activeCount === 0}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
-            title={isAr ? "احتساب وترحيل قيود إهلاك كافة الأصول النشطة إلى دفتر اليومية وميزان المراجعة" : "Post depreciation for all active assets"}
+            title={isAr ? "عرض شاشة مراجعة إقفال فترة الإهلاك قبل الترحيل المحاسبي" : "Open Depreciation Period Closing Review Screen"}
           >
             <Sparkles className={`w-4 h-4 ${isPostingAll ? "animate-spin" : ""}`} />
-            {isPostingAll ? (isAr ? "جاري الترحيل..." : "Posting...") : (isAr ? "ترحيل إهلاك الفترة" : "Post All Depreciation")}
+            {isPostingAll ? (isAr ? "جاري الترحيل..." : "Posting...") : (isAr ? "إقفال وترحيل إهلاك الفترة" : "Review & Close Period")}
           </button>
         </div>
       </div>
@@ -633,7 +848,7 @@ export default function FixedAssetDepreciationPage() {
           </button>
         </div>
 
-        {/* Filter / Search Bar */}
+        {/* Filter / Search Bar (Primary Identifier: Asset Code & Name) */}
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className={`w-3.5 h-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 ${isAr ? "right-3" : "left-3"}`} />
@@ -641,8 +856,8 @@ export default function FixedAssetDepreciationPage() {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder={isAr ? "بحث بالاسم أو الحساب..." : "Search assets..."}
-              className={`bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 py-1.5 focus:outline-none focus:border-emerald-500 w-48 sm:w-64 ${
+              placeholder={isAr ? "بحث بكود الأصل، الاسم، الحساب..." : "Search by asset code, name, account..."}
+              className={`bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 py-1.5 focus:outline-none focus:border-emerald-500 w-52 sm:w-72 ${
                 isAr ? "pr-8 pl-3" : "pl-8 pr-3"
               }`}
             />
@@ -652,11 +867,11 @@ export default function FixedAssetDepreciationPage() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as any)}
-              className="bg-slate-900 border border-slate-800 rounded-xl text-xs text-white px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+              className="bg-slate-900 border border-slate-800 rounded-xl text-xs text-white px-3 py-1.5 focus:outline-none focus:border-emerald-500"
             >
-              <option value="all">{isAr ? "كافة الحالات" : "All Statuses"}</option>
-              <option value="active">{isAr ? "النشطة فقط" : "Active Only"}</option>
-              <option value="inactive">{isAr ? "غير النشطة" : "Inactive Only"}</option>
+              <option value="all">{isAr ? "كافة الحالات" : "All Status"}</option>
+              <option value="active">{isAr ? "نشط" : "Active"}</option>
+              <option value="inactive">{isAr ? "غير نشط" : "Inactive"}</option>
             </select>
           )}
         </div>
@@ -664,17 +879,7 @@ export default function FixedAssetDepreciationPage() {
 
       {/* -------------------------------------------------------------
           CARD 1: إضافة أصول مشتراة (PURCHASED ASSETS GRID)
-          Contains the strictly required 10 columns:
-          1. Asset Name
-          2. Main Account
-          3. Beginning Depreciation
-          4. Purchase Value
-          5. Purchase Date
-          6. Depreciation Rate (%)
-          7. Status
-          8. Current Period Depreciation
-          9. Accumulated Depreciation
-          10. Current Asset Value
+          Includes Asset Code as primary identifier (Section 10)
       ------------------------------------------------------------- */}
       {activeTab === "purchased" && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
@@ -686,8 +891,8 @@ export default function FixedAssetDepreciationPage() {
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {isAr
-                  ? "الأصول المقتناة بموجب مدفوعات الخزينة، فواتير الأصول، أو أوراق الدفع مع الاحتساب التلقائي للإهلاك"
-                  : "Fixed assets acquired from treasury payments, asset invoices or notes payable with automatic depreciation"}
+                  ? "الأصول المقتناة بموجب مدفوعات الخزينة، فواتير الأصول، أو أوراق الدفع مع التوريث التلقائي لنسب الإهلاك"
+                  : "Fixed assets acquired from treasury payments, asset invoices or notes payable with inherited depreciation"}
               </p>
             </div>
             <button
@@ -703,36 +908,44 @@ export default function FixedAssetDepreciationPage() {
             <table className="w-full text-xs text-right">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-950/40">
-                  <th className="p-3 text-right">1. {isAr ? "اسم الأصل" : "Asset Name"}</th>
-                  <th className="p-3 text-right">2. {isAr ? "الحساب الرئيسي" : "Main Account"}</th>
-                  <th className="p-3 text-center">3. {isAr ? "إهلاك أول المدة" : "Beg. Deprec."}</th>
-                  <th className="p-3 text-center">4. {isAr ? "تكلفة الشراء" : "Purchase Value"}</th>
-                  <th className="p-3 text-center">5. {isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
-                  <th className="p-3 text-center">6. {isAr ? "النسبة %" : "Rate %"}</th>
-                  <th className="p-3 text-center">7. {isAr ? "الحالة" : "Status"}</th>
-                  <th className="p-3 text-center text-amber-400 font-mono">8. {isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
-                  <th className="p-3 text-center text-orange-400 font-mono">9. {isAr ? "مجمع الإهلاك" : "Accum. Deprec."}</th>
-                  <th className="p-3 text-center text-cyan-400 font-mono">10. {isAr ? "القيمة الحالية" : "Current Value"}</th>
+                  <th className="p-3 text-right">1. {isAr ? "كود الأصل" : "Asset Code"}</th>
+                  <th className="p-3 text-right">2. {isAr ? "اسم الأصل" : "Asset Name"}</th>
+                  <th className="p-3 text-right">3. {isAr ? "الحساب الرئيسي" : "Main Account"}</th>
+                  <th className="p-3 text-center">4. {isAr ? "إهلاك أول المدة" : "Beg. Deprec."}</th>
+                  <th className="p-3 text-center">5. {isAr ? "تكلفة الشراء" : "Purchase Value"}</th>
+                  <th className="p-3 text-center">6. {isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
+                  <th className="p-3 text-center">7. {isAr ? "النسبة %" : "Rate %"}</th>
+                  <th className="p-3 text-center">8. {isAr ? "الحالة" : "Status"}</th>
+                  <th className="p-3 text-center text-amber-400 font-mono">9. {isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
+                  <th className="p-3 text-center text-orange-400 font-mono">10. {isAr ? "مجمع الإهلاك" : "Accum. Deprec."}</th>
+                  <th className="p-3 text-center text-cyan-400 font-mono">11. {isAr ? "القيمة الحالية" : "Current Value"}</th>
                   <th className="p-3 text-center">{isAr ? "إجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {isLoadingData ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-400">
+                    <td colSpan={12} className="p-8 text-center text-slate-400">
                       <TableSkeleton rows={4} />
                     </td>
                   </tr>
                 ) : purchasedAssetsList.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-500">
+                    <td colSpan={12} className="p-8 text-center text-slate-500">
                       {isAr ? "لا توجد أصول مشتراة مسجلة حتى الآن. انقر على «إضافة أصل مشتراة» لإضافة أصل جديد." : "No purchased assets recorded."}
                     </td>
                   </tr>
                 ) : (
                   purchasedAssetsList.map(asset => (
                     <tr key={asset.id} className="hover:bg-slate-800/40 transition-colors">
-                      {/* 1. Asset Name */}
+                      {/* 1. Asset Code (Primary Identifier) */}
+                      <td className="p-3 font-mono font-bold text-emerald-400">
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                          {asset.code}
+                        </span>
+                      </td>
+
+                      {/* 2. Asset Name */}
                       <td className="p-3 font-bold text-white">
                         <div className="flex items-center gap-2">
                           <div className="p-1.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -745,77 +958,71 @@ export default function FixedAssetDepreciationPage() {
                         </div>
                       </td>
 
-                      {/* 2. Main Account */}
+                      {/* 3. Main Account */}
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
-                            {asset.mainAccount?.code || "1201"}
-                          </span>
-                          <span className="text-slate-300 font-sans">
-                            {asset.mainAccount ? (isAr ? asset.mainAccount.nameAr : asset.mainAccount.nameEn) : (isAr ? "أصول ثابتة" : "Fixed Assets")}
-                          </span>
+                          <span className="text-slate-400">[{asset.mainAccount?.code || "1201"}]</span>
+                          <span className="text-slate-200">{asset.mainAccount?.nameAr || asset.mainAccount?.nameEn || (isAr ? "أصل ثابت" : "Fixed Asset")}</span>
                         </div>
                       </td>
 
-                      {/* 3. Beginning Depreciation */}
+                      {/* 4. Beginning Depreciation */}
                       <td className="p-3 text-center font-mono text-slate-400">
                         {formatCurrency(asset.beginningDepreciation, organization.currency, locale)}
                       </td>
 
-                      {/* 4. Purchase Value */}
+                      {/* 5. Purchase Value */}
                       <td className="p-3 text-center font-mono font-bold text-white">
                         {formatCurrency(asset.purchaseValue, organization.currency, locale)}
                       </td>
 
-                      {/* 5. Purchase Date */}
-                      <td className="p-3 text-center font-sans text-slate-300">
-                        {formatDate(asset.purchaseDate, locale)}
+                      {/* 6. Purchase Date */}
+                      <td className="p-3 text-center font-mono text-slate-400">
+                        {asset.purchaseDate}
                       </td>
 
-                      {/* 6. Depreciation Rate */}
-                      <td className="p-3 text-center font-mono font-bold text-emerald-400">
+                      {/* 7. Rate */}
+                      <td className="p-3 text-center font-mono text-emerald-400 font-bold">
                         {asset.depreciationRate}%
                       </td>
 
-                      {/* 7. Status */}
+                      {/* 8. Status */}
                       <td className="p-3 text-center">
                         <button
                           onClick={() => handleToggleStatus(asset)}
-                          className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
                             asset.status === "active"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
-                              : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                              : "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700"
                           }`}
-                          title={isAr ? "انقر للتبديل بين نشط (يحسب الإهلاك) وغير نشط (يتوقف الإهلاك)" : "Toggle status"}
                         >
-                          <Power className="w-3 h-3" />
-                          {asset.status === "active" ? (isAr ? "نشط" : "Active") : (isAr ? "غير نشط" : "Inactive")}
+                          {asset.status === "active" ? (isAr ? "نشط" : "Active") : (isAr ? "متوقف" : "Inactive")}
                         </button>
                       </td>
 
-                      {/* 8. Current Period Depreciation */}
-                      <td className="p-3 text-center font-mono font-bold text-amber-400 bg-amber-500/5">
+                      {/* 9. Current Period Depreciation */}
+                      <td className="p-3 text-center font-mono font-bold text-amber-400">
                         {formatCurrency(asset.calc.currentPeriodDepreciation, organization.currency, locale)}
                       </td>
 
-                      {/* 9. Accumulated Depreciation */}
-                      <td className="p-3 text-center font-mono font-bold text-orange-400 bg-orange-500/5">
+                      {/* 10. Accumulated Depreciation */}
+                      <td className="p-3 text-center font-mono font-bold text-orange-400">
                         {formatCurrency(asset.calc.accumulatedDepreciation, organization.currency, locale)}
                       </td>
 
-                      {/* 10. Current Asset Value (Net Book Value) */}
-                      <td className="p-3 text-center font-mono font-black text-cyan-400 bg-cyan-500/5">
+                      {/* 11. Current Value */}
+                      <td className="p-3 text-center font-mono font-bold text-cyan-400">
                         {formatCurrency(asset.calc.currentAssetValue, organization.currency, locale)}
                       </td>
 
                       {/* Actions */}
                       <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {asset.status === "active" && asset.calc.currentPeriodDepreciation > 0 && (
+                        <div className="flex items-center justify-center gap-1.5">
+                          {asset.status === "active" && (
                             <button
-                              onClick={() => handlePostSingleDepreciation(asset)}
+                              onClick={() => handleOpenClosingReview(asset)}
                               className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500 hover:text-white transition-colors cursor-pointer"
-                              title={isAr ? "ترحيل قيد الإهلاك اليومي للأصل الآن" : "Post depreciation journal entry"}
+                              title={isAr ? "مراجعة وترحيل إهلاك هذا الأصل" : "Review & post depreciation"}
                             >
                               <Sparkles className="w-3.5 h-3.5" />
                             </button>
@@ -847,8 +1054,7 @@ export default function FixedAssetDepreciationPage() {
 
       {/* -------------------------------------------------------------
           CARD 2: إثبات أصول أول المدة (OPENING FIXED ASSETS)
-          Purpose: Register assets that already existed before system implementation.
-          Purchase Date = 01/01/Current Fiscal Year (Auto-assigned)
+          Includes Asset Code as primary identifier (Section 10)
       ------------------------------------------------------------- */}
       {activeTab === "opening" && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
@@ -860,8 +1066,8 @@ export default function FixedAssetDepreciationPage() {
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {isAr
-                  ? `يتم إثبات الأصول التاريخية مع مجمع إهلاكها السابق، وتثبيت تاريخ بدء الإهلاك تلقائياً على أول يوم في السنة المالية (${defaultFiscalStart})`
-                  : `Historical assets with past accumulated depreciation, locked to the first day of current fiscal year (${defaultFiscalStart})`}
+                  ? `يتم إثبات الأصول التاريخية مع كود الأصل وتثبيت تاريخ بدء الإهلاك تلقائياً على أول يوم في السنة المالية (${defaultFiscalStart})`
+                  : `Historical assets with asset code locked to the first day of current fiscal year (${defaultFiscalStart})`}
               </p>
             </div>
             <button
@@ -877,35 +1083,44 @@ export default function FixedAssetDepreciationPage() {
             <table className="w-full text-xs text-right">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-950/40">
-                  <th className="p-3 text-right">{isAr ? "اسم الأصل" : "Asset Name"}</th>
-                  <th className="p-3 text-right">{isAr ? "الحساب الرئيسي" : "Main Account"}</th>
-                  <th className="p-3 text-center">{isAr ? "تاريخ بداية السنة" : "Fiscal Start"}</th>
-                  <th className="p-3 text-center">{isAr ? "تكلفة الشراء التاريخية" : "Historical Cost"}</th>
-                  <th className="p-3 text-center text-amber-400">{isAr ? "مجمع إهلاك أول المدة" : "Beg. Accum. Deprec."}</th>
-                  <th className="p-3 text-center text-blue-400">{isAr ? "القيمة الافتتاحية" : "Opening Value"}</th>
-                  <th className="p-3 text-center">{isAr ? "النسبة %" : "Rate %"}</th>
-                  <th className="p-3 text-center">{isAr ? "الحالة" : "Status"}</th>
-                  <th className="p-3 text-center text-orange-400 font-mono">{isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
-                  <th className="p-3 text-center text-cyan-400 font-mono">{isAr ? "صافي القيمة الحالية" : "Current Net Value"}</th>
+                  <th className="p-3 text-right">1. {isAr ? "كود الأصل" : "Asset Code"}</th>
+                  <th className="p-3 text-right">2. {isAr ? "اسم الأصل" : "Asset Name"}</th>
+                  <th className="p-3 text-right">3. {isAr ? "الحساب الرئيسي" : "Main Account"}</th>
+                  <th className="p-3 text-center">4. {isAr ? "تاريخ بداية السنة" : "Fiscal Start"}</th>
+                  <th className="p-3 text-center">5. {isAr ? "تكلفة الشراء التاريخية" : "Historical Cost"}</th>
+                  <th className="p-3 text-center text-amber-400">6. {isAr ? "مجمع إهلاك أول المدة" : "Beg. Accum. Deprec."}</th>
+                  <th className="p-3 text-center text-blue-400">7. {isAr ? "القيمة الافتتاحية" : "Opening Value"}</th>
+                  <th className="p-3 text-center">8. {isAr ? "النسبة %" : "Rate %"}</th>
+                  <th className="p-3 text-center">9. {isAr ? "الحالة" : "Status"}</th>
+                  <th className="p-3 text-center text-orange-400 font-mono">10. {isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
+                  <th className="p-3 text-center text-cyan-400 font-mono">11. {isAr ? "صافي القيمة الحالية" : "Current Net Value"}</th>
                   <th className="p-3 text-center">{isAr ? "إجراءات" : "Actions"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {isLoadingData ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-400">
+                    <td colSpan={12} className="p-8 text-center text-slate-400">
                       <TableSkeleton rows={3} />
                     </td>
                   </tr>
                 ) : openingAssetsList.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-500">
+                    <td colSpan={12} className="p-8 text-center text-slate-500">
                       {isAr ? "لا توجد أصول أول مدة مسجلة. انقر على «إثبات أصل أول المدة» لإدخال الأرصدة التاريخية للأصول." : "No opening assets recorded."}
                     </td>
                   </tr>
                 ) : (
                   openingAssetsList.map(asset => (
                     <tr key={asset.id} className="hover:bg-slate-800/40 transition-colors">
+                      {/* 1. Asset Code */}
+                      <td className="p-3 font-mono font-bold text-blue-400">
+                        <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                          {asset.code}
+                        </span>
+                      </td>
+
+                      {/* 2. Asset Name */}
                       <td className="p-3 font-bold text-white">
                         <div className="flex items-center gap-2">
                           <div className="p-1.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -918,66 +1133,71 @@ export default function FixedAssetDepreciationPage() {
                         </div>
                       </td>
 
+                      {/* 3. Main Account */}
                       <td className="p-3">
                         <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
-                            {asset.mainAccount?.code || "1201"}
-                          </span>
-                          <span className="text-slate-300 font-sans">
-                            {asset.mainAccount ? (isAr ? asset.mainAccount.nameAr : asset.mainAccount.nameEn) : (isAr ? "أصول ثابتة" : "Fixed Assets")}
-                          </span>
+                          <span className="text-slate-400">[{asset.mainAccount?.code || "1201"}]</span>
+                          <span className="text-slate-200">{asset.mainAccount?.nameAr || asset.mainAccount?.nameEn}</span>
                         </div>
                       </td>
 
-                      <td className="p-3 text-center font-mono text-slate-400">
+                      {/* 4. Fiscal Start */}
+                      <td className="p-3 text-center font-mono text-blue-400">
                         {asset.purchaseDate}
                       </td>
 
+                      {/* 5. Historical Cost */}
                       <td className="p-3 text-center font-mono font-bold text-white">
                         {formatCurrency(asset.purchaseValue, organization.currency, locale)}
                       </td>
 
-                      <td className="p-3 text-center font-mono font-bold text-amber-400 bg-amber-500/5">
+                      {/* 6. Beginning Accumulated Depreciation */}
+                      <td className="p-3 text-center font-mono text-amber-400 font-bold">
                         {formatCurrency(asset.beginningDepreciation, organization.currency, locale)}
                       </td>
 
-                      <td className="p-3 text-center font-mono font-bold text-blue-400 bg-blue-500/5">
+                      {/* 7. Opening Asset Value */}
+                      <td className="p-3 text-center font-mono font-bold text-blue-300">
                         {formatCurrency(asset.calc.openingAssetValue, organization.currency, locale)}
                       </td>
 
-                      <td className="p-3 text-center font-mono font-bold text-emerald-400">
+                      {/* 8. Rate */}
+                      <td className="p-3 text-center font-mono text-emerald-400 font-bold">
                         {asset.depreciationRate}%
                       </td>
 
+                      {/* 9. Status */}
                       <td className="p-3 text-center">
                         <button
                           onClick={() => handleToggleStatus(asset)}
-                          className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
                             asset.status === "active"
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
-                              : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                              : "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700"
                           }`}
                         >
-                          <Power className="w-3 h-3" />
-                          {asset.status === "active" ? (isAr ? "نشط" : "Active") : (isAr ? "غير نشط" : "Inactive")}
+                          {asset.status === "active" ? (isAr ? "نشط" : "Active") : (isAr ? "متوقف" : "Inactive")}
                         </button>
                       </td>
 
-                      <td className="p-3 text-center font-mono font-bold text-orange-400 bg-orange-500/5">
+                      {/* 10. Period Depreciation */}
+                      <td className="p-3 text-center font-mono font-bold text-orange-400">
                         {formatCurrency(asset.calc.currentPeriodDepreciation, organization.currency, locale)}
                       </td>
 
-                      <td className="p-3 text-center font-mono font-black text-cyan-400 bg-cyan-500/5">
+                      {/* 11. Net Current Value */}
+                      <td className="p-3 text-center font-mono font-bold text-cyan-400">
                         {formatCurrency(asset.calc.currentAssetValue, organization.currency, locale)}
                       </td>
 
+                      {/* Actions */}
                       <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {asset.status === "active" && asset.calc.currentPeriodDepreciation > 0 && (
+                        <div className="flex items-center justify-center gap-1.5">
+                          {asset.status === "active" && (
                             <button
-                              onClick={() => handlePostSingleDepreciation(asset)}
+                              onClick={() => handleOpenClosingReview(asset)}
                               className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500 hover:text-white transition-colors cursor-pointer"
-                              title={isAr ? "ترحيل قيد الإهلاك" : "Post depreciation"}
+                              title={isAr ? "مراجعة وترحيل إهلاك هذا الأصل" : "Review & post depreciation"}
                             >
                               <Sparkles className="w-3.5 h-3.5" />
                             </button>
@@ -1008,22 +1228,13 @@ export default function FixedAssetDepreciationPage() {
       )}
 
       {/* -------------------------------------------------------------
-          CARD 3: تقرير أرصدة الأصول (FIXED ASSET BALANCES REPORT)
-          Contains strictly required 7 columns:
-          1. Asset Name
-          2. Beginning Depreciation
-          3. Purchase Date
-          4. Opening Asset Value
-          5. Current Period Depreciation
-          6. Accumulated Depreciation
-          7. Closing Asset Value
+          CARD 3: تقرير أرصدة وإهلاك الأصول (REPORT & EXPORT)
+          Includes Asset Code as primary identifier (Section 10)
       ------------------------------------------------------------- */}
       {activeTab === "report" && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
-          {/* Report Toolbar & Filters (Hidden during print) */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 pb-4 border-b border-slate-800 print:hidden">
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Asset Selector */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400 font-semibold">{isAr ? "الأصل:" : "Asset:"}</span>
                 <select
@@ -1034,13 +1245,12 @@ export default function FixedAssetDepreciationPage() {
                   <option value="all">{isAr ? "كافة الأصول الثابتة" : "All Fixed Assets"}</option>
                   {fixedAssets.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.name} ({a.assetType === "opening" ? (isAr ? "أول المدة" : "Opening") : (isAr ? "مشتراة" : "Purchased")})
+                      [{a.code || "AST"}] {a.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Date Filters */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400 font-semibold">{isAr ? "من:" : "From:"}</span>
                 <input
@@ -1062,12 +1272,10 @@ export default function FixedAssetDepreciationPage() {
               </div>
             </div>
 
-            {/* Export & Print Buttons */}
             <div className="flex items-center gap-2">
               <button
                 onClick={handlePrint}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                title={isAr ? "طباعة التقرير أو التصدير إلى PDF" : "Print or export to PDF"}
               >
                 <Printer className="w-3.5 h-3.5 text-slate-400" />
                 {isAr ? "طباعة / PDF" : "Print / PDF"}
@@ -1076,7 +1284,6 @@ export default function FixedAssetDepreciationPage() {
               <button
                 onClick={handleExportExcel}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
-                title={isAr ? "تصدير إلى ملف إكسيل مع المحافظة على التنسيق واللغة العربية" : "Export native Excel (.xlsx)"}
               >
                 <Download className="w-3.5 h-3.5" />
                 {isAr ? "تصدير إكسيل (XLSX)" : "Export Excel"}
@@ -1084,7 +1291,6 @@ export default function FixedAssetDepreciationPage() {
             </div>
           </div>
 
-          {/* Printable Report Header */}
           <div className="hidden print:block mb-4">
             <ReportPrintHeader
               organization={organization}
@@ -1096,107 +1302,74 @@ export default function FixedAssetDepreciationPage() {
             />
           </div>
 
-          {/* Dedicated 7-Column Report Grid */}
           <div className="overflow-x-auto">
-            <table id="fixed-assets-report-table" className="w-full text-xs text-right">
+            <table className="w-full text-xs text-right">
               <thead>
-                <tr className="border-b-2 border-slate-800 text-slate-400 font-black bg-slate-950/60 print:text-black print:bg-slate-100">
-                  <th className="p-3 text-right">1. {isAr ? "اسم الأصل" : "Asset Name"}</th>
-                  <th className="p-3 text-center">2. {isAr ? "إهلاك أول المدة" : "Beginning Deprec."}</th>
-                  <th className="p-3 text-center">3. {isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
-                  <th className="p-3 text-center">4. {isAr ? "القيمة أول المدة" : "Opening Asset Value"}</th>
-                  <th className="p-3 text-center text-amber-400 print:text-black">5. {isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
-                  <th className="p-3 text-center text-orange-400 print:text-black">6. {isAr ? "مجمع الإهلاك" : "Accum. Deprec."}</th>
-                  <th className="p-3 text-center text-cyan-400 print:text-black">7. {isAr ? "القيمة نهاية المدة" : "Closing Asset Value"}</th>
+                <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-950/40">
+                  <th className="p-3 text-right">1. {isAr ? "كود الأصل" : "Asset Code"}</th>
+                  <th className="p-3 text-right">2. {isAr ? "اسم الأصل" : "Asset Name"}</th>
+                  <th className="p-3 text-right">3. {isAr ? "الحساب الرئيسي" : "Main Account"}</th>
+                  <th className="p-3 text-center">4. {isAr ? "إهلاك أول المدة" : "Beg. Deprec."}</th>
+                  <th className="p-3 text-center">5. {isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
+                  <th className="p-3 text-center">6. {isAr ? "القيمة أول المدة" : "Opening Value"}</th>
+                  <th className="p-3 text-center">7. {isAr ? "تكلفة الشراء" : "Purchase Cost"}</th>
+                  <th className="p-3 text-center">8. {isAr ? "النسبة %" : "Rate %"}</th>
+                  <th className="p-3 text-center text-amber-400 font-mono">9. {isAr ? "إهلاك الفترة" : "Period Deprec."}</th>
+                  <th className="p-3 text-center text-orange-400 font-mono">10. {isAr ? "مجمع الإهلاك" : "Accum. Deprec."}</th>
+                  <th className="p-3 text-center text-cyan-400 font-mono">11. {isAr ? "القيمة نهاية المدة" : "Closing Value"}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 print:divide-slate-300">
+              <tbody className="divide-y divide-slate-800/60">
                 {reportRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-500 print:text-black">
-                      {isAr ? "لا توجد أصول مطابقة لمعايير البحث المحددة" : "No matching assets found"}
+                    <td colSpan={11} className="p-8 text-center text-slate-500">
+                      {isAr ? "لا توجد بيانات أصول تطابق معايير التقرير المختارة." : "No asset data found."}
                     </td>
                   </tr>
                 ) : (
-                  reportRows.map((row, idx) => (
-                    <tr key={row.id || idx} className="hover:bg-slate-800/30 print:hover:bg-transparent transition-colors">
-                      {/* 1. Asset Name */}
-                      <td className="p-3 font-bold text-white print:text-black">
-                        <div>{row.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono print:text-slate-600">
-                          {row.mainAccountCode} - {row.mainAccountName} ({row.depreciationRate}%)
-                        </div>
+                  reportRows.map(row => (
+                    <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3 font-mono font-bold text-purple-400">
+                        <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                          {row.code}
+                        </span>
                       </td>
-
-                      {/* 2. Beginning Depreciation */}
-                      <td className="p-3 text-center font-mono text-slate-300 print:text-black">
-                        {formatCurrency(row.beginningDepreciation, organization.currency, locale)}
-                      </td>
-
-                      {/* 3. Purchase Date */}
-                      <td className="p-3 text-center font-sans text-slate-400 print:text-black">
-                        {row.purchaseDate}
-                      </td>
-
-                      {/* 4. Opening Asset Value */}
-                      <td className="p-3 text-center font-mono font-semibold text-blue-400 print:text-black">
-                        {formatCurrency(row.openingAssetValue, organization.currency, locale)}
-                      </td>
-
-                      {/* 5. Current Period Depreciation */}
-                      <td className="p-3 text-center font-mono font-bold text-amber-400 print:text-black bg-amber-500/5 print:bg-transparent">
-                        {formatCurrency(row.currentPeriodDepreciation, organization.currency, locale)}
-                      </td>
-
-                      {/* 6. Accumulated Depreciation */}
-                      <td className="p-3 text-center font-mono font-bold text-orange-400 print:text-black bg-orange-500/5 print:bg-transparent">
-                        {formatCurrency(row.accumulatedDepreciation, organization.currency, locale)}
-                      </td>
-
-                      {/* 7. Closing Asset Value */}
-                      <td className="p-3 text-center font-mono font-black text-cyan-400 print:text-black bg-cyan-500/5 print:bg-transparent">
-                        {formatCurrency(row.closingAssetValue, organization.currency, locale)}
-                      </td>
+                      <td className="p-3 font-bold text-white">{row.name}</td>
+                      <td className="p-3 font-mono text-[11px] text-slate-300">[{row.mainAccountCode}] {row.mainAccountName}</td>
+                      <td className="p-3 text-center font-mono text-slate-400">{formatCurrency(row.beginningDepreciation, organization.currency, locale)}</td>
+                      <td className="p-3 text-center font-mono text-slate-400">{row.purchaseDate}</td>
+                      <td className="p-3 text-center font-mono text-blue-300 font-bold">{formatCurrency(row.openingAssetValue, organization.currency, locale)}</td>
+                      <td className="p-3 text-center font-mono font-bold text-white">{formatCurrency(row.purchaseValue, organization.currency, locale)}</td>
+                      <td className="p-3 text-center font-mono text-emerald-400 font-bold">{row.depreciationRate}%</td>
+                      <td className="p-3 text-center font-mono font-bold text-amber-400">{formatCurrency(row.currentPeriodDepreciation, organization.currency, locale)}</td>
+                      <td className="p-3 text-center font-mono font-bold text-orange-400">{formatCurrency(row.accumulatedDepreciation, organization.currency, locale)}</td>
+                      <td className="p-3 text-center font-mono font-bold text-cyan-400">{formatCurrency(row.closingAssetValue, organization.currency, locale)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
-              {/* Report Summary Row */}
-              <tfoot>
-                <tr className="border-t-2 border-slate-700 bg-slate-950 font-black text-xs text-white print:text-black print:bg-slate-100">
-                  <td className="p-3 text-right">
-                    {isAr ? "الإجمالي الكلي:" : "Total Summary:"} ({reportRows.length} {isAr ? "أصل" : "assets"})
-                  </td>
-                  <td className="p-3 text-center font-mono text-slate-300 print:text-black">
-                    {formatCurrency(reportTotals.beginningDepreciation, organization.currency, locale)}
-                  </td>
-                  <td className="p-3 text-center text-slate-500">-</td>
-                  <td className="p-3 text-center font-mono text-blue-400 print:text-black">
-                    {formatCurrency(reportTotals.openingAssetValue, organization.currency, locale)}
-                  </td>
-                  <td className="p-3 text-center font-mono text-amber-400 print:text-black">
-                    {formatCurrency(reportTotals.currentPeriodDepreciation, organization.currency, locale)}
-                  </td>
-                  <td className="p-3 text-center font-mono text-orange-400 print:text-black">
-                    {formatCurrency(reportTotals.accumulatedDepreciation, organization.currency, locale)}
-                  </td>
-                  <td className="p-3 text-center font-mono text-cyan-400 print:text-black">
-                    {formatCurrency(reportTotals.closingAssetValue, organization.currency, locale)}
-                  </td>
-                </tr>
-              </tfoot>
+              {reportRows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-950 font-bold text-white border-t-2 border-slate-700">
+                    <td colSpan={3} className="p-3 text-right">{isAr ? "الإجماليات الكلية للأصول:" : "Total Assets Summary:"}</td>
+                    <td className="p-3 text-center font-mono text-slate-300">{formatCurrency(reportTotals.beginningDepreciation, organization.currency, locale)}</td>
+                    <td className="p-3 text-center font-mono text-slate-500">-</td>
+                    <td className="p-3 text-center font-mono text-blue-300">{formatCurrency(reportTotals.openingAssetValue, organization.currency, locale)}</td>
+                    <td className="p-3 text-center font-mono text-white">{formatCurrency(reportTotals.purchaseValue, organization.currency, locale)}</td>
+                    <td className="p-3 text-center font-mono text-slate-500">-</td>
+                    <td className="p-3 text-center font-mono text-amber-400">{formatCurrency(reportTotals.currentPeriodDepreciation, organization.currency, locale)}</td>
+                    <td className="p-3 text-center font-mono text-orange-400">{formatCurrency(reportTotals.accumulatedDepreciation, organization.currency, locale)}</td>
+                    <td className="p-3 text-center font-mono text-cyan-400">{formatCurrency(reportTotals.closingAssetValue, organization.currency, locale)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
-          </div>
-
-          {/* Printable Report Footer */}
-          <div className="hidden print:block mt-8">
-            <ReportPrintFooter organization={organization} />
           </div>
         </div>
       )}
 
       {/* -------------------------------------------------------------
-          TAB 4: AUDIT TRAIL LOG
+          CARD 4: سجل التدقيق والمراجعة
       ------------------------------------------------------------- */}
       {activeTab === "audit" && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
@@ -1212,7 +1385,7 @@ export default function FixedAssetDepreciationPage() {
 
           <div className="space-y-2">
             {auditLogs
-              .filter(l => l.entityType === "FixedAsset" || l.entityType === "AssetDepreciation" || l.details?.includes("أصل"))
+              .filter(l => l.entityType === "FixedAsset" || l.entityType === "AssetDepreciation" || l.entityType === "DepreciationSetting" || l.details?.includes("أصل"))
               .slice(0, 50)
               .map(log => (
                 <div key={log.id} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-2xl flex items-start justify-between gap-4 text-xs">
@@ -1238,17 +1411,17 @@ export default function FixedAssetDepreciationPage() {
                   </div>
                 </div>
               ))}
-            {auditLogs.filter(l => l.entityType === "FixedAsset" || l.entityType === "AssetDepreciation" || l.details?.includes("أصل")).length === 0 && (
-              <div className="p-8 text-center text-slate-500">
-                {isAr ? "لا توجد سجلات تدقيق حتى الآن للأصول الثابتة." : "No audit trail logs recorded yet."}
-              </div>
-            )}
           </div>
         </div>
       )}
 
       {/* -------------------------------------------------------------
-          MODAL 1: ADD / EDIT PURCHASED ASSET (CARD 1)
+          MODAL 1: ADD / EDIT PURCHASED ASSET (SECTION 1 & 2)
+          Strict Order Required:
+          Field 1: Main Asset Account
+          Field 2: Asset Name (Searchable from COA & accounting records)
+          Field 3: Asset Code (Mandatory, visible, stored)
+          Auto-loaded: Purchase Value, Purchase Date, Depreciation Rate
       ------------------------------------------------------------- */}
       <Modal
         isOpen={isPurchasedModalOpen}
@@ -1268,44 +1441,106 @@ export default function FixedAssetDepreciationPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-            {/* Asset Name */}
+            {/* FIELD 1: Main Asset Account (Must be selected first) */}
             <div className="sm:col-span-2 space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "اسم الأصل *" : "Asset Name *"}</label>
-              <input
-                type="text"
-                required
-                value={formName}
-                onChange={e => setFormName(e.target.value)}
-                placeholder={isAr ? "مثال: سيارة توزيع تويوتا هايس 2026" : "e.g. Toyota Distribution Van"}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-
-            {/* Main Account Selection (Strictly filtered to Fixed Assets from COA) */}
-            <div className="sm:col-span-2 space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "الحساب الرئيسي في شجرة الحسابات *" : "Main Account in COA *"}</label>
+              <label className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">1</span>
+                {isAr ? "الحساب الرئيسي للأصل (شجرة الحسابات) *" : "Main Asset Account (Chart of Accounts) *"}
+              </label>
               <select
                 required
                 value={formAccountId}
-                onChange={e => setFormAccountId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                onChange={e => handleAccountChange(e.target.value)}
+                className="w-full bg-slate-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-semibold"
               >
                 {fixedAssetAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
-                    [{acc.code}] {acc.nameAr} ({acc.nameEn || ""})
+                    [{acc.code}] {acc.nameAr} {acc.nameEn ? `(${acc.nameEn})` : ""}
                   </option>
                 ))}
               </select>
               <span className="text-[10px] text-slate-500 block">
                 {isAr
-                  ? "الحساب الذي يستقبل رصيد الأصل وقيمته الدفترية ضمن الأصول غير المتداولة في الميزانية"
-                  : "COA account receiving the asset balance under Non-Current Assets in Balance Sheet"}
+                  ? "اختر الحساب الرئيسي أولاً (مباني، سيارات، آلات ومعدات، أثاث، حاسبات) لتطبيق قواعد الإهلاك واسترجاع الحركات"
+                  : "Select the parent asset account first (Buildings, Vehicles, Equipment, Furniture, Computers)"}
               </span>
             </div>
 
-            {/* Purchase Value */}
+            {/* Auto-discovered candidate suggestions from accounting records (Section 2) */}
+            {discoveredAccountingAssets.length > 0 && !editingAsset && (
+              <div className="sm:col-span-2 p-3 bg-slate-950/70 border border-emerald-500/20 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-emerald-400 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {isAr ? "أصول مكتشفة تلقائياً من القيود المحاسبية والدفاتر:" : "Auto-discovered Assets in Accounting Records:"}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {isAr ? "انقر لتحميل الكود والقيمة والتاريخ تلقائياً" : "Click to auto-load code, value & date"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+                  {discoveredAccountingAssets.map(cand => (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      onClick={() => handleSelectDiscoveredAsset(cand)}
+                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-500/50 rounded-xl text-right text-[11px] text-slate-200 transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <span className="font-mono text-emerald-400 font-bold">{cand.code}</span>
+                      <span className="font-medium text-white">{cand.name}</span>
+                      <span className="font-mono text-cyan-300">({formatCurrency(cand.purchaseValue, organization.currency, locale)})</span>
+                      <span className="text-[9px] text-slate-500 bg-slate-950 px-1 py-0.5 rounded">{cand.source}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FIELD 2: Asset Name (Searchable from COA & accounting records) */}
+            <div className="sm:col-span-2 space-y-1">
+              <label className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">2</span>
+                {isAr ? "اسم الأصل *" : "Asset Name *"}
+              </label>
+              <input
+                type="text"
+                required
+                value={formName}
+                onChange={e => setFormName(e.target.value)}
+                placeholder={isAr ? "مثال: سيارة توزيع تويوتا هايس 2026 أو اختر من القائمة أعلاه" : "e.g. Toyota Distribution Van 2026"}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* FIELD 3: Asset Code (Mandatory, visible, stored - Section 1 & Section 10) */}
+            <div className="sm:col-span-2 space-y-1">
+              <label className="text-emerald-400 font-bold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">3</span>
+                  {isAr ? "كود الأصل (إلزامي كمعرف رئيسي) *" : "Asset Code (Mandatory Primary Identifier) *"}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono font-normal">
+                  {isAr ? "يخزن ويظهر في كافة السجلات والتقارير" : "Stored & visible in all reports"}
+                </span>
+              </label>
+              <div className="relative">
+                <Hash className={`w-3.5 h-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 ${isAr ? "right-3" : "left-3"}`} />
+                <input
+                  type="text"
+                  required
+                  value={formCode}
+                  onChange={e => setFormCode(e.target.value)}
+                  placeholder="AST-1201003-01"
+                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl py-2 text-white focus:outline-none focus:border-emerald-500 font-mono font-bold ${
+                    isAr ? "pr-8 pl-3" : "pl-8 pr-3"
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Purchase Value (Auto-loaded or manual) */}
             <div className="space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "تكلفة الشراء التاريخية *" : "Purchase Value *"}</label>
+              <label className="text-slate-400 font-semibold">{isAr ? "تكلفة الشراء الأصلية *" : "Purchase Value / Cost *"}</label>
               <input
                 type="number"
                 step="0.01"
@@ -1330,9 +1565,16 @@ export default function FixedAssetDepreciationPage() {
               />
             </div>
 
-            {/* Depreciation Rate */}
+            {/* Depreciation Rate (Inherited or manual - Sections 8 & 9) */}
             <div className="space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "معدل الإهلاك السنوي (%) *" : "Depreciation Rate (%) *"}</label>
+              <div className="flex items-center justify-between">
+                <label className="text-slate-400 font-semibold">{isAr ? "معدل الإهلاك السنوي (%) *" : "Depreciation Rate (%) *"}</label>
+                {formAccountId && getAccountDepreciationRate(formAccountId) > 0 && (
+                  <span className="text-[10px] text-emerald-400 font-bold">
+                    {isAr ? "موروث تلقائياً من إعدادات الحساب" : "Auto-inherited from account rules"}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 step="0.1"
@@ -1402,23 +1644,19 @@ export default function FixedAssetDepreciationPage() {
               disabled={isSubmitting}
               className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-sm transition-colors cursor-pointer"
             >
-              {isSubmitting ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "حفظ الأصل" : "Save Asset")}
+              {isSubmitting ? (isAr ? "جاري الحفظ في قاعدة البيانات..." : "Saving to database...") : (isAr ? "حفظ وتثبيت الأصل" : "Save Asset")}
             </button>
           </div>
         </form>
       </Modal>
 
       {/* -------------------------------------------------------------
-          MODAL 2: ADD / EDIT OPENING ASSET (CARD 2)
-          Form strictly asks for:
-          - Asset Name
-          - Main Account
-          - Beginning Depreciation
-          - Purchase Value
-          - Depreciation Rate
-          - Status
-          Auto-assigned:
-          - Purchase Date = First Day of Current Fiscal Year
+          MODAL 2: ADD / EDIT OPENING ASSET (SECTION 4 & 5)
+          Strict Order Required:
+          Field 1: Main Asset Account
+          Field 2: Asset Name (Searchable from COA & opening balances)
+          Field 3: Asset Code (Mandatory, visible, stored)
+          Auto-loaded: Purchase Value, Beginning Depreciation, Fiscal Start
       ------------------------------------------------------------- */}
       <Modal
         isOpen={isOpeningModalOpen}
@@ -1450,9 +1688,61 @@ export default function FixedAssetDepreciationPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-            {/* Asset Name */}
+            {/* FIELD 1: Main Asset Account */}
             <div className="sm:col-span-2 space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "اسم الأصل *" : "Asset Name *"}</label>
+              <label className="text-blue-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">1</span>
+                {isAr ? "الحساب الرئيسي للأصل (شجرة الحسابات) *" : "Main Asset Account (Chart of Accounts) *"}
+              </label>
+              <select
+                required
+                value={formAccountId}
+                onChange={e => handleAccountChange(e.target.value)}
+                className="w-full bg-slate-950 border border-blue-500/40 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 font-semibold"
+              >
+                {fixedAssetAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    [{acc.code}] {acc.nameAr} {acc.nameEn ? `(${acc.nameEn})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Discovered opening candidate suggestions */}
+            {discoveredAccountingAssets.length > 0 && !editingAsset && (
+              <div className="sm:col-span-2 p-3 bg-slate-950/70 border border-blue-500/20 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-blue-400 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {isAr ? "أرصدة افتتاحية مسجلة بالدفاتر:" : "Discovered Opening Records:"}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {isAr ? "انقر للتحميل التلقائي" : "Click to auto-load"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+                  {discoveredAccountingAssets.map(cand => (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      onClick={() => handleSelectDiscoveredAsset(cand)}
+                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-blue-950/60 border border-slate-800 hover:border-blue-500/50 rounded-xl text-right text-[11px] text-slate-200 transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <span className="font-mono text-blue-400 font-bold">{cand.code}</span>
+                      <span className="font-medium text-white">{cand.name}</span>
+                      <span className="font-mono text-cyan-300">({formatCurrency(cand.purchaseValue, organization.currency, locale)})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FIELD 2: Asset Name */}
+            <div className="sm:col-span-2 space-y-1">
+              <label className="text-blue-400 font-bold flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">2</span>
+                {isAr ? "اسم الأصل *" : "Asset Name *"}
+              </label>
               <input
                 type="text"
                 required
@@ -1463,21 +1753,30 @@ export default function FixedAssetDepreciationPage() {
               />
             </div>
 
-            {/* Main Account */}
+            {/* FIELD 3: Asset Code (Section 4 & 10) */}
             <div className="sm:col-span-2 space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "الحساب الرئيسي في شجرة الحسابات *" : "Main Account in COA *"}</label>
-              <select
-                required
-                value={formAccountId}
-                onChange={e => setFormAccountId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              >
-                {fixedAssetAccounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>
-                    [{acc.code}] {acc.nameAr} ({acc.nameEn || ""})
-                  </option>
-                ))}
-              </select>
+              <label className="text-blue-400 font-bold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">3</span>
+                  {isAr ? "كود الأصل (إلزامي كمعرف رئيسي) *" : "Asset Code (Mandatory Primary Identifier) *"}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono font-normal">
+                  {isAr ? "يخزن ويظهر في كافة السجلات والتقارير" : "Stored & visible in all reports"}
+                </span>
+              </label>
+              <div className="relative">
+                <Hash className={`w-3.5 h-3.5 text-slate-400 absolute top-1/2 -translate-y-1/2 ${isAr ? "right-3" : "left-3"}`} />
+                <input
+                  type="text"
+                  required
+                  value={formCode}
+                  onChange={e => setFormCode(e.target.value)}
+                  placeholder="AST-OP-1201005-01"
+                  className={`w-full bg-slate-950 border border-slate-800 rounded-xl py-2 text-white focus:outline-none focus:border-blue-500 font-mono font-bold ${
+                    isAr ? "pr-8 pl-3" : "pl-8 pr-3"
+                  }`}
+                />
+              </div>
             </div>
 
             {/* Purchase Value */}
@@ -1512,7 +1811,14 @@ export default function FixedAssetDepreciationPage() {
 
             {/* Depreciation Rate */}
             <div className="space-y-1">
-              <label className="text-slate-400 font-semibold">{isAr ? "معدل الإهلاك السنوي (%) *" : "Depreciation Rate (%) *"}</label>
+              <div className="flex items-center justify-between">
+                <label className="text-slate-400 font-semibold">{isAr ? "معدل الإهلاك السنوي (%) *" : "Depreciation Rate (%) *"}</label>
+                {formAccountId && getAccountDepreciationRate(formAccountId) > 0 && (
+                  <span className="text-[10px] text-blue-400 font-bold">
+                    {isAr ? "موروث تلقائياً من إعدادات الحساب" : "Auto-inherited"}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 step="0.1"
@@ -1582,10 +1888,219 @@ export default function FixedAssetDepreciationPage() {
               disabled={isSubmitting}
               className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-sm transition-colors cursor-pointer"
             >
-              {isSubmitting ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "إثبات الأصل" : "Save Opening Asset")}
+              {isSubmitting ? (isAr ? "جاري الحفظ في قاعدة البيانات..." : "Saving to database...") : (isAr ? "حفظ وتثبيت أصل أول المدة" : "Save Opening Asset")}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* -------------------------------------------------------------
+          MODAL 3: DEPRECIATION PERIOD CLOSING REVIEW SCREEN (SECTION 6 & 7)
+          Displays complete review report showing:
+          - Asset Code
+          - Asset Name
+          - Main Account
+          - Opening Depreciation
+          - Original Asset Cost
+          - Current Period Depreciation
+          - Accumulated Depreciation
+          - Closing Asset Value
+          No posting should occur before displaying this review screen!
+      ------------------------------------------------------------- */}
+      <Modal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        title={isAr ? "تقرير مراجعة إقفال فترة الإهلاك المحاسبية (Review Screen)" : "Depreciation Period Closing Review"}
+        size="xl"
+      >
+        <div className="space-y-4 text-xs">
+          {/* Review Header & Period Selector */}
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-white flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-purple-400" />
+                <span>{isAr ? "تقرير التدقيق والمطابقة قبل الترحيل والإقفال" : "Pre-Posting Audit & Verification Report"}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {isAr
+                  ? "مراجعة احتساب أقساط الإهلاك للأصول المؤهلة والتأكد من صحة الحسابات ومجمعات الإهلاك قبل تنفيذ الترحيل النهائي"
+                  : "Verify calculated depreciation for eligible assets before generating journal entries"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-semibold">{isAr ? "تاريخ إقفال الفترة:" : "Period End Date:"}</span>
+              <input
+                type="date"
+                value={reviewPeriodEndDate}
+                onChange={e => setReviewPeriodEndDate(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+
+          {/* Quick Review Summary Totals */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <div className="text-slate-400 text-[10px]">{isAr ? "عدد الأصول الخاضعة للإقفال" : "Assets to Depreciate"}</div>
+              <div className="text-base font-black text-white font-mono mt-0.5">{closingReviewRows.length}</div>
+            </div>
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <div className="text-slate-400 text-[10px]">{isAr ? "إجمالي التكلفة التاريخية" : "Total Original Cost"}</div>
+              <div className="text-base font-black text-white font-mono mt-0.5">
+                {formatCurrency(closingReviewTotals.originalCost, organization.currency, locale)}
+              </div>
+            </div>
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <div className="text-amber-400 text-[10px] font-bold">{isAr ? "إجمالي إهلاك الفترة المستحق" : "Period Depreciation Due"}</div>
+              <div className="text-base font-black text-amber-400 font-mono mt-0.5">
+                {formatCurrency(closingReviewTotals.currentPeriodDepreciation, organization.currency, locale)}
+              </div>
+            </div>
+            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <div className="text-cyan-400 text-[10px] font-bold">{isAr ? "صافي القيمة الدفترية الختامية" : "Closing Net Book Value"}</div>
+              <div className="text-base font-black text-cyan-400 font-mono mt-0.5">
+                {formatCurrency(closingReviewTotals.closingAssetValue, organization.currency, locale)}
+              </div>
+            </div>
+          </div>
+
+          {/* Complete 8-Column Review Table (Section 6) */}
+          <div className="overflow-x-auto max-h-80 border border-slate-800 rounded-2xl">
+            <table className="w-full text-xs text-right">
+              <thead className="sticky top-0 bg-slate-950 border-b border-slate-800 text-slate-300 font-bold z-10">
+                <tr>
+                  <th className="p-2.5 text-right">1. {isAr ? "كود الأصل" : "Asset Code"}</th>
+                  <th className="p-2.5 text-right">2. {isAr ? "اسم الأصل" : "Asset Name"}</th>
+                  <th className="p-2.5 text-right">3. {isAr ? "الحساب الرئيسي" : "Main Account"}</th>
+                  <th className="p-2.5 text-center">4. {isAr ? "إهلاك أول المدة" : "Opening Deprec."}</th>
+                  <th className="p-2.5 text-center">5. {isAr ? "تكلفة الأصل الأصلية" : "Original Cost"}</th>
+                  <th className="p-2.5 text-center text-amber-400 font-mono">6. {isAr ? "إهلاك الفترة الحالية" : "Current Deprec."}</th>
+                  <th className="p-2.5 text-center text-orange-400 font-mono">7. {isAr ? "مجمع الإهلاك" : "Accum. Deprec."}</th>
+                  <th className="p-2.5 text-center text-cyan-400 font-mono">8. {isAr ? "القيمة الدفترية الختامية" : "Closing Asset Value"}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 bg-slate-900/60">
+                {closingReviewRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-slate-500">
+                      {isAr ? "لا توجد أصول نشطة مؤهلة لاحتساب الإهلاك." : "No active assets to depreciate."}
+                    </td>
+                  </tr>
+                ) : (
+                  closingReviewRows.map(row => (
+                    <tr key={row.id} className="hover:bg-slate-800/40">
+                      <td className="p-2.5 font-mono font-bold text-emerald-400">{row.code}</td>
+                      <td className="p-2.5 font-bold text-white">{row.name}</td>
+                      <td className="p-2.5 font-mono text-[11px] text-slate-300">[{row.mainAccountCode}] {row.mainAccountName}</td>
+                      <td className="p-2.5 text-center font-mono text-slate-400">{formatCurrency(row.openingDepreciation, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-center font-mono font-bold text-white">{formatCurrency(row.originalCost, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-center font-mono font-bold text-amber-400">{formatCurrency(row.currentPeriodDepreciation, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-center font-mono font-bold text-orange-400">{formatCurrency(row.accumulatedDepreciation, organization.currency, locale)}</td>
+                      <td className="p-2.5 text-center font-mono font-bold text-cyan-400">{formatCurrency(row.closingAssetValue, organization.currency, locale)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {closingReviewRows.length > 0 && (
+                <tfoot className="sticky bottom-0 bg-slate-950 border-t-2 border-slate-700 font-bold text-white">
+                  <tr>
+                    <td colSpan={3} className="p-2.5 text-right">{isAr ? "المجموع الكلي:" : "Total:"}</td>
+                    <td className="p-2.5 text-center font-mono text-slate-400">{formatCurrency(closingReviewTotals.openingDepreciation, organization.currency, locale)}</td>
+                    <td className="p-2.5 text-center font-mono text-white">{formatCurrency(closingReviewTotals.originalCost, organization.currency, locale)}</td>
+                    <td className="p-2.5 text-center font-mono text-amber-400">{formatCurrency(closingReviewTotals.currentPeriodDepreciation, organization.currency, locale)}</td>
+                    <td className="p-2.5 text-center font-mono text-orange-400">{formatCurrency(closingReviewTotals.accumulatedDepreciation, organization.currency, locale)}</td>
+                    <td className="p-2.5 text-center font-mono text-cyan-400">{formatCurrency(closingReviewTotals.closingAssetValue, organization.currency, locale)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          {/* SECTION 7: Close Depreciation Period Prompt */}
+          <div className="p-4 bg-purple-950/30 border border-purple-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <div className="font-black text-white text-sm">
+                {isAr ? "إقفال فترة الإهلاك؟" : "Close Depreciation Period?"}
+              </div>
+              <p className="text-[11px] text-purple-200/80 mt-0.5">
+                {isAr
+                  ? "هل ترغب في اعتماد مبالغ الإهلاك ومتابعة الإجراء لترحيل القيود وتوليد أثرها في دفتر الأستاذ والقوائم المالية؟"
+                  : "Approve calculated depreciation and proceed to generate balanced journal entries"}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsReviewModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                {isAr ? "لا" : "No"}
+              </button>
+
+              <button
+                type="button"
+                disabled={closingReviewRows.length === 0}
+                onClick={handlePromptClosingConfirmation}
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                {isAr ? "نعم" : "Yes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* -------------------------------------------------------------
+          MODAL 4: DEPRECIATION CLOSING CONFIRMATION DIALOG (SECTION 7)
+          Question: "Are you sure you want to close the depreciation period?"
+          Options: Confirm, Cancel
+          No posting occurs without confirmation!
+      ------------------------------------------------------------- */}
+      <Modal
+        isOpen={isClosingConfirmDialogOpen}
+        onClose={() => setIsClosingConfirmDialogOpen(false)}
+        title={isAr ? "تأكيد نهائي: إقفال فترة الإهلاك" : "Confirm Depreciation Period Closing"}
+        size="md"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3 text-amber-200">
+            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold text-sm text-white">
+                {isAr ? "هل أنت متأكد من رغبتك في إقفال فترة الإهلاك؟" : "Are you sure you want to close the depreciation period?"}
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {isAr
+                  ? `سيقوم النظام بإنشاء وترحيل قيود الإهلاك لعدد (${closingReviewRows.length}) أصل بمبلغ إجمالي (${formatCurrency(closingReviewTotals.currentPeriodDepreciation, organization.currency, locale)})، وتحديث مجمعات الإهلاك وتغذية ميزان المراجعة وقائمة الدخل تلقائياً.`
+                  : `The system will post depreciation journal entries for ${closingReviewRows.length} assets with total amount of ${formatCurrency(closingReviewTotals.currentPeriodDepreciation, organization.currency, locale)}.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={isPostingAll}
+              onClick={() => setIsClosingConfirmDialogOpen(false)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              {isAr ? "إلغاء (Cancel)" : "Cancel"}
+            </button>
+
+            <button
+              type="button"
+              disabled={isPostingAll}
+              onClick={handleExecuteConfirmedPosting}
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4" />
+              {isPostingAll ? (isAr ? "جاري الترحيل..." : "Posting...") : (isAr ? "تأكيد (Confirm)" : "Confirm")}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

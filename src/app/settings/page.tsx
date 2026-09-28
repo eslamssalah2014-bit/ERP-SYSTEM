@@ -7,7 +7,7 @@ import Modal from "@/components/ui/Modal";
 import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   Settings, Building2, Globe, Shield, Save, Check, Users, Plus,
-  Edit, Trash2, Tag, Layers, Package, Loader2, AlertCircle
+  Edit, Trash2, Tag, Layers, Package, Loader2, AlertCircle, TrendingDown, Calculator
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -16,12 +16,13 @@ export default function SettingsPage() {
     customerCategories, addCustomerCategory, updateCustomerCategory, deleteCustomerCategory,
     categories, addCategory, updateCategory, deleteCategory,
     costCenters, addCostCenter, updateCostCenter, deleteCostCenter,
-    products, journalEntries,
+    products, journalEntries, accounts,
+    depreciationSettings, saveDepreciationSetting, deleteDepreciationSetting, getAccountDepreciationRate,
     locale, showToast, isLoadingData
   } = useERP();
   const isAr = locale === "ar";
 
-  const [activeTab, setActiveTab] = useState<"general" | "customer_categories" | "product_categories" | "cost_center_accounts">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "customer_categories" | "product_categories" | "cost_center_accounts" | "depreciation_settings">("general");
 
   // General Settings Form State
   const [nameAr, setNameAr] = useState(organization.nameAr);
@@ -69,6 +70,72 @@ export default function SettingsPage() {
   const masterCostCenters = useMemo(() => {
     return costCenters.filter(c => c.level === 1 || !c.parentId);
   }, [costCenters]);
+
+  // Depreciation Settings State (Sections 8 & 9)
+  const [selectedAssetAccountId, setSelectedAssetAccountId] = useState("");
+  const [deprecRateInput, setDeprecRateInput] = useState<number | "">("");
+  const [isSavingDeprecSetting, setIsSavingDeprecSetting] = useState(false);
+  const [deprecSettingError, setDeprecSettingError] = useState<string | null>(null);
+
+  // Main Asset Parent Accounts from Chart of Accounts
+  const fixedAssetParentAccounts = useMemo(() => {
+    return accounts.filter(acc => {
+      const c = acc.code || "";
+      const is1201 = c.startsWith("1201") || c.startsWith("120");
+      const isName = acc.nameAr.includes("أصول") || acc.nameAr.includes("مباني") || acc.nameAr.includes("سيارات") || acc.nameAr.includes("آلات") || acc.nameAr.includes("معدات") || acc.nameAr.includes("أثاث") || acc.nameAr.includes("حاسب");
+      return (is1201 || isName) && acc.nature === "debit" && acc.level >= 3;
+    }).sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+  }, [accounts]);
+
+  // Child accounts under a given parent account (Section 9)
+  const getChildAccounts = (parentId: string, parentCode: string) => {
+    return accounts.filter(a => a.id !== parentId && (a.parentId === parentId || (parentCode && a.code.startsWith(parentCode))));
+  };
+
+  const handleSaveDepreciationSetting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssetAccountId) {
+      setDeprecSettingError(isAr ? "يرجى اختيار الحساب الرئيسي للأصل" : "Please select main asset account");
+      return;
+    }
+    const rate = Number(deprecRateInput);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      setDeprecSettingError(isAr ? "يرجى إدخال نسبة مئوية صحيحة بين 0% و 100%" : "Please enter a valid rate between 0% and 100%");
+      return;
+    }
+
+    const targetAcc = accounts.find(a => a.id === selectedAssetAccountId);
+    if (!targetAcc) return;
+
+    setIsSavingDeprecSetting(true);
+    setDeprecSettingError(null);
+    try {
+      await saveDepreciationSetting({
+        organizationId: organization.id,
+        accountId: targetAcc.id,
+        accountCode: targetAcc.code,
+        accountNameAr: targetAcc.nameAr,
+        accountNameEn: targetAcc.nameEn || "",
+        depreciationRate: rate,
+      });
+      setDeprecRateInput("");
+      showToast(isAr ? `تم حفظ نسبة الإهلاك (${rate}%) للحساب [${targetAcc.code}] وسريانها على الحسابات التابعة` : "Depreciation rate saved", "success");
+    } catch (err: any) {
+      setDeprecSettingError(err.message || (isAr ? "فشل حفظ إعداد الإهلاك" : "Failed to save"));
+    } finally {
+      setIsSavingDeprecSetting(false);
+    }
+  };
+
+  const handleDeleteDeprecSetting = async (id: string) => {
+    if (!confirm(isAr ? "هل أنت متأكد من حذف إعداد نسبة الإهلاك لهذا الحساب؟" : "Are you sure you want to delete this setting?")) return;
+    try {
+      await deleteDepreciationSetting(id);
+      showToast(isAr ? "تم حذف إعداد نسبة الإهلاك بنجاح" : "Depreciation setting deleted", "success");
+    } catch (err: any) {
+      showToast(err.message || (isAr ? "فشل الحذف" : "Failed to delete"), "error");
+    }
+  };
 
   // Sync state when organization updates
   React.useEffect(() => {
@@ -442,6 +509,18 @@ export default function SettingsPage() {
           >
             <Layers className="w-4 h-4" />
             <span>{isAr ? "حسابات مراكز التكلفة الرئيسية" : "Cost Center Accounts"} ({masterCostCenters.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("depreciation_settings")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "depreciation_settings"
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-950/50"
+                : "bg-slate-800 text-slate-400 hover:text-white"
+            }`}
+          >
+            <TrendingDown className="w-4 h-4" />
+            <span>{isAr ? "إعدادات نسب الإهلاك للأصول" : "Depreciation Settings"} ({depreciationSettings.length})</span>
           </button>
         </div>
       </div>
@@ -901,6 +980,204 @@ export default function SettingsPage() {
                     </td>
                   </tr>
                 )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: Depreciation Settings Module (Sections 8 & 9) */}
+      {activeTab === "depreciation_settings" && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 text-xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-emerald-400" />
+                <span>{isAr ? "إعدادات نسب إهلاك الأصول الثابتة وقواعد التوريث" : "Fixed Asset Depreciation Rates & Inheritance Rules"}</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                {isAr
+                  ? "تحديد نسب الإهلاك السنوية للحسابات الرئيسية (المباني، السيارات، الآلات، الأثاث، الحاسبات)، مع سريان النسبة تلقائياً على كافة الحسابات الفرعية التابعة"
+                  : "Set annual straight-line depreciation rates for parent asset accounts; child accounts inherit the rate automatically"}
+              </p>
+            </div>
+          </div>
+
+          {/* Form to Add / Update Rate Setting (Section 8) */}
+          <form onSubmit={handleSaveDepreciationSetting} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-4">
+            <div className="font-bold text-white text-xs flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-400" />
+              <span>{isAr ? "تحديد أو تعديل نسبة إهلاك لحساب أصل رئيسي" : "Configure Depreciation Rate for Main Asset Account"}</span>
+            </div>
+
+            {deprecSettingError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                <span>{deprecSettingError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Field 1: Main Asset Account (Source: Chart of Accounts) */}
+              <div className="sm:col-span-2 space-y-1">
+                <label className="text-slate-300 font-semibold">{isAr ? "الحساب الرئيسي للأصل (دليل الحسابات) *" : "Main Asset Account (COA) *"}</label>
+                <select
+                  required
+                  value={selectedAssetAccountId}
+                  onChange={e => {
+                    setSelectedAssetAccountId(e.target.value);
+                    const currentRate = getAccountDepreciationRate(e.target.value);
+                    if (currentRate > 0) setDeprecRateInput(currentRate);
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="">{isAr ? "-- اختر الحساب الرئيسي للأصل --" : "-- Select Main Account --"}</option>
+                  {fixedAssetParentAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      [{acc.code}] {acc.nameAr} {acc.nameEn ? `(${acc.nameEn})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Field 2: Depreciation Rate (Manual % entry with quick buttons: 10%, 15%, 20%, 25%) */}
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold">{isAr ? "نسبة الإهلاك السنوية (%) *" : "Depreciation Rate (%) *"}</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    required
+                    value={deprecRateInput}
+                    onChange={e => setDeprecRateInput(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="20"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                  <span className="font-bold text-slate-400 font-mono text-sm">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick preset buttons */}
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 text-[11px]">{isAr ? "نسب شائعة:" : "Presets:"}</span>
+                {[10, 15, 20, 25].map(pct => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setDeprecRateInput(pct)}
+                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg font-mono font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSavingDeprecSetting}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {isSavingDeprecSetting ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "حفظ وتطبيق النسبة" : "Save Setting")}
+              </button>
+            </div>
+          </form>
+
+          {/* Configured Rates & Parent-Child Inheritance Rules Table (Section 9) */}
+          <div className="overflow-x-auto border border-slate-800 rounded-2xl">
+            <table className="w-full text-xs text-right">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-950/60">
+                  <th className="p-3 text-right">{isAr ? "كود الحساب" : "Account Code"}</th>
+                  <th className="p-3 text-right">{isAr ? "اسم الحساب الرئيسي" : "Main Asset Account"}</th>
+                  <th className="p-3 text-center">{isAr ? "نسبة الإهلاك المحددة" : "Configured Rate"}</th>
+                  <th className="p-3 text-right">{isAr ? "قاعدة التوريث التلقائي للحسابات الفرعية" : "Inherited Child Accounts (Section 9)"}</th>
+                  <th className="p-3 text-center">{isAr ? "إجراءات" : "Actions"}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {fixedAssetParentAccounts.map(acc => {
+                  const setting = depreciationSettings.find(s => s.accountId === acc.id || s.accountCode === acc.code);
+                  const effectiveRate = setting ? setting.depreciationRate : getAccountDepreciationRate(acc.id);
+                  const children = getChildAccounts(acc.id, acc.code);
+
+                  return (
+                    <tr key={acc.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="p-3 font-mono font-bold text-slate-300">{acc.code}</td>
+                      <td className="p-3 font-bold text-white">
+                        <div>{acc.nameAr}</div>
+                        {acc.nameEn && <div className="text-[10px] text-slate-500 font-normal">{acc.nameEn}</div>}
+                      </td>
+                      <td className="p-3 text-center">
+                        {effectiveRate > 0 ? (
+                          <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-mono font-bold border border-emerald-500/20 text-xs">
+                            {effectiveRate}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-mono">-</span>
+                        )}
+                      </td>
+                      {/* Section 9: Parent Account Depreciation Rules */}
+                      <td className="p-3">
+                        {children.length > 0 ? (
+                          <div className="space-y-1">
+                            <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5" />
+                              <span>
+                                {isAr
+                                  ? `ترث النسبة (${effectiveRate > 0 ? effectiveRate : 0}%) تلقائياً لعدد (${children.length}) حساب فرعي:`
+                                  : `Inherited by ${children.length} child accounts:`}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {children.slice(0, 5).map(c => (
+                                <span key={c.id} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[10px] text-slate-300 font-mono">
+                                  [{c.code}] {c.nameAr}
+                                </span>
+                              ))}
+                              {children.length > 5 && (
+                                <span className="text-[10px] text-slate-500 self-center">
+                                  +{children.length - 5} {isAr ? "حسابات أخرى" : "more"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 text-[11px]">
+                            {isAr ? "حساب أصل مستقل بدون حسابات فرعية" : "Direct asset account without child accounts"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedAssetAccountId(acc.id);
+                              setDeprecRateInput(effectiveRate || 10);
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300 transition-colors cursor-pointer"
+                            title={isAr ? "تحديد أو تعديل النسبة" : "Edit rate"}
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          {setting && (
+                            <button
+                              onClick={() => handleDeleteDeprecSetting(setting.id || acc.id)}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-400 transition-colors cursor-pointer"
+                              title={isAr ? "حذف التخصيص" : "Delete"}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

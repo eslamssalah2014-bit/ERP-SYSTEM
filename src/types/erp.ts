@@ -718,6 +718,7 @@ export interface FixedAsset {
   id: string;
   organizationId: string;
   branchId?: string;
+  code: string;
   name: string;
   assetType: FixedAssetType;
   accountId: string;
@@ -734,6 +735,17 @@ export interface FixedAsset {
   createdAt?: string;
 }
 
+export interface DepreciationSetting {
+  id: string;
+  organizationId: string;
+  accountId: string;
+  accountCode: string;
+  accountNameAr: string;
+  accountNameEn?: string;
+  depreciationRate: number;
+  updatedAt?: string;
+}
+
 export interface AssetDepreciationCalculation {
   assetId: string;
   purchaseValue: number;
@@ -746,6 +758,7 @@ export interface AssetDepreciationCalculation {
 
 export interface AssetDepreciationReportRow {
   assetId: string;
+  assetCode: string;
   assetName: string;
   mainAccountCode: string;
   mainAccountName: string;
@@ -759,3 +772,4 @@ export interface AssetDepreciationReportRow {
   accumulatedDepreciation: number;
   closingAssetValue: number;
 }
+
