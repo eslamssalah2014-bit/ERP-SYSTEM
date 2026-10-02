@@ -44,7 +44,8 @@ export default function TreasuryPage() {
 
   const handleOpenReceiptModal = () => {
     setFormError(null);
-    setRcpTreasuryId(treasuryAccounts[0]?.id || "");
+    const defaultSafe = treasuryAccounts.find(t => t.isDefault || t.code === "SAFE-MAIN" || t.type === "cash_box")?.id || treasuryAccounts[0]?.id || "";
+    setRcpTreasuryId(defaultSafe);
     setRcpCreditAccId(accounts.find(a => a.code === "1102001" || a.code === "1120")?.id || accounts[0]?.id || "");
     setRcpAmount(0);
     setRcpReceivedFrom("");
@@ -55,7 +56,8 @@ export default function TreasuryPage() {
 
   const handleOpenPaymentModal = () => {
     setFormError(null);
-    setPayTreasuryId(treasuryAccounts[0]?.id || "");
+    const defaultSafe = treasuryAccounts.find(t => t.isDefault || t.code === "SAFE-MAIN" || t.type === "cash_box")?.id || treasuryAccounts[0]?.id || "";
+    setPayTreasuryId(defaultSafe);
     setPayDebitAccId(accounts.find(a => a.code === "2101001" || a.code === "2110")?.id || accounts[0]?.id || "");
     setPayAmount(0);
     setPayPaidTo("");

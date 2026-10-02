@@ -9,7 +9,7 @@ import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   CheckSquare, Plus, ArrowDownLeft, Search, Filter,
   Printer, Edit2, Trash2, CheckCircle2, Building2,
-  Calendar, FileText, User, Layers, Trash, Loader2
+  Calendar, FileText, User, Layers, Trash, Loader2, Eye, DollarSign
 } from "lucide-react";
 import { CheckRecord, CheckStatus } from "@/types/erp";
 
@@ -35,11 +35,36 @@ export default function ReceivableChecksPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBankFilter, setSelectedBankFilter] = useState("all");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("all");
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [minAmount, setMinAmount] = useState<string>("");
+  const [maxAmount, setMaxAmount] = useState<string>("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // View Check Modal State
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewingCheck, setViewingCheck] = useState<CheckRecord | null>(null);
+
+  // Edit Check Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingCheck, setEditingCheck] = useState<CheckRecord | null>(null);
+  const [editForm, setEditForm] = useState({
+    checkNumber: "",
+    partyName: "",
+    customerId: "",
+    draweeBank: "",
+    collectionBank: "",
+    issueDate: "",
+    dueDate: "",
+    amount: 0,
+    status: "in_treasury" as CheckStatus,
+    notes: ""
+  });
 
   // Print Modal
   const [printData, setPrintData] = useState<VoucherPrintData | null>(null);
@@ -233,6 +258,55 @@ export default function ReceivableChecksPage() {
     }
   };
 
+  const handleOpenView = (chk: CheckRecord) => {
+    setViewingCheck(chk);
+    setIsViewModalOpen(true);
+  };
+
+  const handleOpenEdit = (chk: CheckRecord) => {
+    setEditingCheck(chk);
+    setEditForm({
+      checkNumber: chk.checkNumber,
+      partyName: chk.partyName,
+      customerId: chk.customerId || "",
+      draweeBank: chk.draweeBank || chk.bankName || "",
+      collectionBank: chk.collectionBank || "",
+      issueDate: chk.issueDate,
+      dueDate: chk.dueDate,
+      amount: chk.amount,
+      status: chk.status,
+      notes: chk.notes || ""
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCheck) return;
+    setIsSubmitting(true);
+    try {
+      await updateCheck(editingCheck.id, {
+        checkNumber: editForm.checkNumber,
+        partyName: editForm.partyName,
+        customerId: editForm.customerId || undefined,
+        draweeBank: editForm.draweeBank,
+        bankName: editForm.draweeBank,
+        collectionBank: editForm.collectionBank,
+        issueDate: editForm.issueDate,
+        dueDate: editForm.dueDate,
+        amount: Number(editForm.amount) || 0,
+        status: editForm.status,
+        notes: editForm.notes
+      });
+      setIsEditModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || (isAr ? "فشل تعديل بيانات الشيك" : "Failed to update check"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Filter incoming checks
   const incomingChecks = checks.filter(c => c.type === "incoming");
 
@@ -241,18 +315,25 @@ export default function ReceivableChecksPage() {
       c.checkNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.partyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.bankName && c.bankName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (c.draweeBank && c.draweeBank.toLowerCase().includes(searchTerm.toLowerCase()));
+      (c.draweeBank && c.draweeBank.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.collectionBank && c.collectionBank.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesBank = selectedBankFilter === "all" || (c.draweeBank || c.bankName) === selectedBankFilter;
     const matchesStatus = selectedStatusFilter === "all" || c.status === selectedStatusFilter;
+    const matchesCustomer = selectedCustomerFilter === "all" || c.customerId === selectedCustomerFilter;
+    const matchesDateFrom = !dateFrom || c.dueDate >= dateFrom;
+    const matchesDateTo = !dateTo || c.dueDate <= dateTo;
+    const matchesMinAmount = !minAmount || c.amount >= parseFloat(minAmount);
+    const matchesMaxAmount = !maxAmount || c.amount <= parseFloat(maxAmount);
 
-    return matchesSearch && matchesBank && matchesStatus;
+    return matchesSearch && matchesBank && matchesStatus && matchesCustomer && matchesDateFrom && matchesDateTo && matchesMinAmount && matchesMaxAmount;
   });
 
   const totalIncomingAmount = filteredChecks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const inTreasuryCount = incomingChecks.filter(c => c.status === "in_treasury").length;
   const underCollectionCount = incomingChecks.filter(c => c.status === "under_collection").length;
   const collectedCount = incomingChecks.filter(c => c.status === "collected").length;
+  const bouncedCount = incomingChecks.filter(c => c.status === "bounced" || c.status === "returned").length;
 
   const getStatusBadge = (status: CheckStatus) => {
     switch (status) {
@@ -300,7 +381,7 @@ export default function ReceivableChecksPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
           <span className="text-xs text-slate-400 block">{isAr ? "إجمالي قيمة الشيكات" : "Total Checks Value"}</span>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
@@ -328,11 +409,18 @@ export default function ReceivableChecksPage() {
             {collectedCount} {isAr ? "شيك" : "checks"}
           </div>
         </div>
+
+        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+          <span className="text-xs text-slate-400 block">{isAr ? "مرتدة / مرفوضة" : "Bounced"}</span>
+          <div className="text-xl font-bold font-mono text-rose-400 mt-1">
+            {bouncedCount} {isAr ? "شيك" : "checks"}
+          </div>
+        </div>
       </div>
 
-      {/* Filters Bar */}
+      {/* Filters Bar - Date, Customer, Status, Amount, Bank */}
       <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 absolute right-3 top-3 text-slate-500" />
           <input
             type="text"
@@ -343,6 +431,19 @@ export default function ReceivableChecksPage() {
           />
         </div>
 
+        {/* Customer Filter */}
+        <select
+          value={selectedCustomerFilter}
+          onChange={e => setSelectedCustomerFilter(e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+        >
+          <option value="all">{isAr ? "جميع العملاء" : "All Customers"}</option>
+          {customers.map(c => (
+            <option key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameEn}</option>
+          ))}
+        </select>
+
+        {/* Status Filter */}
         <select
           value={selectedStatusFilter}
           onChange={e => setSelectedStatusFilter(e.target.value)}
@@ -355,13 +456,68 @@ export default function ReceivableChecksPage() {
           <option value="bounced">{isAr ? "مرتد / مرفوض" : "Bounced"}</option>
         </select>
 
-        {(searchTerm || selectedStatusFilter !== "all") && (
+        {/* Bank Filter */}
+        <select
+          value={selectedBankFilter}
+          onChange={e => setSelectedBankFilter(e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+        >
+          <option value="all">{isAr ? "جميع البنوك" : "All Banks"}</option>
+          {availableBanks.map((b, i) => (
+            <option key={i} value={b}>{b}</option>
+          ))}
+        </select>
+
+        {/* Date Range Filters */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span>{isAr ? "من:" : "From:"}</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+          />
+          <span>{isAr ? "إلى:" : "To:"}</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {/* Amount Range Filters */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <input
+            type="number"
+            placeholder={isAr ? "مبلغ من..." : "Min amt..."}
+            value={minAmount}
+            onChange={e => setMinAmount(e.target.value)}
+            className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+          />
+          <span>-</span>
+          <input
+            type="number"
+            placeholder={isAr ? "إلى..." : "Max amt..."}
+            value={maxAmount}
+            onChange={e => setMaxAmount(e.target.value)}
+            className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {(searchTerm || selectedStatusFilter !== "all" || selectedBankFilter !== "all" || selectedCustomerFilter !== "all" || dateFrom || dateTo || minAmount || maxAmount) && (
           <button
             onClick={() => {
               setSearchTerm("");
               setSelectedStatusFilter("all");
+              setSelectedBankFilter("all");
+              setSelectedCustomerFilter("all");
+              setDateFrom("");
+              setDateTo("");
+              setMinAmount("");
+              setMaxAmount("");
             }}
-            className="text-xs text-slate-400 hover:text-white px-2.5 py-1 bg-slate-800 rounded-lg"
+            className="text-xs text-slate-400 hover:text-white px-2.5 py-1.5 bg-slate-800 rounded-lg"
           >
             {isAr ? "إعادة ضبط" : "Reset"}
           </button>
@@ -372,7 +528,7 @@ export default function ReceivableChecksPage() {
       <div className="bg-slate-900/80 rounded-2xl border border-slate-800 overflow-hidden">
         {isLoadingData ? (
           <div className="p-6">
-            <TableSkeleton rows={5} columns={8} />
+            <TableSkeleton rows={5} columns={9} />
           </div>
         ) : filteredChecks.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-3">
@@ -392,6 +548,7 @@ export default function ReceivableChecksPage() {
                   <th className="p-3.5">{isAr ? "تاريخ التحرير" : "Issue Date"}</th>
                   <th className="p-3.5">{isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
                   <th className="p-3.5">{isAr ? "الحالة" : "Status"}</th>
+                  <th className="p-3.5">{isAr ? "بنك التحصيل" : "Collection Bank"}</th>
                   <th className="p-3.5 text-left">{isAr ? "المبلغ" : "Amount"}</th>
                   <th className="p-3.5 text-center">{isAr ? "الإجراءات" : "Actions"}</th>
                 </tr>
@@ -417,11 +574,30 @@ export default function ReceivableChecksPage() {
                     <td className="p-3.5">
                       {getStatusBadge(chk.status)}
                     </td>
+                    <td className="p-3.5 text-slate-300 font-medium">
+                      {chk.collectionBank || (chk.targetTreasuryId ? treasuryAccounts.find(t => t.id === chk.targetTreasuryId)?.nameAr : "") || "---"}
+                    </td>
                     <td className="p-3.5 text-left font-mono font-bold text-emerald-400 text-sm">
                       {formatCurrency(chk.amount, organization.currency, locale)}
                     </td>
                     <td className="p-3.5">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleOpenView(chk)}
+                          title={isAr ? "عرض تفاصيل الشيك" : "View Check"}
+                          className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => handleOpenEdit(chk)}
+                            title={isAr ? "تعديل الشيك" : "Edit Check"}
+                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handlePrintSingle(chk)}
                           title={isAr ? "طباعة السند" : "Print Voucher"}
@@ -680,6 +856,255 @@ export default function ReceivableChecksPage() {
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               <span>{isAr ? "حفظ وترحيل السند" : "Save & Post Voucher"}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* View Check Modal */}
+      <Modal
+        isOpen={isViewModalOpen}
+        onClose={() => setIsViewModalOpen(false)}
+        title={isAr ? `تفاصيل ورقة القبض (${viewingCheck?.checkNumber || ""})` : "Check Details"}
+        maxWidth="md"
+      >
+        {viewingCheck && (
+          <div className="space-y-4 text-xs">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+              <div>
+                <span className="text-slate-400 block">{isAr ? "رقم الشيك:" : "Check #:"}</span>
+                <span className="font-mono font-bold text-base text-amber-300">{viewingCheck.checkNumber}</span>
+              </div>
+              <div className="text-left">
+                <span className="text-slate-400 block">{isAr ? "المبلغ:" : "Amount:"}</span>
+                <span className="font-mono font-bold text-base text-emerald-400">
+                  {formatCurrency(viewingCheck.amount, organization.currency, locale)}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+              <div>
+                <span className="text-slate-500 block">{isAr ? "الساحب / العميل:" : "Drawer / Customer:"}</span>
+                <span className="font-semibold text-slate-200">{viewingCheck.partyName}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">{isAr ? "الحالة:" : "Status:"}</span>
+                <div className="mt-0.5">{getStatusBadge(viewingCheck.status)}</div>
+              </div>
+              <div>
+                <span className="text-slate-500 block">{isAr ? "البنك المسحوب عليه:" : "Drawee Bank:"}</span>
+                <span className="text-slate-300">{viewingCheck.draweeBank || viewingCheck.bankName || "---"}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">{isAr ? "بنك التحصيل / المقاصة:" : "Collection Bank:"}</span>
+                <span className="text-emerald-400 font-medium">
+                  {viewingCheck.collectionBank || (viewingCheck.targetTreasuryId ? treasuryAccounts.find(t => t.id === viewingCheck.targetTreasuryId)?.nameAr : "") || (isAr ? "لم يحدد بعد" : "Not specified")}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">{isAr ? "تاريخ التحرير:" : "Issue Date:"}</span>
+                <span className="font-mono text-slate-300">{formatDate(viewingCheck.issueDate, locale)}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">{isAr ? "تاريخ الاستحقاق:" : "Due Date:"}</span>
+                <span className="font-mono font-bold text-amber-300">{formatDate(viewingCheck.dueDate, locale)}</span>
+              </div>
+              {viewingCheck.collectionDate && (
+                <div>
+                  <span className="text-slate-500 block">{isAr ? "تاريخ التحصيل:" : "Collection Date:"}</span>
+                  <span className="font-mono text-emerald-400">{formatDate(viewingCheck.collectionDate, locale)}</span>
+                </div>
+              )}
+              <div>
+                <span className="text-slate-500 block">{isAr ? "رقم السند المرجعي:" : "Voucher Ref:"}</span>
+                <span className="font-mono text-slate-300">{viewingCheck.voucherNumber || "---"}</span>
+              </div>
+            </div>
+
+            {viewingCheck.notes && (
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <span className="text-slate-500 block mb-1">{isAr ? "ملاحظات:" : "Notes:"}</span>
+                <p className="text-slate-300 text-xs">{viewingCheck.notes}</p>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  handlePrintSingle(viewingCheck);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors border border-emerald-500/30"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>{isAr ? "طباعة إشعار الشيك" : "Print Check Voucher"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsViewModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+              >
+                {isAr ? "إغلاق" : "Close"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Check Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title={isAr ? `تعديل ورقة القبض (${editingCheck?.checkNumber || ""})` : "Edit Check"}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "رقم الشيك:" : "Check #:"}</label>
+              <input
+                type="text"
+                value={editForm.checkNumber}
+                onChange={e => setEditForm({ ...editForm, checkNumber: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "المبلغ:" : "Amount:"}</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={editForm.amount}
+                onChange={e => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "الساحب / العميل:" : "Drawer / Customer:"}</label>
+              <input
+                type="text"
+                value={editForm.partyName}
+                onChange={e => setEditForm({ ...editForm, partyName: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1">{isAr ? "ربط بعميل (اختياري):" : "Linked Customer:"}</label>
+              <select
+                value={editForm.customerId}
+                onChange={e => {
+                  const custId = e.target.value;
+                  const c = customers.find(item => item.id === custId);
+                  setEditForm({
+                    ...editForm,
+                    customerId: custId,
+                    partyName: c ? (isAr ? c.nameAr : c.nameEn) : editForm.partyName
+                  });
+                }}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">{isAr ? "-- بدون ربط بعميل --" : "-- None --"}</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameEn}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "البنك المسحوب عليه:" : "Drawee Bank:"}</label>
+              <input
+                type="text"
+                list="receivable-banks-list"
+                value={editForm.draweeBank}
+                onChange={e => setEditForm({ ...editForm, draweeBank: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "بنك التحصيل / المقاصة:" : "Collection Bank:"}</label>
+              <input
+                type="text"
+                list="receivable-banks-list"
+                value={editForm.collectionBank}
+                onChange={e => setEditForm({ ...editForm, collectionBank: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1">{isAr ? "تاريخ التحرير:" : "Issue Date:"}</label>
+              <input
+                type="date"
+                value={editForm.issueDate}
+                onChange={e => setEditForm({ ...editForm, issueDate: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "تاريخ الاستحقاق:" : "Due Date:"}</label>
+              <input
+                type="date"
+                value={editForm.dueDate}
+                onChange={e => setEditForm({ ...editForm, dueDate: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "الحالة:" : "Status:"}</label>
+              <select
+                value={editForm.status}
+                onChange={e => setEditForm({ ...editForm, status: e.target.value as CheckStatus })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="in_treasury">{isAr ? "في الخزينة" : "In Treasury"}</option>
+                <option value="under_collection">{isAr ? "برسم التحصيل" : "Under Collection"}</option>
+                <option value="collected">{isAr ? "تم التحصيل" : "Collected"}</option>
+                <option value="bounced">{isAr ? "مرتد / مرفوض" : "Bounced"}</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 mb-1">{isAr ? "ملاحظات:" : "Notes:"}</label>
+            <textarea
+              value={editForm.notes}
+              onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
+              rows={2}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+            >
+              {isAr ? "إلغاء" : "Cancel"}
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>{isAr ? "تحديث بيانات الشيك" : "Update Check"}</span>
             </button>
           </div>
         </form>

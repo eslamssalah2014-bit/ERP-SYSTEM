@@ -497,6 +497,38 @@ export default function FixedAssetDepreciationPage() {
     }
   };
 
+  // Requirement 8: Load directly from Fixed Assets Register
+  const handleSelectRegisterAsset = (assetId: string) => {
+    if (!assetId) return;
+    const asset = fixedAssets.find(a => a.id === assetId);
+    if (!asset) return;
+
+    setFormCode(asset.code || "");
+    setFormName(asset.name || "");
+    if (asset.accountId) {
+      setFormAccountId(asset.accountId);
+    }
+    setFormPurchaseValue(asset.purchaseValue || 0);
+    setFormBeginningDeprec(asset.beginningDepreciation || 0);
+    setFormPurchaseDate(asset.purchaseDate || todayStr);
+    if (asset.depreciationRate > 0) {
+      setFormRate(asset.depreciationRate);
+    } else if (asset.accountId) {
+      const rate = getAccountDepreciationRate(asset.accountId);
+      if (rate > 0) setFormRate(rate);
+    }
+    setFormStatus(asset.status || "active");
+    if (asset.costCenterId) setFormCostCenterId(asset.costCenterId);
+    if (asset.notes) setFormNotes(asset.notes);
+
+    showToast(
+      isAr
+        ? `تم استرجاع بيانات الأصل [${asset.code}] مباشرة من سجل الأصول الثابتة`
+        : `Loaded asset [${asset.code}] from Fixed Assets Register`,
+      "success"
+    );
+  };
+
   // -------------------------------------------------------------
   // Form Submit Handler (Sections 3 & 5)
   // -------------------------------------------------------------
@@ -1441,6 +1473,33 @@ export default function FixedAssetDepreciationPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+            {/* Requirement 8: Load directly from Fixed Assets Register */}
+            <div className="sm:col-span-2 space-y-1.5 p-3.5 bg-slate-950/90 rounded-2xl border border-emerald-500/40 shadow-sm">
+              <label className="text-emerald-400 font-bold flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-emerald-400" />
+                  {isAr ? "اختيار الأصل من سجل الأصول الثابتة (Fixed Assets Register) *" : "Select from Fixed Assets Register *"}
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans">
+                  {isAr ? "استرجاع بيانات الأصل مباشرة من السجل" : "Direct retrieval from Register"}
+                </span>
+              </label>
+              <select
+                onChange={e => handleSelectRegisterAsset(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold text-xs focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">{isAr ? "-- اختر الأصل من سجل الأصول الثابتة للتحميل المباشر --" : "-- Select from Fixed Assets Register --"}</option>
+                {fixedAssets.map(fa => {
+                  const acc = accounts.find(a => a.id === fa.accountId);
+                  return (
+                    <option key={fa.id} value={fa.id}>
+                      [{fa.code}] {fa.name} - ({acc?.nameAr || fa.accountId}) - {formatCurrency(fa.purchaseValue, organization.currency, locale)}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
             {/* FIELD 1: Main Asset Account (Must be selected first) */}
             <div className="sm:col-span-2 space-y-1">
               <label className="text-emerald-400 font-bold flex items-center gap-1.5">
@@ -1688,6 +1747,33 @@ export default function FixedAssetDepreciationPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+            {/* Requirement 8: Load directly from Fixed Assets Register for Opening Assets */}
+            <div className="sm:col-span-2 space-y-1.5 p-3.5 bg-slate-950/90 rounded-2xl border border-blue-500/40 shadow-sm">
+              <label className="text-blue-400 font-bold flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-blue-400" />
+                  {isAr ? "اختيار الأصل من سجل الأصول الثابتة (Fixed Assets Register) *" : "Select from Fixed Assets Register *"}
+                </span>
+                <span className="text-[10px] text-slate-400 font-sans">
+                  {isAr ? "استرجاع بيانات الأصل مباشرة من السجل" : "Direct retrieval from Register"}
+                </span>
+              </label>
+              <select
+                onChange={e => handleSelectRegisterAsset(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold text-xs focus:outline-none focus:border-blue-500"
+              >
+                <option value="">{isAr ? "-- اختر الأصل من سجل الأصول الثابتة للتحميل المباشر --" : "-- Select from Fixed Assets Register --"}</option>
+                {fixedAssets.map(fa => {
+                  const acc = accounts.find(a => a.id === fa.accountId);
+                  return (
+                    <option key={fa.id} value={fa.id}>
+                      [{fa.code}] {fa.name} - ({acc?.nameAr || fa.accountId}) - {formatCurrency(fa.purchaseValue, organization.currency, locale)}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
             {/* FIELD 1: Main Asset Account */}
             <div className="sm:col-span-2 space-y-1">
               <label className="text-blue-400 font-bold flex items-center gap-1.5">

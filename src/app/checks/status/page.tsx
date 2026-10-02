@@ -29,9 +29,28 @@ export default function CheckStatusManagerPage() {
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [actionType, setActionType] = useState<"under_collection" | "collected" | "bounced">("under_collection");
   const [targetBankOrTreasuryId, setTargetBankOrTreasuryId] = useState("");
+  const [collectionBank, setCollectionBank] = useState("");
   const [actionNotes, setActionNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Source bank names ONLY from Chart of Accounts & Treasury accounts
+  const availableBanks = React.useMemo(() => {
+    const set = new Set<string>();
+    treasuryAccounts.forEach(t => {
+      if (t.bankName && t.bankName.trim()) set.add(t.bankName.trim());
+      if (t.type === "bank_account" || (t.nameAr && t.nameAr.includes("بنك"))) {
+        set.add(t.nameAr.trim());
+      }
+    });
+    accounts.forEach(a => {
+      if (a.code.startsWith("1101002") || a.nameAr.includes("بنك") || a.nameEn?.toLowerCase().includes("bank")) {
+        const cleanName = a.nameAr.replace(/^(حسابات|حساب|أرصدة)\s*/, "").trim();
+        if (cleanName && cleanName.length > 2) set.add(cleanName);
+      }
+    });
+    return Array.from(set);
+  }, [treasuryAccounts, accounts]);
 
   // Filter incoming checks for status lifecycle
   const incomingChecks = checks.filter(c => c.type === "incoming");
@@ -54,6 +73,7 @@ export default function CheckStatusManagerPage() {
     setActionError(null);
     setActionNotes("");
     setTargetBankOrTreasuryId(treasuryAccounts[0]?.id || "");
+    setCollectionBank(chk.collectionBank || availableBanks[0] || "");
     setIsActionModalOpen(true);
   };
 
@@ -62,16 +82,22 @@ export default function CheckStatusManagerPage() {
     if (!selectedCheck) return;
     setActionError(null);
 
+    if (!collectionBank.trim()) {
+      setActionError(isAr ? "يرجى تحديد بنك التحصيل (حقل إلزامي)" : "Collection Bank is required");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await updateCheckStatus(
         selectedCheck.id,
         actionType as CheckStatus,
-        actionType === "collected" ? targetBankOrTreasuryId : undefined
+        actionType === "collected" ? targetBankOrTreasuryId : undefined,
+        collectionBank.trim()
       );
 
       // Update local selection
-      setSelectedCheck(prev => prev ? { ...prev, status: actionType as CheckStatus } : null);
+      setSelectedCheck(prev => prev ? { ...prev, status: actionType as CheckStatus, collectionBank: collectionBank.trim() } : null);
       setIsActionModalOpen(false);
     } catch (err: any) {
       console.error("Failed to update check status:", err);
@@ -223,6 +249,11 @@ export default function CheckStatusManagerPage() {
                   <span className="text-slate-500 block">{isAr ? "رقم السند المرجعي:" : "Voucher Ref:"}</span>
                   <div className="font-mono text-slate-300 mt-1">{selectedCheck.voucherNumber || "---"}</div>
                 </div>
+
+                <div>
+                  <span className="text-slate-500 block">{isAr ? "بنك التحصيل / المقاصة:" : "Collection Bank:"}</span>
+                  <div className="font-semibold text-emerald-400 mt-1">{selectedCheck.collectionBank || (isAr ? "لم يحدد بعد" : "Not specified")}</div>
+                </div>
               </div>
 
               {/* Lifecycle Actions */}
@@ -327,6 +358,32 @@ export default function CheckStatusManagerPage() {
             <span className="text-slate-400 block">{isAr ? "الشيك المحدد:" : "Selected Check:"}</span>
             <div className="font-mono font-bold text-white text-sm">
               {selectedCheck?.checkNumber} - {formatCurrency(selectedCheck?.amount || 0, organization.currency, locale)}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-400 mb-1 font-semibold">
+              {isAr ? "بنك التحصيل / بنك المقاصة (إلزامي):" : "Collection Bank (Mandatory):"}
+            </label>
+            <div className="space-y-1.5">
+              <select
+                value={collectionBank}
+                onChange={e => setCollectionBank(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                required
+              >
+                <option value="">{isAr ? "-- اختر بنك التحصيل من الحسابات البنكية --" : "-- Select Collection Bank --"}</option>
+                {availableBanks.map((b, i) => (
+                  <option key={i} value={b}>{b}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder={isAr ? "أو اكتب اسم بنك التحصيل يدوياً..." : "Or type collection bank manually..."}
+                value={collectionBank}
+                onChange={e => setCollectionBank(e.target.value)}
+                className="w-full bg-slate-950/60 border border-slate-800/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
             </div>
           </div>
 

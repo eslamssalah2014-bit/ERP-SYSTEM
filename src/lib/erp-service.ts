@@ -267,8 +267,8 @@ export async function persistCheckDB(chk: CheckRecord | Omit<CheckRecord, "id">)
 export async function updateCheckDB(id: string, chk: Partial<CheckRecord>) {
   return mutateERP<CheckRecord>("update_check", { id, ...chk });
 }
-export async function persistCheckStatusDB(checkId: string, newStatus: string, targetTreasuryId?: string) {
-  return mutateERP<CheckRecord>("update_check_status", { checkId, newStatus, targetTreasuryId });
+export async function persistCheckStatusDB(checkId: string, newStatus: string, targetTreasuryId?: string, collectionBank?: string) {
+  return mutateERP<CheckRecord>("update_check_status", { checkId, newStatus, targetTreasuryId, collectionBank });
 }
 export async function deleteCheckDB(id: string) {
   return mutateERP("delete_check", { id });

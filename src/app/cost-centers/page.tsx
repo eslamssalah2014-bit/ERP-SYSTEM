@@ -34,6 +34,19 @@ export default function CostCentersPage() {
   const [editParentId, setEditParentId] = useState("");
   const [editCostCenterType, setEditCostCenterType] = useState<CostCenterType>("expense");
 
+  // Helper to prevent circular hierarchy
+  const getCostCenterDescendantIds = (centerId: string, all: CostCenter[]): Set<string> => {
+    const descendants = new Set<string>();
+    const collect = (id: string) => {
+      all.filter(c => c.parentId === id).forEach(child => {
+        descendants.add(child.id);
+        collect(child.id);
+      });
+    };
+    collect(centerId);
+    return descendants;
+  };
+
   const handleCreateCostCenter = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -41,6 +54,9 @@ export default function CostCentersPage() {
       setFormError(isAr ? "يرجى كتابة كود واسم مركز التكلفة" : "Please enter cost center code and name");
       return;
     }
+
+    const parent = parentId ? costCenters.find(c => c.id === parentId) : null;
+    const computedLevel = parent ? (Number(parent.level) || 1) + 1 : 1;
 
     setIsSubmitting(true);
     try {
@@ -50,7 +66,7 @@ export default function CostCentersPage() {
         nameAr,
         nameEn: nameEn || nameAr,
         parentId: parentId || undefined,
-        level: parentId ? 2 : 1,
+        level: computedLevel,
         isActive: true,
         costCenterType: costCenterType,
         type: costCenterType
@@ -86,6 +102,23 @@ export default function CostCentersPage() {
     e.preventDefault();
     if (!editCostCenter) return;
     setFormError(null);
+
+    // Prevent circular reference
+    if (editParentId) {
+      if (editParentId === editCostCenter.id) {
+        setFormError(isAr ? "لا يمكن اختيار المركز كأب لنفسه" : "A cost center cannot be its own parent");
+        return;
+      }
+      const descendants = getCostCenterDescendantIds(editCostCenter.id, costCenters);
+      if (descendants.has(editParentId)) {
+        setFormError(isAr ? "لا يمكن اختيار أحد الفروع التابعة كأب (تجنب الدوائر المغلقة)" : "Cannot select a descendant cost center as parent (prevent circular reference)");
+        return;
+      }
+    }
+
+    const parent = editParentId ? costCenters.find(c => c.id === editParentId) : null;
+    const computedLevel = parent ? (Number(parent.level) || 1) + 1 : 1;
+
     setIsSubmitting(true);
 
     try {
@@ -94,7 +127,7 @@ export default function CostCentersPage() {
         nameAr: editNameAr,
         nameEn: editNameEn || editNameAr,
         parentId: editParentId || undefined,
-        level: editParentId ? 2 : 1,
+        level: computedLevel,
         costCenterType: editCostCenterType,
         type: editCostCenterType
       });
@@ -128,26 +161,47 @@ export default function CostCentersPage() {
   const [typeFilter, setTypeFilter] = useState<"all" | "main" | "sub" | CostCenterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Group into structured hierarchical tree
+  // Group into unlimited recursive hierarchical tree
   const hierarchicalCostCenters = React.useMemo(() => {
-    const roots = costCenters.filter(c => !c.parentId || !costCenters.some(p => p.id === c.parentId));
-    const result: Array<{ cc: CostCenter; parent?: CostCenter; childrenCount: number }> = [];
-    
-    roots.forEach(root => {
-      const children = costCenters.filter(c => c.parentId === root.id);
-      result.push({ cc: root, childrenCount: children.length });
-      children.forEach(child => {
-        result.push({ cc: child, parent: root, childrenCount: 0 });
-      });
-    });
+    interface HierarchicalNode {
+      cc: CostCenter;
+      parent?: CostCenter;
+      childrenCount: number;
+      depth: number;
+    }
 
-    // Also include any orphan centers if any
-    const handledIds = new Set(result.map(r => r.cc.id));
-    costCenters.forEach(cc => {
-      if (!handledIds.has(cc.id)) {
-        result.push({ cc, childrenCount: 0 });
-      }
-    });
+    const result: HierarchicalNode[] = [];
+    const visited = new Set<string>();
+
+    const roots = costCenters
+      .filter(c => !c.parentId || !costCenters.some(p => p.id === c.parentId))
+      .sort((a, b) => (a.code || "").localeCompare(b.code || "", undefined, { numeric: true }));
+
+    const traverse = (cc: CostCenter, parent?: CostCenter, depth: number = 0) => {
+      if (visited.has(cc.id)) return;
+      visited.add(cc.id);
+
+      const children = costCenters
+        .filter(c => c.parentId === cc.id)
+        .sort((a, b) => (a.code || "").localeCompare(b.code || "", undefined, { numeric: true }));
+
+      result.push({
+        cc,
+        parent,
+        childrenCount: children.length,
+        depth
+      });
+
+      children.forEach(child => traverse(child, cc, depth + 1));
+    };
+
+    roots.forEach(root => traverse(root, undefined, 0));
+
+    // Handle any orphaned cost centers
+    costCenters
+      .filter(c => !visited.has(c.id))
+      .sort((a, b) => (a.code || "").localeCompare(b.code || "", undefined, { numeric: true }))
+      .forEach(orphan => traverse(orphan, undefined, 0));
 
     return result;
   }, [costCenters]);
@@ -285,25 +339,30 @@ export default function CostCentersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {filteredCostCenters.map(({ cc, parent, childrenCount }) => {
-                const isChild = !!parent;
+              {filteredCostCenters.map(({ cc, parent, childrenCount, depth }) => {
+                const isChild = depth > 0;
                 return (
-                  <tr key={cc.id} className={`hover:bg-slate-800/30 ${!isChild ? "bg-slate-850/40" : ""}`}>
+                  <tr key={cc.id} className={`hover:bg-slate-800/30 ${depth === 0 ? "bg-slate-850/40" : ""}`}>
                     <td className="p-3.5 font-mono font-bold text-emerald-400">
                       {cc.code}
                     </td>
                     <td className="p-3.5">
                       <div
                         className="flex items-center gap-2"
-                        style={{ paddingRight: isChild ? "32px" : "0px", paddingLeft: isChild ? "0px" : "0px" }}
+                        style={{
+                          paddingRight: isAr ? `${depth * 24}px` : "0px",
+                          paddingLeft: !isAr ? `${depth * 24}px` : "0px"
+                        }}
                       >
-                        {isChild ? (
+                        {depth > 0 ? (
                           <>
-                            <span className="text-slate-500 font-mono text-sm">└──</span>
+                            <span className="text-emerald-500/70 font-mono text-sm">└──</span>
                             <span className="font-semibold text-white">{isAr ? cc.nameAr : cc.nameEn}</span>
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
-                              {isAr ? `تابع لـ: ${parent.nameAr}` : `Sub of: ${parent.nameEn}`}
-                            </span>
+                            {parent && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                                {isAr ? `تابع لـ: [${parent.code}] ${parent.nameAr}` : `Sub of: [${parent.code}] ${parent.nameEn}`}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <>
@@ -348,15 +407,13 @@ export default function CostCentersPage() {
                       })()}
                     </td>
                     <td className="p-3.5 text-center">
-                      {isChild ? (
-                        <span className="px-2 py-0.5 bg-slate-800 text-amber-300 font-mono text-[10px] font-bold rounded-md border border-amber-500/20">
-                          {isAr ? "فرعي (L2)" : "Sub (L2)"}
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-300 font-mono text-[10px] font-bold rounded-md border border-emerald-500/20">
-                          {isAr ? "رئيسي (L1)" : "Main (L1)"}
-                        </span>
-                      )}
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                        depth === 0
+                          ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                          : "bg-slate-800 text-amber-300 border-amber-500/20"
+                      }`}>
+                        {isAr ? `المستوى ${cc.level || depth + 1}` : `Level ${cc.level || depth + 1}`}
+                      </span>
                     </td>
                     <td className="p-3.5 text-center">
                       <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl font-bold border border-emerald-500/20 text-[10px]">
@@ -429,15 +486,17 @@ export default function CostCentersPage() {
           </div>
 
           <div>
-            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+            <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب - متاح لكافة المستويات)" : "Parent Center (All Levels Supported)"}</label>
             <select
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
             >
-              <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
-              {costCenters.filter(c => c.level === 1).map(c => (
-                <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
+              <option value="">{isAr ? "--- مركز رئيسي مستقل (المستوى 1) ---" : "--- Top-Level Root Center (L1) ---"}</option>
+              {hierarchicalCostCenters.map(({ cc, depth }) => (
+                <option key={cc.id} value={cc.id}>
+                  {"\u00A0\u00A0".repeat(depth)}{depth > 0 ? "└── " : ""}[{cc.code}] {cc.nameAr} {cc.nameEn ? `(${cc.nameEn})` : ""} - (L{cc.level || depth + 1})
+                </option>
               ))}
             </select>
           </div>
@@ -531,16 +590,23 @@ export default function CostCentersPage() {
             </div>
 
             <div>
-              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب)" : "Parent Center"}</label>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "المركز الرئيسي (الأب - متاح لكافة المستويات مع منع الدوائر المغلقة)" : "Parent Center (Unlimited Nesting)"}</label>
               <select
                 value={editParentId}
                 onChange={(e) => setEditParentId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
               >
-                <option value="">{isAr ? "--- مركز رئيسي مستقل ---" : "Top Level"}</option>
-                {costCenters.filter(c => c.level === 1 && c.id !== editCostCenter.id).map(c => (
-                  <option key={c.id} value={c.id}>{c.code} - {c.nameAr}</option>
-                ))}
+                <option value="">{isAr ? "--- مركز رئيسي مستقل (المستوى 1) ---" : "--- Top Level Root (L1) ---"}</option>
+                {(() => {
+                  const forbiddenIds = editCostCenter ? getCostCenterDescendantIds(editCostCenter.id, costCenters) : new Set<string>();
+                  return hierarchicalCostCenters
+                    .filter(({ cc }) => cc.id !== editCostCenter?.id && !forbiddenIds.has(cc.id))
+                    .map(({ cc, depth }) => (
+                      <option key={cc.id} value={cc.id}>
+                        {"\u00A0\u00A0".repeat(depth)}{depth > 0 ? "└── " : ""}[{cc.code}] {cc.nameAr} {cc.nameEn ? `(${cc.nameEn})` : ""} - (L{cc.level || depth + 1})
+                      </option>
+                    ));
+                })()}
               </select>
             </div>
 

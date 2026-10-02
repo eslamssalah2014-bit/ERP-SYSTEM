@@ -676,8 +676,8 @@ export default function SalesInvoicesPage() {
                 </div>
               ) : (
                 items.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-                    <div className="col-span-5">
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 text-xs">
+                    <div className="col-span-4">
                       <select
                         required
                         value={item.productId}
@@ -700,7 +700,7 @@ export default function SalesInvoicesPage() {
                         placeholder={isAr ? "الكمية" : "Qty"}
                         value={item.quantity}
                         onChange={(e) => handleUpdateItem(idx, "quantity", e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white font-mono text-center focus:outline-none focus:border-emerald-500"
                       />
                     </div>
 
@@ -712,11 +712,24 @@ export default function SalesInvoicesPage() {
                         placeholder={isAr ? "السعر" : "Price"}
                         value={item.unitPrice}
                         onChange={(e) => handleUpdateItem(idx, "unitPrice", e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white font-mono text-center focus:outline-none focus:border-emerald-500"
+                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white font-mono text-center focus:outline-none focus:border-emerald-500"
                       />
                     </div>
 
-                    <div className="col-span-2 text-center font-mono font-bold text-emerald-400 text-xs">
+                    <div className="col-span-2">
+                      <select
+                        value={item.taxRate}
+                        onChange={(e) => handleUpdateItem(idx, "taxRate", Number(e.target.value))}
+                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-white font-mono focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value={0}>{isAr ? "0% بدون ضريبة" : "0% No Tax"}</option>
+                        <option value={14}>14% (مصر)</option>
+                        <option value={15}>15% (السعودية)</option>
+                        <option value={5}>5% (الإمارات)</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-1 text-center font-mono font-bold text-emerald-400 text-[11px] whitespace-nowrap">
                       {formatCurrency(item.total, organization.currency, locale)}
                     </div>
 

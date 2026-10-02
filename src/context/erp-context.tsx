@@ -246,7 +246,7 @@ interface ERPContextType {
     }>;
   }) => Promise<CheckRecord[]>;
   updateCheck: (id: string, chk: Partial<CheckRecord>) => Promise<CheckRecord>;
-  updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => Promise<void>;
+  updateCheckStatus: (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string, collectionBank?: string) => Promise<void>;
   deleteCheck: (id: string) => Promise<void>;
 
   // Accounting & GL
@@ -2316,8 +2316,8 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
     return saved;
   };
 
-  const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string) => {
-    const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId);
+  const updateCheckStatus = async (checkId: string, newStatus: CheckStatus, targetTreasuryId?: string, collectionBank?: string) => {
+    const res = await persistCheckStatusDB(checkId, newStatus, targetTreasuryId, collectionBank);
     if (!res.success) throw new Error(res.error || "فشل تحديث حالة الشيك");
     const chk = checks.find(c => c.id === checkId);
     if (newStatus === "collected" && targetTreasuryId && chk) {
@@ -2325,7 +2325,12 @@ export function ERPProvider({ children }: { children: React.ReactNode }) {
       const delta = chk.type === "incoming" ? checkAmount : -checkAmount;
       setTreasuryAccounts(prev => prev.map(t => t.id === targetTreasuryId ? { ...t, balance: (Number(t.balance) || 0) + delta } : t));
     }
-    setChecks(prev => prev.map(c => c.id === checkId ? { ...c, status: newStatus, targetTreasuryId } : c));
+    setChecks(prev => prev.map(c => c.id === checkId ? {
+      ...c,
+      status: newStatus,
+      targetTreasuryId,
+      ...(collectionBank ? { collectionBank } : {})
+    } : c));
     // Auto generate Journal Entry for Check Status Lifecycle
     try {
       if (chk && accounts.length > 0) {

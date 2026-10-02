@@ -40,6 +40,7 @@ export default function InventoryPage() {
   const [unitId, setUnitId] = useState(units[0]?.id || "");
   const [costPrice, setCostPrice] = useState<number>(0);
   const [sellingPrice, setSellingPrice] = useState<number>(0);
+  const [taxRate, setTaxRate] = useState<number>(organization.defaultVatRate !== undefined ? organization.defaultVatRate : 14);
   const [minStockLevel, setMinStockLevel] = useState<number>(5);
   const [imageUrl, setImageUrl] = useState<string>("");
   const [initialWarehouseStock, setInitialWarehouseStock] = useState<{ [whId: string]: number }>({});
@@ -53,6 +54,7 @@ export default function InventoryPage() {
   const [editUnitId, setEditUnitId] = useState("");
   const [editCostPrice, setEditCostPrice] = useState<number>(0);
   const [editSellingPrice, setEditSellingPrice] = useState<number>(0);
+  const [editTaxRate, setEditTaxRate] = useState<number>(14);
   const [editMinStockLevel, setEditMinStockLevel] = useState<number>(5);
   const [editImageUrl, setEditImageUrl] = useState<string>("");
   const [editWarehouseStock, setEditWarehouseStock] = useState<{ [whId: string]: number }>({});
@@ -105,7 +107,7 @@ export default function InventoryPage() {
         unitId: activeUnitId,
         costPrice,
         sellingPrice,
-        taxRate: organization.defaultVatRate ?? 14,
+        taxRate: (taxRate !== undefined && taxRate !== null) ? taxRate : (organization.defaultVatRate ?? 14),
         minStockLevel,
         status: "active",
         warehouseStock: initialWarehouseStock,
@@ -142,6 +144,7 @@ export default function InventoryPage() {
     setEditUnitId(p.unitId);
     setEditCostPrice(p.costPrice);
     setEditSellingPrice(p.sellingPrice);
+    setEditTaxRate(p.taxRate !== undefined && p.taxRate !== null && !isNaN(Number(p.taxRate)) ? Number(p.taxRate) : (organization.defaultVatRate ?? 14));
     setEditMinStockLevel(p.minStockLevel);
     setEditImageUrl(p.imageUrl || "");
     setEditWarehouseStock({ ...(p.warehouseStock || {}) });
@@ -163,6 +166,7 @@ export default function InventoryPage() {
         unitId: editUnitId,
         costPrice: editCostPrice,
         sellingPrice: editSellingPrice,
+        taxRate: editTaxRate,
         minStockLevel: editMinStockLevel,
         imageUrl: editImageUrl || undefined,
         warehouseStock: editWarehouseStock,
@@ -621,7 +625,7 @@ export default function InventoryPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "سعر التكلفة *" : "Cost Price *"}</label>
                 <input
@@ -645,6 +649,19 @@ export default function InventoryPage() {
                   onChange={(e) => setEditSellingPrice(parseFloat(e.target.value) || 0)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold"
                 />
+              </div>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">{isAr ? "نسبة الضريبة" : "Tax Rate"}</label>
+                <select
+                  value={editTaxRate}
+                  onChange={(e) => setEditTaxRate(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold font-mono"
+                >
+                  <option value={0}>{isAr ? "بدون ضريبة (0%)" : "Without Tax (0%)"}</option>
+                  <option value={14}>14% (مصر)</option>
+                  <option value={15}>15% (السعودية)</option>
+                  <option value={5}>5% (الإمارات)</option>
+                </select>
               </div>
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">{isAr ? "حد الطلب الأدنى" : "Min Stock Level"}</label>
@@ -829,7 +846,7 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "سعر التكلفة" : "Cost Price"}</label>
               <input
@@ -853,12 +870,25 @@ export default function InventoryPage() {
               />
             </div>
             <div>
+              <label className="block text-slate-400 font-semibold mb-1">{isAr ? "نسبة الضريبة" : "Tax Rate"}</label>
+              <select
+                value={taxRate}
+                onChange={(e) => setTaxRate(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold font-mono"
+              >
+                <option value={0}>{isAr ? "بدون ضريبة (0%)" : "Without Tax (0%)"}</option>
+                <option value={14}>14% (مصر)</option>
+                <option value={15}>15% (السعودية)</option>
+                <option value={5}>5% (الإمارات)</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-slate-400 font-semibold mb-1">{isAr ? "حد الطلب الأدنى" : "Min Stock Level"}</label>
               <input
                 type="number"
                 min="1"
                 value={minStockLevel}
-                onChange={(e) => setMinStockLevel(parseInt(e.target.value) || 5)}
+                onChange={(e) => setMinStockLevel(parseInt(e.target.value) || 1)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
               />
             </div>

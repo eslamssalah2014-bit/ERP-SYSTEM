@@ -532,7 +532,7 @@ export function generateReceiptJournal(
       accountName: treasuryAccount.nameAr,
       debit: receipt.amount,
       credit: 0,
-      costCenterId: receipt.costCenterId,
+      costCenterId: undefined, // Treasury/Cash/Bank is offsetting liquidity line
       description: `سند قبض ${receipt.receiptNumber} - مقبوضات من ${receipt.receivedFrom}`,
     },
     {
@@ -542,7 +542,7 @@ export function generateReceiptJournal(
       accountName: creditAccount.nameAr,
       debit: 0,
       credit: receipt.amount,
-      costCenterId: receipt.costCenterId,
+      costCenterId: receipt.costCenterId, // Operational revenue/customer account line
       description: `سداد وسند قبض ${receipt.receiptNumber} - ${receipt.receivedFrom}`,
     },
   ];
@@ -580,7 +580,7 @@ export function generatePaymentJournal(
       accountName: debitAccount.nameAr,
       debit: payment.amount,
       credit: 0,
-      costCenterId: payment.costCenterId,
+      costCenterId: payment.costCenterId, // Operational expense/supplier account line
       description: `سند صرف ${payment.paymentNumber} لصالح ${payment.paidTo}`,
     },
     {
@@ -590,7 +590,7 @@ export function generatePaymentJournal(
       accountName: treasuryAccount.nameAr,
       debit: 0,
       credit: payment.amount,
-      costCenterId: payment.costCenterId,
+      costCenterId: undefined, // Treasury/Cash/Bank is offsetting liquidity line
       description: `صرف نقدي سند رقم ${payment.paymentNumber}`,
     },
   ];
@@ -1413,7 +1413,7 @@ export function computeGeneralLedgerSummary(
       endingDebit = totalNet > 0 ? totalNet : 0;
     }
 
-    const isLeaf = acc.level === 4 || !orderedAccounts.some(sub => sub.parentId === acc.id);
+    const isLeaf = !orderedAccounts.some(sub => sub.parentId === acc.id);
     if (isLeaf) {
       totOpenDr += openingDebit;
       totOpenCr += openingCredit;
@@ -1513,7 +1513,7 @@ export function computeTrialBalance(
     })
     .map(acc => {
       // Find all descendant codes of this account (including itself)
-      const isLeaf = acc.level === 4 || !accounts.some(sub => sub.parentId === acc.id);
+      const isLeaf = !accounts.some(sub => sub.parentId === acc.id);
       let openDr = 0;
       let openCr = 0;
       let perDr = 0;
@@ -2110,7 +2110,7 @@ export function generateAssetDepreciationJournalEntry(
       accountName: accumAccount.nameAr,
       debit: 0,
       credit: amt,
-      costCenterId: asset.costCenterId || costCenterId,
+      costCenterId: undefined,
       description: `مجمع إهلاك أصل: ${asset.name} حتى ${periodEndDate}`,
     }
   ];

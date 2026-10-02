@@ -21,6 +21,8 @@ export default function PayableChecksReportPage() {
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [dueStart, setDueStart] = useState("");
   const [dueEnd, setDueEnd] = useState("");
+  const [dueChequesOnly, setDueChequesOnly] = useState(false);
+  const [dueChequesDate, setDueChequesDate] = useState(new Date().toISOString().split("T")[0]);
 
   const outgoingChecks = checks.filter(c => c.type === "outgoing");
 
@@ -36,7 +38,10 @@ export default function PayableChecksReportPage() {
     const matchesStart = !dueStart || c.dueDate >= dueStart;
     const matchesEnd = !dueEnd || c.dueDate <= dueEnd;
 
-    return matchesSearch && matchesStatus && matchesBank && matchesSupp && matchesStart && matchesEnd;
+    // Requirement 10: Due Cheques filter (Due Date <= Selected Date AND status !== 'paid' && status !== 'collected')
+    const matchesDueCheques = !dueChequesOnly || (c.dueDate <= dueChequesDate && c.status !== "collected" && c.status !== "paid" && c.status !== "cleared");
+
+    return matchesSearch && matchesStatus && matchesBank && matchesSupp && matchesStart && matchesEnd && matchesDueCheques;
   });
 
   const totalAmount = filteredChecks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
@@ -218,7 +223,27 @@ export default function PayableChecksReportPage() {
           />
         </div>
 
-        {(searchTerm || statusFilter !== "all" || bankFilter !== "all" || supplierFilter !== "all" || dueStart || dueEnd) && (
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+          <label className="flex items-center gap-1.5 cursor-pointer text-amber-400 font-semibold select-none">
+            <input
+              type="checkbox"
+              checked={dueChequesOnly}
+              onChange={e => setDueChequesOnly(e.target.checked)}
+              className="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0"
+            />
+            <span>{isAr ? "شيكات مستحقة فقط (غير مسددة)" : "Due Cheques Only"}</span>
+          </label>
+          {dueChequesOnly && (
+            <input
+              type="date"
+              value={dueChequesDate}
+              onChange={e => setDueChequesDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white"
+            />
+          )}
+        </div>
+
+        {(searchTerm || statusFilter !== "all" || bankFilter !== "all" || supplierFilter !== "all" || dueStart || dueEnd || dueChequesOnly) && (
           <button
             onClick={() => {
               setSearchTerm("");
@@ -227,6 +252,8 @@ export default function PayableChecksReportPage() {
               setSupplierFilter("all");
               setDueStart("");
               setDueEnd("");
+              setDueChequesOnly(false);
+              setDueChequesDate(new Date().toISOString().split("T")[0]);
             }}
             className="text-xs text-slate-400 hover:text-white px-2.5 py-1.5 bg-slate-800 rounded-lg"
           >

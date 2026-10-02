@@ -11,7 +11,7 @@ import {
 import { CheckRecord, CheckStatus } from "@/types/erp";
 
 export default function ReceivableChecksReportPage() {
-  const { checks, customers, organization, locale, isLoadingData } = useERP();
+  const { checks, customers, treasuryAccounts, organization, locale, isLoadingData } = useERP();
   const isAr = locale === "ar";
 
   // Filter state
@@ -21,6 +21,8 @@ export default function ReceivableChecksReportPage() {
   const [customerFilter, setCustomerFilter] = useState("all");
   const [dueStart, setDueStart] = useState("");
   const [dueEnd, setDueEnd] = useState("");
+  const [dueChequesOnly, setDueChequesOnly] = useState(false);
+  const [dueChequesDate, setDueChequesDate] = useState(new Date().toISOString().split("T")[0]);
 
   const incomingChecks = checks.filter(c => c.type === "incoming");
 
@@ -29,7 +31,8 @@ export default function ReceivableChecksReportPage() {
       c.checkNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.partyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.draweeBank && c.draweeBank.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (c.bankName && c.bankName.toLowerCase().includes(searchTerm.toLowerCase()));
+      (c.bankName && c.bankName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.collectionBank && c.collectionBank.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
     const matchesBank = bankFilter === "all" || (c.draweeBank || c.bankName) === bankFilter;
@@ -37,7 +40,10 @@ export default function ReceivableChecksReportPage() {
     const matchesStart = !dueStart || c.dueDate >= dueStart;
     const matchesEnd = !dueEnd || c.dueDate <= dueEnd;
 
-    return matchesSearch && matchesStatus && matchesBank && matchesCust && matchesStart && matchesEnd;
+    // Requirement 10: Due Cheques filter (Due Date <= Selected Date AND status !== 'collected')
+    const matchesDueCheques = !dueChequesOnly || (c.dueDate <= dueChequesDate && c.status !== "collected");
+
+    return matchesSearch && matchesStatus && matchesBank && matchesCust && matchesStart && matchesEnd && matchesDueCheques;
   });
 
   const totalAmount = filteredChecks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
@@ -73,20 +79,25 @@ export default function ReceivableChecksReportPage() {
       isAr ? "تاريخ التحرير" : "Issue Date",
       isAr ? "تاريخ الاستحقاق" : "Due Date",
       isAr ? "الحالة" : "Status",
+      isAr ? "بنك التحصيل" : "Collection Bank",
       isAr ? "المبلغ" : "Amount",
       isAr ? "البيان" : "Notes"
     ];
 
-    const rows = filteredChecks.map(c => [
-      c.checkNumber,
-      c.partyName,
-      c.draweeBank || c.bankName,
-      c.issueDate,
-      c.dueDate,
-      c.status,
-      c.amount,
-      `"${(c.notes || "").replace(/"/g, '""')}"`
-    ].join(","));
+    const rows = filteredChecks.map(c => {
+      const collBank = c.collectionBank || (c.targetTreasuryId ? treasuryAccounts.find(t => t.id === c.targetTreasuryId)?.nameAr : "") || "";
+      return [
+        c.checkNumber,
+        c.partyName,
+        c.draweeBank || c.bankName,
+        c.issueDate,
+        c.dueDate,
+        c.status,
+        collBank,
+        c.amount,
+        `"${(c.notes || "").replace(/"/g, '""')}"`
+      ].join(",");
+    });
 
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -237,7 +248,27 @@ export default function ReceivableChecksReportPage() {
           />
         </div>
 
-        {(searchTerm || statusFilter !== "all" || bankFilter !== "all" || customerFilter !== "all" || dueStart || dueEnd) && (
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+          <label className="flex items-center gap-1.5 cursor-pointer text-amber-400 font-semibold select-none">
+            <input
+              type="checkbox"
+              checked={dueChequesOnly}
+              onChange={e => setDueChequesOnly(e.target.checked)}
+              className="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0"
+            />
+            <span>{isAr ? "شيكات مستحقة فقط (غير محصلة)" : "Due Cheques Only"}</span>
+          </label>
+          {dueChequesOnly && (
+            <input
+              type="date"
+              value={dueChequesDate}
+              onChange={e => setDueChequesDate(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-white"
+            />
+          )}
+        </div>
+
+        {(searchTerm || statusFilter !== "all" || bankFilter !== "all" || customerFilter !== "all" || dueStart || dueEnd || dueChequesOnly) && (
           <button
             onClick={() => {
               setSearchTerm("");
@@ -246,6 +277,8 @@ export default function ReceivableChecksReportPage() {
               setCustomerFilter("all");
               setDueStart("");
               setDueEnd("");
+              setDueChequesOnly(false);
+              setDueChequesDate(new Date().toISOString().split("T")[0]);
             }}
             className="text-xs text-slate-400 hover:text-white px-2.5 py-1.5 bg-slate-800 rounded-lg"
           >
@@ -275,7 +308,7 @@ export default function ReceivableChecksReportPage() {
       <div className="bg-slate-900/80 rounded-2xl border border-slate-800 overflow-hidden print:border-none print:bg-white print:text-black">
         {isLoadingData ? (
           <div className="p-6">
-            <TableSkeleton rows={5} columns={7} />
+            <TableSkeleton rows={5} columns={8} />
           </div>
         ) : filteredChecks.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-3">
@@ -295,6 +328,7 @@ export default function ReceivableChecksReportPage() {
                   <th className="p-3.5">{isAr ? "تاريخ التحرير" : "Issue Date"}</th>
                   <th className="p-3.5">{isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
                   <th className="p-3.5">{isAr ? "الحالة" : "Status"}</th>
+                  <th className="p-3.5">{isAr ? "بنك التحصيل" : "Collection Bank"}</th>
                   <th className="p-3.5 text-left">{isAr ? "المبلغ" : "Amount"}</th>
                 </tr>
               </thead>
@@ -319,6 +353,9 @@ export default function ReceivableChecksReportPage() {
                     <td className="p-3.5">
                       {getStatusBadge(chk.status)}
                     </td>
+                    <td className="p-3.5 text-slate-300 font-medium print:text-black">
+                      {chk.collectionBank || (chk.targetTreasuryId ? treasuryAccounts.find(t => t.id === chk.targetTreasuryId)?.nameAr : "") || "---"}
+                    </td>
                     <td className="p-3.5 text-left font-mono font-bold text-emerald-400 text-sm print:text-black">
                       {formatCurrency(chk.amount, organization.currency, locale)}
                     </td>
@@ -327,7 +364,7 @@ export default function ReceivableChecksReportPage() {
               </tbody>
               <tfoot className="bg-slate-950 text-slate-300 font-bold border-t-2 border-slate-700 print:bg-gray-100 print:text-black">
                 <tr>
-                  <td colSpan={6} className="p-3.5 text-right">
+                  <td colSpan={7} className="p-3.5 text-right">
                     {isAr ? "الإجمالي الكلي للشيكات المعروضة:" : "Total Portfolio Amount:"}
                   </td>
                   <td className="p-3.5 text-left font-mono text-emerald-400 text-sm print:text-black">

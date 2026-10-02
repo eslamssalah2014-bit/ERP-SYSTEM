@@ -836,7 +836,8 @@ export function mapCheck(chk: any) {
   const accMatch = rawNotes.match(/\[ACC:([^\]]*)\]/);
   const ccMatch = rawNotes.match(/\[CC:([^\]]*)\]/);
   const draweeMatch = rawNotes.match(/\[DRAWEE:([^\]]*)\]/);
-  const cleanNotes = rawNotes.replace(/\[(VOUCHER|ACC|CC|DRAWEE):[^\]]*\]/g, "").trim();
+  const collBankMatch = rawNotes.match(/\[COLL_BANK:([^\]]*)\]/);
+  const cleanNotes = rawNotes.replace(/\[(VOUCHER|ACC|CC|DRAWEE|COLL_BANK):[^\]]*\]/g, "").trim();
 
   return {
     id: chk.id,
@@ -857,7 +858,7 @@ export function mapCheck(chk: any) {
     status: chk.status || "pending",
     targetTreasuryId: chk.target_treasury_id || undefined,
     draweeBank: (draweeMatch ? draweeMatch[1] : "") || chk.bank_name || undefined,
-    collectionBank: chk.collection_bank || undefined,
+    collectionBank: chk.collection_bank || (collBankMatch ? collBankMatch[1] : undefined) || undefined,
     voucherNumber: chk.voucher_number || (vMatch ? vMatch[1] : undefined) || undefined,
     receiptVoucherId: chk.receipt_voucher_id || undefined,
     notes: cleanNotes || chk.notes || "",
@@ -1167,97 +1168,127 @@ let hasSeededBaseline = false;
 async function ensureBaselineEntities(supabase: any) {
   if (hasSeededBaseline) return;
   try {
-    // 1. Ensure default Organization
-    await supabase.from("organizations").upsert([{
-      id: DEFAULT_ORG_ID,
-      name_ar: "شركة سند الدولية للحلول التكنولوجية",
-      name_en: "Sanad International Tech Solutions",
-      tax_number: "300123456700003",
-      commercial_register: "1010987654",
-      country: "EG",
-      currency: "EGP",
-      default_vat_rate: 14,
-      address: "مبنى 4، القرية الذكية، طريق مصر الإسكندرية الصحراوي، الجيزة، مصر",
-      plan_tier: "enterprise",
-    }], { onConflict: "id" });
+    // 1. Ensure default Organization only if missing (never overwrite saved settings)
+    const { data: existingOrg } = await supabase.from("organizations").select("id").eq("id", DEFAULT_ORG_ID).maybeSingle();
+    if (!existingOrg) {
+      await supabase.from("organizations").insert([{
+        id: DEFAULT_ORG_ID,
+        name_ar: "شركة سند الدولية للحلول التكنولوجية",
+        name_en: "Sanad International Tech Solutions",
+        tax_number: "300123456700003",
+        commercial_register: "1010987654",
+        country: "EG",
+        currency: "EGP",
+        default_vat_rate: 14,
+        address: "مبنى 4، القرية الذكية، طريق مصر الإسكندرية الصحراوي، الجيزة، مصر",
+        plan_tier: "enterprise",
+      }]);
+    }
 
-    // 2. Ensure default Branch
-    await supabase.from("branches").upsert([{
-      id: DEFAULT_BRANCH_ID,
-      organization_id: DEFAULT_ORG_ID,
-      code: "HQ-01",
-      name_ar: "الفرع الرئيسي - القاهرة",
-      name_en: "Cairo Headquarters",
-      city: "القاهرة",
-      address: "القرية الذكية، الجيزة",
-      phone: "+20 2 35350000",
-      is_headquarters: true,
-    }], { onConflict: "id" });
+    // 2. Ensure default Branch only if missing
+    const { data: existingBranch } = await supabase.from("branches").select("id").eq("id", DEFAULT_BRANCH_ID).maybeSingle();
+    if (!existingBranch) {
+      await supabase.from("branches").insert([{
+        id: DEFAULT_BRANCH_ID,
+        organization_id: DEFAULT_ORG_ID,
+        code: "HQ-01",
+        name_ar: "الفرع الرئيسي - القاهرة",
+        name_en: "Cairo Headquarters",
+        city: "القاهرة",
+        address: "القرية الذكية، الجيزة",
+        phone: "+20 2 35350000",
+        is_headquarters: true,
+      }]);
+    }
 
-    // 3. Ensure default User
-    await supabase.from("users").upsert([{
-      id: "00000000-0000-0000-0000-000000000003",
-      organization_id: DEFAULT_ORG_ID,
-      email: "admin@sanaderp.com",
-      name: "م. إسلام صلاح حسني",
-      role: "super_admin",
-      branch_id: DEFAULT_BRANCH_ID,
-      is_active: true,
-    }], { onConflict: "id" });
+    // 3. Ensure default User only if missing
+    const { data: existingUser } = await supabase.from("users").select("id").eq("id", "00000000-0000-0000-0000-000000000003").maybeSingle();
+    if (!existingUser) {
+      await supabase.from("users").insert([{
+        id: "00000000-0000-0000-0000-000000000003",
+        organization_id: DEFAULT_ORG_ID,
+        email: "admin@sanaderp.com",
+        name: "م. إسلام صلاح حسني",
+        role: "super_admin",
+        branch_id: DEFAULT_BRANCH_ID,
+        is_active: true,
+      }]);
+    }
 
-    // 4. Ensure default Warehouse
-    await supabase.from("warehouses").upsert([{
-      id: DEFAULT_WAREHOUSE_ID,
-      organization_id: DEFAULT_ORG_ID,
-      branch_id: DEFAULT_BRANCH_ID,
-      code: "WH-01",
-      name_ar: "المستودع المركزي الرئيسي",
-      name_en: "Main Central Warehouse",
-      location: "المنطقة الصناعية، 6 أكتوبر",
-      manager_name: "المشرف العام",
-      manager_phone: "+20 100 0000000",
-      is_default: true,
-    }], { onConflict: "id" });
+    // 4. Ensure default Warehouse only if missing
+    const { data: existingWh } = await supabase.from("warehouses").select("id").eq("id", DEFAULT_WAREHOUSE_ID).maybeSingle();
+    if (!existingWh) {
+      await supabase.from("warehouses").insert([{
+        id: DEFAULT_WAREHOUSE_ID,
+        organization_id: DEFAULT_ORG_ID,
+        branch_id: DEFAULT_BRANCH_ID,
+        code: "WH-01",
+        name_ar: "المستودع المركزي الرئيسي",
+        name_en: "Main Central Warehouse",
+        location: "المنطقة الصناعية، 6 أكتوبر",
+        manager_name: "المشرف العام",
+        manager_phone: "+20 100 0000000",
+        is_default: true,
+      }]);
+    }
 
     // 5. Ensure default Categories
-    await supabase.from("product_categories").upsert([
+    const { data: existingCats } = await supabase.from("product_categories").select("id");
+    const existingCatIds = new Set((existingCats || []).map((c: any) => c.id));
+    const initialCats = [
       { id: DEFAULT_CATEGORY_ID, organization_id: DEFAULT_ORG_ID, code: "CAT-GEN", name_ar: "عام / منتجات رئيسية", name_en: "General Products" },
       { id: "00000000-0000-0000-0000-000000000022", organization_id: DEFAULT_ORG_ID, code: "CAT-POS", name_ar: "أنظمة نقاط البيع والكاشير", name_en: "POS Systems" },
       { id: "00000000-0000-0000-0000-000000000023", organization_id: DEFAULT_ORG_ID, code: "CAT-HW", name_ar: "أجهزة كمبيوتر وخوادم", name_en: "Hardware & Servers" },
       { id: "00000000-0000-0000-0000-000000000024", organization_id: DEFAULT_ORG_ID, code: "CAT-SRV", name_ar: "خدمات ودعم فني", name_en: "Services & Support" },
-    ], { onConflict: "id" });
+    ].filter(c => !existingCatIds.has(c.id));
+    if (initialCats.length > 0) {
+      await supabase.from("product_categories").insert(initialCats);
+    }
 
     // 6. Ensure default Units
-    await supabase.from("product_units").upsert([
+    const { data: existingUnits } = await supabase.from("product_units").select("id");
+    const existingUnitIds = new Set((existingUnits || []).map((u: any) => u.id));
+    const initialUnitsList = [
       { id: DEFAULT_UNIT_ID, organization_id: DEFAULT_ORG_ID, code: "UNIT-PCS", name_ar: "قطعة", name_en: "Piece", symbol: "قطعة" },
       { id: "00000000-0000-0000-0000-000000000012", organization_id: DEFAULT_ORG_ID, code: "UNIT-SET", name_ar: "طقم / جهاز كامل", name_en: "Set", symbol: "طقم" },
       { id: "00000000-0000-0000-0000-000000000013", organization_id: DEFAULT_ORG_ID, code: "UNIT-SRV", name_ar: "خدمة / اشتراك", name_en: "Service", symbol: "خدمة" },
       { id: "00000000-0000-0000-0000-000000000014", organization_id: DEFAULT_ORG_ID, code: "UNIT-BOX", name_ar: "كرتونة", name_en: "Box", symbol: "كرتونة" },
-    ], { onConflict: "id" });
+    ].filter(u => !existingUnitIds.has(u.id));
+    if (initialUnitsList.length > 0) {
+      await supabase.from("product_units").insert(initialUnitsList);
+    }
 
     // 7. Ensure default POS Customer
-    await supabase.from("customers").upsert([{
-      id: DEFAULT_POS_CUSTOMER_ID,
-      organization_id: DEFAULT_ORG_ID,
-      code: "CUST-POS-CASH",
-      name_ar: "عميل نقدي نقاط البيع (POS Cash Customer)",
-      name_en: "Walk-in POS Customer",
-      mobile: "+20 100 0000000",
-      city: "القاهرة",
-      tax_number: "000000000000000",
-      credit_limit: 0,
-      payment_terms_days: 0,
-      current_balance: 0,
-      status: "active",
-    }], { onConflict: "id" });
+    const { data: existingPosCust } = await supabase.from("customers").select("id").eq("id", DEFAULT_POS_CUSTOMER_ID).maybeSingle();
+    if (!existingPosCust) {
+      await supabase.from("customers").insert([{
+        id: DEFAULT_POS_CUSTOMER_ID,
+        organization_id: DEFAULT_ORG_ID,
+        code: "CUST-POS-CASH",
+        name_ar: "عميل نقدي نقاط البيع (POS Cash Customer)",
+        name_en: "Walk-in POS Customer",
+        mobile: "+20 100 0000000",
+        city: "القاهرة",
+        tax_number: "000000000000000",
+        credit_limit: 0,
+        payment_terms_days: 0,
+        current_balance: 0,
+        status: "active",
+      }]);
+    }
 
     // 8. Ensure default Customer Categories
-    await supabase.from("customer_categories").upsert([
+    const { data: existingCustCats } = await supabase.from("customer_categories").select("id");
+    const existingCustCatIds = new Set((existingCustCats || []).map((c: any) => c.id));
+    const initialCustCats = [
       { id: "00000000-0000-0000-0000-000000000031", organization_id: DEFAULT_ORG_ID, code: "CUST-RETAIL", name_ar: "تجزئة / أفراد", name_en: "Retail", description: "العملاء الأفراد والمبيعات المباشرة" },
       { id: "00000000-0000-0000-0000-000000000032", organization_id: DEFAULT_ORG_ID, code: "CUST-WHOLESALE", name_ar: "جملة وتوزيع", name_en: "Wholesale", description: "تجار الجملة والموزعون المعتمدون" },
       { id: "00000000-0000-0000-0000-000000000033", organization_id: DEFAULT_ORG_ID, code: "CUST-VIP", name_ar: "عملاء VIP كبار", name_en: "VIP", description: "كبار العملاء والصفوة" },
       { id: "00000000-0000-0000-0000-000000000034", organization_id: DEFAULT_ORG_ID, code: "CUST-CORP", name_ar: "شركات ومؤسسات", name_en: "Corporate", description: "الشركات والمؤسسات والجهات الحكومية" },
-    ], { onConflict: "id" });
+    ].filter(c => !existingCustCatIds.has(c.id));
+    if (initialCustCats.length > 0) {
+      await supabase.from("customer_categories").insert(initialCustCats);
+    }
 
     // 9. Ensure default Treasury Accounts (SAFE-MAIN & BANK-MAIN with 0.00 initial balance)
     const { data: existingTreasuries } = await supabase.from("treasury_accounts").select("id");
@@ -3807,7 +3838,7 @@ export async function POST(request: Request) {
         const {
           id, organizationId, branchId, checkNumber, bankName, type, partyName,
           customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
-          status, targetTreasuryId, draweeBank, voucherNumber, notes, createdBy
+          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, notes, createdBy
         } = payload;
         const validId = cleanUUID(id, null);
         const validOrgId = cleanUUID(organizationId, DEFAULT_ORG_ID);
@@ -3819,6 +3850,7 @@ export async function POST(request: Request) {
           accountId ? `[ACC:${accountId}]` : "",
           costCenterId ? `[CC:${costCenterId}]` : "",
           draweeBank ? `[DRAWEE:${draweeBank}]` : "",
+          collectionBank ? `[COLL_BANK:${collectionBank}]` : "",
         ].filter(Boolean).join(" ");
 
         const rawRow: any = {
@@ -3855,7 +3887,7 @@ export async function POST(request: Request) {
         const {
           id, checkNumber, bankName, type, partyName,
           customerId, supplierId, accountId, costCenterId, amount, issueDate, dueDate,
-          status, targetTreasuryId, draweeBank, voucherNumber, notes
+          status, targetTreasuryId, draweeBank, collectionBank, voucherNumber, notes
         } = payload;
         const validId = cleanUUID(id, null);
         if (!validId) return noCacheResponse({ success: false, message: "Valid check ID is required" }, 400);
@@ -3866,6 +3898,7 @@ export async function POST(request: Request) {
           accountId ? `[ACC:${accountId}]` : "",
           costCenterId ? `[CC:${costCenterId}]` : "",
           draweeBank ? `[DRAWEE:${draweeBank}]` : "",
+          collectionBank ? `[COLL_BANK:${collectionBank}]` : "",
         ].filter(Boolean).join(" ");
 
         const rawUpdate: any = {};
@@ -3896,7 +3929,7 @@ export async function POST(request: Request) {
       }
 
       case "update_check_status": {
-        const { checkId, newStatus, targetTreasuryId } = payload;
+        const { checkId, newStatus, targetTreasuryId, collectionBank, notes } = payload;
         const validCheckId = cleanUUID(checkId, null);
         if (!validCheckId) return noCacheResponse({ success: false, message: "Invalid check ID" }, 400);
 
@@ -3904,6 +3937,22 @@ export async function POST(request: Request) {
         if (newStatus === "collected") {
           updateRow.collection_date = new Date().toISOString().split("T")[0];
           if (targetTreasuryId) updateRow.target_treasury_id = cleanUUID(targetTreasuryId, null);
+        }
+
+        if (collectionBank || notes) {
+          const { data: existingCheck } = await supabaseAdmin.from("check_records").select("notes").eq("id", validCheckId).single();
+          let currentNotes = existingCheck?.notes || "";
+          if (notes) {
+            currentNotes = `${notes} ${currentNotes}`.trim();
+          }
+          if (collectionBank) {
+            if (currentNotes.includes("[COLL_BANK:")) {
+              currentNotes = currentNotes.replace(/\[COLL_BANK:[^\]]*\]/g, `[COLL_BANK:${collectionBank}]`);
+            } else {
+              currentNotes = `${currentNotes} [COLL_BANK:${collectionBank}]`.trim();
+            }
+          }
+          updateRow.notes = currentNotes;
         }
 
         const { data: chk, error: chkErr } = await supabaseAdmin

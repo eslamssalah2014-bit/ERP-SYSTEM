@@ -15,7 +15,7 @@ import { CashPayment } from "@/types/erp";
 
 export default function CashPaymentsPage() {
   const {
-    treasuryAccounts, cashPayments, suppliers, accounts, costCenters,
+    treasuryAccounts, cashPayments, suppliers, customers, accounts, costCenters,
     createCashPayment, updateCashPayment, deleteCashPayment,
     organization, activeBranchId, currentUser, locale, hasPermission, isLoadingData
   } = useERP();
@@ -34,6 +34,24 @@ export default function CashPaymentsPage() {
   const [editingPayment, setEditingPayment] = useState<CashPayment | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Account Lookup & Party Type States (Requirement 11)
+  const [partyType, setPartyType] = useState<"supplier" | "customer" | "account">("supplier");
+  const [accTypeFilter, setAccTypeFilter] = useState<string>("all");
+  const [accSearchQuery, setAccSearchQuery] = useState("");
+
+  // Filtered Accounts from entire Chart of Accounts
+  const filteredDebitAccounts = React.useMemo(() => {
+    return accounts.filter(acc => {
+      const matchesType = accTypeFilter === "all" || acc.type === accTypeFilter;
+      const q = accSearchQuery.toLowerCase().trim();
+      const matchesQuery = !q ||
+        (acc.code && acc.code.toLowerCase().includes(q)) ||
+        (acc.nameAr && acc.nameAr.toLowerCase().includes(q)) ||
+        (acc.nameEn && acc.nameEn.toLowerCase().includes(q));
+      return matchesType && matchesQuery;
+    });
+  }, [accounts, accTypeFilter, accSearchQuery]);
 
   // Print Modal
   const [printData, setPrintData] = useState<VoucherPrintData | null>(null);
@@ -56,7 +74,10 @@ export default function CashPaymentsPage() {
   const handleOpenCreateModal = () => {
     setEditingPayment(null);
     setFormError(null);
-    const defaultTreasury = treasuryAccounts[0]?.id || "";
+    setAccSearchQuery("");
+    setAccTypeFilter("all");
+    setPartyType("supplier");
+    const defaultTreasury = treasuryAccounts.find(t => t.isDefault || t.code === "SAFE-MAIN" || t.type === "cash_box")?.id || treasuryAccounts[0]?.id || "";
     const defaultDebitAcc = accounts.find(a => a.code === "2101001" || a.code === "2110")?.id || accounts[0]?.id || "";
     setFormData({
       paymentNumber: "PAY-" + Date.now().toString().slice(-6),
@@ -486,61 +507,165 @@ export default function CashPaymentsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "المورد (اختياري لتسوية رصيد المورد):" : "Supplier (Optional):"}</label>
-              <select
-                value={formData.supplierId}
-                onChange={e => {
-                  const suppId = e.target.value;
-                  const s = suppliers.find(item => item.id === suppId);
-                  setFormData({
-                    ...formData,
-                    supplierId: suppId,
-                    paidTo: s ? (isAr ? s.nameAr : s.nameEn) : formData.paidTo
-                  });
-                }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="">{isAr ? "-- اختيار مورد من الدليل --" : "-- Select Supplier --"}</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {isAr ? s.nameAr : s.nameEn} ({isAr ? "رصيد مستحق:" : "Bal:"} {formatCurrency(s.currentBalance, organization.currency, locale)})
-                  </option>
-                ))}
-              </select>
+          {/* Requirement 11: Party & Account Type Selector */}
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-slate-300 font-semibold">{isAr ? "نوع الطرف المستفيد / الحساب المدين:" : "Payee Type / Account:"}</label>
+              <div className="flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartyType("supplier");
+                    const apAcc = accounts.find(a => a.code === "2101001" || a.code === "2110")?.id || accounts[0]?.id || "";
+                    setFormData(prev => ({ ...prev, debitAccountId: apAcc }));
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-all font-medium ${partyType === "supplier" ? "bg-amber-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                >
+                  {isAr ? "مورد" : "Supplier"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartyType("customer");
+                    const arAcc = accounts.find(a => a.code === "1102001" || a.code === "1120")?.id || accounts[0]?.id || "";
+                    setFormData(prev => ({ ...prev, supplierId: "", debitAccountId: arAcc }));
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-all font-medium ${partyType === "customer" ? "bg-amber-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                >
+                  {isAr ? "عميل (رد نقدية)" : "Customer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartyType("account");
+                    setFormData(prev => ({ ...prev, supplierId: "" }));
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-all font-medium ${partyType === "account" ? "bg-amber-600 text-white shadow" : "text-slate-400 hover:text-white"}`}
+                >
+                  {isAr ? "شجرة الحسابات العامة" : "All COA"}
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "المدفوع له (الاسم / الجهة المستفيدة):" : "Paid To:"}</label>
-              <input
-                type="text"
-                value={formData.paidTo}
-                onChange={e => setFormData({ ...formData, paidTo: e.target.value })}
-                placeholder={isAr ? "اسم المورد أو المستفيد..." : "Payee name..."}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              {partyType === "supplier" && (
+                <div>
+                  <label className="block text-slate-400 mb-1">{isAr ? "اختيار المورد من الدليل:" : "Select Supplier:"}</label>
+                  <select
+                    value={formData.supplierId}
+                    onChange={e => {
+                      const suppId = e.target.value;
+                      const s = suppliers.find(item => item.id === suppId);
+                      setFormData({
+                        ...formData,
+                        supplierId: suppId,
+                        paidTo: s ? (isAr ? s.nameAr : s.nameEn) : formData.paidTo
+                      });
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="">{isAr ? "-- اختيار مورد --" : "-- Select Supplier --"}</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {isAr ? s.nameAr : s.nameEn} ({isAr ? "رصيد مستحق:" : "Bal:"} {formatCurrency(s.currentBalance, organization.currency, locale)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {partyType === "customer" && (
+                <div>
+                  <label className="block text-slate-400 mb-1">{isAr ? "اختيار العميل (رد مبالغ / تسوية):" : "Select Customer:"}</label>
+                  <select
+                    onChange={e => {
+                      const custId = e.target.value;
+                      const c = customers.find(item => item.id === custId);
+                      setFormData({
+                        ...formData,
+                        supplierId: "",
+                        paidTo: c ? (isAr ? c.nameAr : c.nameEn) : formData.paidTo
+                      });
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="">{isAr ? "-- اختيار عميل --" : "-- Select Customer --"}</option>
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {isAr ? c.nameAr : c.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className={partyType === "account" ? "col-span-2" : ""}>
+                <label className="block text-slate-400 mb-1">{isAr ? "المدفوع له (الاسم / المستفيد):" : "Paid To (Payee Name):"}</label>
+                <input
+                  type="text"
+                  value={formData.paidTo}
+                  onChange={e => setFormData({ ...formData, paidTo: e.target.value })}
+                  placeholder={isAr ? "اسم المورد أو المستفيد..." : "Payee name..."}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                  required
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "الحساب المدين (المصروف أو الالتزام):" : "Debit Account (COA):"}</label>
-              <select
-                value={formData.debitAccountId}
-                onChange={e => setFormData({ ...formData, debitAccountId: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                required
-              >
-                {accounts.filter(a => a.type === "expense" || a.type === "liabilities" || a.type === "assets").map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} - {isAr ? a.nameAr : a.nameEn}
-                  </option>
+          {/* Full Chart of Accounts Selection with Search & Type Filter */}
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <label className="text-slate-300 font-semibold">{isAr ? "الحساب المدين (المقابل في كامل دليل الحسابات):" : "Debit Account (Full COA):"}</label>
+              
+              {/* Account Type Tabs */}
+              <div className="flex flex-wrap gap-1 text-[10px]">
+                {[
+                  { id: "all", name: isAr ? "الكل" : "All" },
+                  { id: "expense", name: isAr ? "المصروفات" : "Exp" },
+                  { id: "liabilities", name: isAr ? "الخصوم" : "Liab" },
+                  { id: "assets", name: isAr ? "الأصول" : "Assets" },
+                  { id: "equity", name: isAr ? "الملكية" : "Equity" },
+                  { id: "revenue", name: isAr ? "الإيرادات" : "Rev" },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setAccTypeFilter(tab.id)}
+                    className={`px-2 py-0.5 rounded transition-all ${accTypeFilter === tab.id ? "bg-amber-600 text-white font-bold" : "bg-slate-900 text-slate-400 hover:text-white"}`}
+                  >
+                    {tab.name}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute right-2.5 top-2.5 text-slate-500" />
+              <input
+                type="text"
+                value={accSearchQuery}
+                onChange={e => setAccSearchQuery(e.target.value)}
+                placeholder={isAr ? "بحث بالاسم أو الكود في شجرة الحسابات..." : "Search accounts by code or name..."}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg pr-8 pl-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <select
+              value={formData.debitAccountId}
+              onChange={e => setFormData({ ...formData, debitAccountId: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+              required
+            >
+              {filteredDebitAccounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.code} - {isAr ? a.nameAr : a.nameEn} ({a.type})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
             <div>
               <label className="block text-slate-400 mb-1">{isAr ? "مركز التكلفة / المشروع (اختياري):" : "Cost Center (Optional):"}</label>
               <select

@@ -90,8 +90,29 @@ export default function Dashboard() {
     return totalQty <= p.minStockLevel;
   }), [products]);
 
-  // Due checks
-  const pendingChecks = useMemo(() => checks.filter(c => c.status === "pending"), [checks]);
+  // Separate Cheque Portfolios (Notes Receivable vs Notes Payable)
+  const receivableChecks = useMemo(() => checks.filter(c => c.type === "incoming"), [checks]);
+  const payableChecks = useMemo(() => checks.filter(c => c.type === "outgoing"), [checks]);
+
+  const pendingReceivableChecks = useMemo(() => 
+    receivableChecks.filter(c => c.status === "pending" || c.status === "under_collection"),
+    [receivableChecks]
+  );
+  const pendingPayableChecks = useMemo(() => 
+    payableChecks.filter(c => c.status === "pending"),
+    [payableChecks]
+  );
+
+  const totalReceivableAmount = useMemo(() => 
+    pendingReceivableChecks.reduce((sum, c) => sum + (Number(c.amount) || 0), 0),
+    [pendingReceivableChecks]
+  );
+  const totalPayableAmount = useMemo(() => 
+    pendingPayableChecks.reduce((sum, c) => sum + (Number(c.amount) || 0), 0),
+    [pendingPayableChecks]
+  );
+
+  const [activeCheckTab, setActiveCheckTab] = useState<"incoming" | "outgoing">("incoming");
 
   // Real-time Monthly Chart Data dynamically calculated from actual invoices
   const monthlyChartData = useMemo(() => {
@@ -397,51 +418,136 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Due Checks Dashboard */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        {/* Due Checks Dashboard - Strictly Separated Portfolios */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <CheckSquare className="w-5 h-5 text-emerald-400" />
               <h2 className="text-sm font-bold text-white">
-                {isAr ? "حافظة الشيكات المستحقة" : "Pending Checks"}
+                {isAr ? "محفظة الشيكات" : "Cheques Portfolio"}
               </h2>
             </div>
-            <Link href="/checks" className="text-xs text-emerald-400 hover:underline">
-              {isAr ? "إدارة الشيكات" : "Manage"}
+            <Link 
+              href={activeCheckTab === "incoming" ? "/checks/receivable" : "/checks"} 
+              className="text-xs text-emerald-400 hover:underline"
+            >
+              {isAr ? "سجل الحافظة" : "Manage"}
             </Link>
           </div>
 
-          <div className="space-y-3">
-            {pendingChecks.length === 0 ? (
-              <div className="text-xs text-slate-500 text-center py-8">
-                {isAr ? "لا توجد شيكات معلقة للتحصيل أو الصرف" : "No pending checks recorded"}
-              </div>
-            ) : (
-              pendingChecks.map(chk => (
-                <div key={chk.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white font-mono">{chk.checkNumber}</span>
-                    <span className="text-xs font-bold text-emerald-400 font-mono">
-                      {formatCurrency(chk.amount, organization.currency, locale)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>{chk.partyName}</span>
-                    <span className="flex items-center gap-1 text-amber-400 font-medium">
-                      <Clock className="w-3 h-3" />
-                      <span>{chk.dueDate}</span>
-                    </span>
-                  </div>
-                  <div className="flex justify-end pt-1">
-                    <button
-                      onClick={() => updateCheckStatus(chk.id, "collected", treasuryAccounts[0]?.id)}
-                      className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-[10px] font-bold rounded-lg transition-colors border border-emerald-500/30"
-                    >
-                      {isAr ? "تحصيل وإيداع بالخزينة" : "Collect Check"}
-                    </button>
-                  </div>
+          {/* Portfolio Type Tabs */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 mb-3">
+            <button
+              onClick={() => setActiveCheckTab("incoming")}
+              className={`py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                activeCheckTab === "incoming"
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>{isAr ? "أوراق قبض (واردة)" : "Receivable"}</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-black/30 rounded-full font-mono">
+                {pendingReceivableChecks.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveCheckTab("outgoing")}
+              className={`py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                activeCheckTab === "outgoing"
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>{isAr ? "أوراق دفع (صادرة)" : "Payable"}</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-black/30 rounded-full font-mono">
+                {pendingPayableChecks.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Portfolio KPI Summary */}
+          <div className="p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/80 mb-3 flex items-center justify-between text-xs">
+            <span className="text-slate-400">
+              {activeCheckTab === "incoming"
+                ? (isAr ? "إجمالي شيكات القبض المستحقة:" : "Pending Receivable Total:")
+                : (isAr ? "إجمالي شيكات الدفع المستحقة:" : "Pending Payable Total:")}
+            </span>
+            <span className="font-mono font-bold text-emerald-400">
+              {formatCurrency(
+                activeCheckTab === "incoming" ? totalReceivableAmount : totalPayableAmount,
+                organization.currency,
+                locale
+              )}
+            </span>
+          </div>
+
+          <div className="space-y-3 flex-1 overflow-y-auto max-h-[320px]">
+            {activeCheckTab === "incoming" ? (
+              pendingReceivableChecks.length === 0 ? (
+                <div className="text-xs text-slate-500 text-center py-8">
+                  {isAr ? "لا توجد شيكات قبض معلقة للتحصيل" : "No pending receivable checks"}
                 </div>
-              ))
+              ) : (
+                pendingReceivableChecks.map(chk => (
+                  <div key={chk.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white font-mono">{chk.checkNumber}</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">
+                        {formatCurrency(chk.amount, organization.currency, locale)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>{chk.partyName}</span>
+                      <span className="flex items-center gap-1 text-amber-400 font-medium font-sans">
+                        <Clock className="w-3 h-3" />
+                        <span>{chk.dueDate}</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-800/40 text-[10px]">
+                      <span className="text-slate-500">{chk.bankName}</span>
+                      <Link
+                        href={`/checks/status?id=${chk.id}`}
+                        className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-[10px] font-bold rounded-lg transition-colors border border-emerald-500/30"
+                      >
+                        {isAr ? "تحصيل / تغيير الحالة" : "Change Status"}
+                      </Link>
+                    </div>
+                  </div>
+                ))
+              )
+            ) : (
+              pendingPayableChecks.length === 0 ? (
+                <div className="text-xs text-slate-500 text-center py-8">
+                  {isAr ? "لا توجد شيكات دفع صادرة معلقة" : "No pending payable checks"}
+                </div>
+              ) : (
+                pendingPayableChecks.map(chk => (
+                  <div key={chk.id} className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white font-mono">{chk.checkNumber}</span>
+                      <span className="text-xs font-bold text-rose-400 font-mono">
+                        {formatCurrency(chk.amount, organization.currency, locale)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>{chk.partyName}</span>
+                      <span className="flex items-center gap-1 text-amber-400 font-medium font-sans">
+                        <Clock className="w-3 h-3" />
+                        <span>{chk.dueDate}</span>
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-800/40 text-[10px]">
+                      <span className="text-slate-500">{chk.bankName}</span>
+                      <Link
+                        href="/checks"
+                        className="px-2.5 py-1 bg-sky-600/20 hover:bg-sky-600 text-sky-400 hover:text-white text-[10px] font-bold rounded-lg transition-colors border border-sky-500/30"
+                      >
+                        {isAr ? "صرف / متابعة" : "View"}
+                      </Link>
+                    </div>
+                  </div>
+                ))
+              )
             )}
           </div>
         </div>

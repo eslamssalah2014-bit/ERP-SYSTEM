@@ -36,6 +36,19 @@ export default function ChartOfAccountsPage() {
   const [nature, setNature] = useState<"debit" | "credit">("debit");
   const [isActive, setIsActive] = useState(true);
 
+  // Helper to prevent circular hierarchy
+  const getAccountDescendantIds = (accId: string, all: Account[]): Set<string> => {
+    const descendants = new Set<string>();
+    const collect = (id: string) => {
+      all.filter(a => a.parentId === id).forEach(child => {
+        descendants.add(child.id);
+        collect(child.id);
+      });
+    };
+    collect(accId);
+    return descendants;
+  };
+
   // Expanded Tree State
   const [expandedNodes, setExpandedNodes] = useState<{ [id: string]: boolean }>({});
 
@@ -148,6 +161,18 @@ export default function ChartOfAccountsPage() {
       return;
     }
 
+    if (parentId) {
+      if (parentId === editingAccount.id) {
+        setFormError(isAr ? "لا يمكن اختيار الحساب كأب لنفسه" : "An account cannot be its own parent");
+        return;
+      }
+      const descendants = getAccountDescendantIds(editingAccount.id, accounts);
+      if (descendants.has(parentId)) {
+        setFormError(isAr ? "لا يمكن اختيار أحد الحسابات التابعة كأب (تجنب الحلقات الدائرية المغلقة)" : "Cannot select a descendant account as parent (prevent circular reference)");
+        return;
+      }
+    }
+
     const parent = parentId ? accounts.find(a => a.id === parentId) : null;
     const computedLevel = parent ? parent.level + 1 : 1;
 
@@ -203,7 +228,13 @@ export default function ChartOfAccountsPage() {
     const tree = buildHierarchicalAccountTree(accounts);
     return tree.filter(acc => {
       if (selectedType !== "all" && acc.type !== selectedType) return false;
-      if (selectedLevel !== "all" && acc.level !== Number(selectedLevel)) return false;
+      if (selectedLevel !== "all") {
+        if (selectedLevel === "6") {
+          if (acc.level < 6) return false;
+        } else if (acc.level !== Number(selectedLevel)) {
+          return false;
+        }
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         return (
@@ -238,10 +269,20 @@ export default function ChartOfAccountsPage() {
     switch (lvl) {
       case 1: return <span className="px-1.5 py-0.5 bg-indigo-500/20 text-indigo-300 font-mono font-bold rounded text-[10px]">L1 رئيسي</span>;
       case 2: return <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 font-mono font-bold rounded text-[10px]">L2 عام</span>;
-      case 3: return <span className="px-1.5 py-0.5 bg-teal-500/20 text-teal-300 font-mono font-bold rounded text-[10px]">L3 فرعي</span>;
-      case 4: default: return <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 font-mono font-bold rounded text-[10px]">L4 تحليلي</span>;
+      case 3: return <span className="px-1.5 py-0.5 bg-teal-500/20 text-teal-300 font-mono font-bold rounded text-[10px]">L3 مساعد</span>;
+      case 4: return <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 font-mono font-bold rounded text-[10px]">L4 فرعي</span>;
+      default: return <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 font-mono font-bold rounded text-[10px]">L{lvl} تحليلي</span>;
     }
   };
+
+  const orderedAccountsForSelect = useMemo(() => {
+    return buildHierarchicalAccountTree(accounts);
+  }, [accounts]);
+
+  const editingDescendants = useMemo(() => {
+    if (!editingAccount) return new Set<string>();
+    return getAccountDescendantIds(editingAccount.id, accounts);
+  }, [editingAccount, accounts]);
 
   if (isLoadingData) {
     return <TableSkeleton rows={8} columns={6} summaryCards={4} isAr={isAr} />;
@@ -348,9 +389,11 @@ export default function ChartOfAccountsPage() {
           >
             <option value="all">{isAr ? "كل المستويات" : "All Levels"}</option>
             <option value="1">{isAr ? "المستوى 1 (رئيسي)" : "Level 1 (Class)"}</option>
-            <option value="2">{isAr ? "المستوى 2 (مجموعة)" : "Level 2 (Group)"}</option>
-            <option value="3">{isAr ? "المستوى 3 (حساب عام)" : "Level 3 (General)"}</option>
-            <option value="4">{isAr ? "المستوى 4 (حساب تحليلي)" : "Level 4 (Posting)"}</option>
+            <option value="2">{isAr ? "المستوى 2 (عام)" : "Level 2 (Group)"}</option>
+            <option value="3">{isAr ? "المستوى 3 (مساعد)" : "Level 3 (General)"}</option>
+            <option value="4">{isAr ? "المستوى 4 (فرعي)" : "Level 4 (Posting)"}</option>
+            <option value="5">{isAr ? "المستوى 5 (تحليلي)" : "Level 5 (Sub)"}</option>
+            <option value="6">{isAr ? "المستوى 6 فما فوق" : "Level 6+"}</option>
           </select>
         </div>
       </div>
@@ -411,7 +454,7 @@ export default function ChartOfAccountsPage() {
                         >
                           {isIndented && (
                             <span className="text-slate-600 font-mono text-sm select-none">
-                              {acc.level === 4 ? "↳" : "├─"}
+                              {acc.level >= 4 ? "↳" : "├─"}
                             </span>
                           )}
                           <div className="flex flex-col">
@@ -514,9 +557,9 @@ export default function ChartOfAccountsPage() {
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500"
             >
               <option value="">{isAr ? "--- حساب رئيسي من المستوى الأول (Root Class) ---" : "Top Level (Root Class)"}</option>
-              {accounts.filter(a => a.level < 4).map(a => (
+              {orderedAccountsForSelect.map(a => (
                 <option key={a.id} value={a.id}>
-                  {a.code} - {a.nameAr} ({getLevelBadge(a.level).props.children})
+                  {"— ".repeat(Math.max(0, a.level - 1))}{a.code} - {a.nameAr} (L{a.level})
                 </option>
               ))}
             </select>
@@ -652,11 +695,11 @@ export default function ChartOfAccountsPage() {
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500"
             >
               <option value="">{isAr ? "--- حساب رئيسي أعلى (Top Level) ---" : "Top Level"}</option>
-              {accounts
-                .filter(a => a.id !== editingAccount?.id && a.parentId !== editingAccount?.id && a.level < 4)
+              {orderedAccountsForSelect
+                .filter(a => a.id !== editingAccount?.id && !editingDescendants.has(a.id))
                 .map(a => (
                   <option key={a.id} value={a.id}>
-                    {a.code} - {a.nameAr}
+                    {"— ".repeat(Math.max(0, a.level - 1))}{a.code} - {a.nameAr} (L{a.level})
                   </option>
                 ))}
             </select>
