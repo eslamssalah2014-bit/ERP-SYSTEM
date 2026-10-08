@@ -84,6 +84,36 @@ export default function FixedAssetsRegisterPage() {
     }).sort((a, b) => (a.code || "").localeCompare(b.code || ""));
   }, [accounts]);
 
+  // Asset-related Cost Centers (Requirement 11)
+  const assetCostCenters = useMemo(() => {
+    return costCenters.filter(cc => {
+      const code = (cc.code || "").toUpperCase();
+      const name = cc.nameAr || "";
+      const isAssetCode = code.startsWith("A") || code.startsWith("AST") || code.startsWith("FA");
+      const isAssetName =
+        name.includes("سيار") ||
+        name.includes("مبن") ||
+        name.includes("أرض") ||
+        name.includes("ارض") ||
+        name.includes("اثاث") ||
+        name.includes("أثاث") ||
+        name.includes("كمبيوتر") ||
+        name.includes("حاسب") ||
+        name.includes("مكتب") ||
+        name.includes("أصل") ||
+        name.includes("تجهيز");
+      const parent = costCenters.find(p => p.id === cc.parentId);
+      const isParentAsset = parent && (
+        (parent.code || "").toUpperCase().startsWith("A") ||
+        parent.nameAr?.includes("أصل") ||
+        parent.nameAr?.includes("مبان") ||
+        parent.nameAr?.includes("سيار") ||
+        parent.nameAr?.includes("اثاث")
+      );
+      return isAssetCode || isAssetName || isParentAsset;
+    });
+  }, [costCenters]);
+
   // Asset type icons helper
   const getAssetIcon = (accCode?: string, name?: string) => {
     const text = (accCode || "") + " " + (name || "");
@@ -208,6 +238,35 @@ export default function FixedAssetsRegisterPage() {
     setFormCostCenterId(asset.costCenterId || "");
     setFormNotes(asset.notes || "");
     setIsFormModalOpen(true);
+  };
+
+  // Requirement 11: Auto-populate Asset Name & Code from Cost Centers
+  const handleSelectCostCenter = (costCenterId: string) => {
+    if (!costCenterId) return;
+    const cc = costCenters.find(c => c.id === costCenterId);
+    if (!cc) return;
+    setFormCode(cc.code || "");
+    setFormName(cc.nameAr || "");
+    setFormCostCenterId(cc.id);
+
+    const code = (cc.code || "").toUpperCase();
+    const name = cc.nameAr || "";
+    let matchingAcc: Account | undefined;
+    if (code.startsWith("ACA") || name.includes("سيار")) {
+      matchingAcc = fixedAssetAccounts.find(a => (a.code || "").includes("1201003") || a.nameAr.includes("سيارات"));
+    } else if (code.startsWith("ABU") || name.includes("مبن")) {
+      matchingAcc = fixedAssetAccounts.find(a => (a.code || "").includes("1201002") || a.nameAr.includes("مباني"));
+    } else if (code.startsWith("ALA") || name.includes("أرض") || name.includes("ارض")) {
+      matchingAcc = fixedAssetAccounts.find(a => (a.code || "").includes("1201001") || a.nameAr.includes("أراضي"));
+    } else if (code.startsWith("AFU") || name.includes("اثاث") || name.includes("أثاث") || name.includes("تجهيز") || name.includes("مكتب")) {
+      matchingAcc = fixedAssetAccounts.find(a => (a.code || "").includes("1201006") || a.nameAr.includes("أثاث"));
+    } else if (code.startsWith("ACO") || name.includes("كمبيوتر") || name.includes("حاسب")) {
+      matchingAcc = fixedAssetAccounts.find(a => (a.code || "").includes("1201005") || a.nameAr.includes("حاسب"));
+    }
+    if (matchingAcc) {
+      setFormAccountId(matchingAcc.id);
+    }
+    showToast(isAr ? `تم استرجاع اسم وكود الأصل من مركز التكلفة [${cc.code}]` : `Loaded from Cost Center [${cc.code}]`, "success");
   };
 
   const handleSaveAsset = async (e: React.FormEvent) => {
@@ -469,8 +528,8 @@ export default function FixedAssetsRegisterPage() {
                 <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
                   <th className="p-3.5 rounded-r-lg">#</th>
                   <th className="p-3.5 font-mono">{isAr ? "كود الأصل" : "Asset Code"}</th>
-                  <th className="p-3.5">{isAr ? "اسم الأصل" : "Asset Name"}</th>
-                  <th className="p-3.5">{isAr ? "الحساب الرئيسي" : "Main Asset Account"}</th>
+                  <th className="p-3.5">{isAr ? "اسم الأصل الفرعي" : "Sub Asset Name"}</th>
+                  <th className="p-3.5">{isAr ? "الحساب الرئيسي للأصل" : "Main Asset Account"}</th>
                   <th className="p-3.5">{isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
                   <th className="p-3.5 text-center font-mono">{isAr ? "قيمة الشراء" : "Purchase Value"}</th>
                   <th className="p-3.5 text-center font-mono">{isAr ? "إهلاك أول المدة" : "Opening Deprec"}</th>
@@ -575,9 +634,9 @@ export default function FixedAssetsRegisterPage() {
               <thead>
                 <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
                   <th className="p-3.5 rounded-r-lg">#</th>
-                  <th className="p-3.5">{isAr ? "اسم الأصل" : "Asset Name"}</th>
+                  <th className="p-3.5">{isAr ? "اسم الأصل الفرعي" : "Sub Asset Name"}</th>
                   <th className="p-3.5 font-mono">{isAr ? "كود الأصل" : "Asset Code"}</th>
-                  <th className="p-3.5">{isAr ? "الحساب الرئيسي" : "Main Asset Account"}</th>
+                  <th className="p-3.5">{isAr ? "الحساب الرئيسي للأصل" : "Main Asset Account"}</th>
                   <th className="p-3.5">{isAr ? "تاريخ الشراء" : "Purchase Date"}</th>
                   <th className="p-3.5 text-center font-mono">{isAr ? "قيمة الشراء" : "Purchase Value"}</th>
                   <th className="p-3.5 text-center font-mono">{isAr ? "إهلاك أول المدة" : "Opening Deprec"}</th>
@@ -641,6 +700,43 @@ export default function FixedAssetsRegisterPage() {
                 {formError}
               </div>
             )}
+            {/* Requirement 11: Auto-populate from Cost Centers */}
+            <div className="p-3 bg-slate-950/80 rounded-2xl border border-emerald-500/40">
+              <label className="text-xs text-emerald-400 block mb-1 font-bold flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-emerald-400" />
+                  {isAr ? "اختيار الأصل من مراكز التكلفة (Cost Centers)" : "Select Asset from Cost Centers"}
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  {isAr ? "تحميل اسم الأصل وكوده تلقائياً" : "Auto-populate Asset Name & Code"}
+                </span>
+              </label>
+              <select
+                value={formCostCenterId}
+                onChange={(e) => handleSelectCostCenter(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 rounded-xl focus:border-emerald-500 font-semibold"
+              >
+                <option value="">{isAr ? "-- اختر الأصل من مراكز التكلفة للتحميل التلقائي --" : "-- Select from Cost Centers --"}</option>
+                {assetCostCenters.length > 0 && (
+                  <optgroup label={isAr ? "مراكز تكلفة الأصول الثابتة" : "Fixed Asset Cost Centers"}>
+                    {assetCostCenters.map(cc => (
+                      <option key={cc.id} value={cc.id}>
+                        [{cc.code}] {cc.nameAr} {cc.nameEn ? `(${cc.nameEn})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {costCenters.filter(cc => !assetCostCenters.some(a => a.id === cc.id)).length > 0 && (
+                  <optgroup label={isAr ? "باقي مراكز التكلفة" : "Other Cost Centers"}>
+                    {costCenters.filter(cc => !assetCostCenters.some(a => a.id === cc.id)).map(cc => (
+                      <option key={cc.id} value={cc.id}>
+                        [{cc.code}] {cc.nameAr} {cc.nameEn ? `(${cc.nameEn})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Asset Code */}

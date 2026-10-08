@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import { useERP } from "@/context/erp-context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Modal from "@/components/ui/Modal";
@@ -9,7 +10,8 @@ import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   CheckSquare, Plus, ArrowDownLeft, Search, Filter,
   Printer, Edit2, Trash2, CheckCircle2, Building2,
-  Calendar, FileText, User, Layers, Trash, Loader2, Eye, DollarSign
+  Calendar, FileText, User, Layers, Trash, Loader2, Eye, DollarSign,
+  AlertCircle
 } from "lucide-react";
 import { CheckRecord, CheckStatus } from "@/types/erp";
 
@@ -19,13 +21,27 @@ interface CheckRowItem {
   draweeBank: string;
   dueDate: string;
   amount: number;
+  status?: CheckStatus;
 }
 
-export default function ReceivableChecksPage() {
+interface VoucherSummary {
+  voucherNumber: string;
+  date: string;
+  partyName: string;
+  customerId?: string;
+  accountId?: string;
+  costCenterId?: string;
+  notes?: string;
+  totalAmount: number;
+  checks: CheckRecord[];
+  statuses: CheckStatus[];
+}
+
+export default function ReceivableNotesVoucherPage() {
   const {
     checks, customers, accounts, costCenters, treasuryAccounts,
     addCheck, addCheckReceiptVoucher, updateCheck, deleteCheck, organization,
-    activeBranchId, currentUser, locale, hasPermission, isLoadingData
+    activeBranchId, currentUser, locale, hasPermission, isLoadingData, showToast
   } = useERP();
 
   const isAr = locale === "ar";
@@ -41,30 +57,30 @@ export default function ReceivableChecksPage() {
   const [minAmount, setMinAmount] = useState<string>("");
   const [maxAmount, setMaxAmount] = useState<string>("");
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Create Modal State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // View Check Modal State
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [viewingCheck, setViewingCheck] = useState<CheckRecord | null>(null);
+  // View Voucher Modal State (Requirement 8)
+  const [isViewVoucherModalOpen, setIsViewVoucherModalOpen] = useState(false);
+  const [viewingVoucher, setViewingVoucher] = useState<VoucherSummary | null>(null);
 
-  // Edit Check Modal State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingCheck, setEditingCheck] = useState<CheckRecord | null>(null);
-  const [editForm, setEditForm] = useState({
-    checkNumber: "",
-    partyName: "",
-    customerId: "",
-    draweeBank: "",
-    collectionBank: "",
-    issueDate: "",
-    dueDate: "",
-    amount: 0,
-    status: "in_treasury" as CheckStatus,
-    notes: ""
-  });
+  // Edit Voucher Modal State (Requirement 8)
+  const [isEditVoucherModalOpen, setIsEditVoucherModalOpen] = useState(false);
+  const [editingVoucher, setEditingVoucher] = useState<VoucherSummary | null>(null);
+  const [editVoucherDate, setEditVoucherDate] = useState("");
+  const [editCustomerId, setEditCustomerId] = useState("");
+  const [editPartyName, setEditPartyName] = useState("");
+  const [editVoucherNotes, setEditVoucherNotes] = useState("");
+  const [editCheckItems, setEditCheckItems] = useState<Array<{
+    existingId?: string;
+    checkNumber: string;
+    draweeBank: string;
+    dueDate: string;
+    amount: number;
+    status: CheckStatus;
+  }>>([]);
 
   // Print Modal
   const [printData, setPrintData] = useState<VoucherPrintData | null>(null);
@@ -79,8 +95,8 @@ export default function ReceivableChecksPage() {
   const [costCenterId, setCostCenterId] = useState("");
   const [voucherNotes, setVoucherNotes] = useState("");
 
-  // Source bank names ONLY from Chart of Accounts & Treasury accounts (no hardcoding, no phantom data)
-  const availableBanks = React.useMemo(() => {
+  // Source bank names ONLY from Chart of Accounts & Treasury accounts
+  const availableBanks = useMemo(() => {
     const set = new Set<string>();
     treasuryAccounts.forEach(t => {
       if (t.bankName && t.bankName.trim()) set.add(t.bankName.trim());
@@ -104,6 +120,115 @@ export default function ReceivableChecksPage() {
     }
   ]);
 
+  // Group incoming checks into Vouchers (Requirement 8: Voucher Registry)
+  const incomingChecks = useMemo(() => checks.filter(c => c.type === "incoming"), [checks]);
+
+  const voucherRegistry = useMemo(() => {
+    const map = new Map<string, VoucherSummary>();
+
+    incomingChecks.forEach(chk => {
+      // Determine voucher number
+      let vNum = chk.voucherNumber || "";
+      if (!vNum && chk.notes && chk.notes.includes("[VOUCHER:")) {
+        const match = chk.notes.match(/\[VOUCHER:([^\]]+)\]/);
+        if (match) vNum = match[1];
+      }
+      if (!vNum) {
+        vNum = `RCV-${chk.checkNumber}`;
+      }
+
+      const existing = map.get(vNum) || {
+        voucherNumber: vNum,
+        date: chk.issueDate || (chk.createdAt ? chk.createdAt.split("T")[0] : ""),
+        partyName: chk.partyName,
+        customerId: chk.customerId,
+        accountId: chk.accountId,
+        costCenterId: chk.costCenterId,
+        notes: chk.notes || "",
+        totalAmount: 0,
+        checks: [],
+        statuses: []
+      };
+
+      existing.totalAmount += Number(chk.amount) || 0;
+      existing.checks.push(chk);
+      if (!existing.statuses.includes(chk.status)) {
+        existing.statuses.push(chk.status);
+      }
+      // If header fields missing, take from check
+      if (!existing.partyName && chk.partyName) existing.partyName = chk.partyName;
+      if (!existing.customerId && chk.customerId) existing.customerId = chk.customerId;
+
+      map.set(vNum, existing);
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [incomingChecks]);
+
+  // Filter Vouchers
+  const filteredVouchers = useMemo(() => {
+    return voucherRegistry.filter(v => {
+      // Search
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase().trim();
+        const matchVNum = v.voucherNumber.toLowerCase().includes(q);
+        const matchParty = v.partyName.toLowerCase().includes(q);
+        const matchCheckNum = v.checks.some(c => c.checkNumber.toLowerCase().includes(q));
+        const matchBank = v.checks.some(c => (c.draweeBank || c.bankName).toLowerCase().includes(q));
+        if (!matchVNum && !matchParty && !matchCheckNum && !matchBank) return false;
+      }
+
+      // Customer Filter
+      if (selectedCustomerFilter !== "all" && v.customerId !== selectedCustomerFilter) {
+        return false;
+      }
+
+      // Date Filters
+      if (dateFrom && v.date < dateFrom) return false;
+      if (dateTo && v.date > dateTo) return false;
+
+      // Status Filter
+      if (selectedStatusFilter !== "all") {
+        const hasStatus = v.checks.some(c => c.status === selectedStatusFilter);
+        if (!hasStatus) return false;
+      }
+
+      // Bank Filter
+      if (selectedBankFilter !== "all") {
+        const hasBank = v.checks.some(c => (c.draweeBank || c.bankName) === selectedBankFilter);
+        if (!hasBank) return false;
+      }
+
+      // Amount Filters
+      if (minAmount && v.totalAmount < parseFloat(minAmount)) return false;
+      if (maxAmount && v.totalAmount > parseFloat(maxAmount)) return false;
+
+      return true;
+    });
+  }, [voucherRegistry, searchTerm, selectedCustomerFilter, selectedStatusFilter, selectedBankFilter, dateFrom, dateTo, minAmount, maxAmount]);
+
+  // Totals
+  const totalRegistryAmount = useMemo(() => filteredVouchers.reduce((s, v) => s + v.totalAmount, 0), [filteredVouchers]);
+  const totalChequesCount = useMemo(() => filteredVouchers.reduce((s, v) => s + v.checks.length, 0), [filteredVouchers]);
+
+  // Status Badge Helper
+  const getStatusBadge = (status: CheckStatus) => {
+    switch (status) {
+      case "in_treasury":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">{isAr ? "في الخزينة" : "In Treasury"}</span>;
+      case "under_collection":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">{isAr ? "برسم التحصيل" : "Under Collection"}</span>;
+      case "collected":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{isAr ? "تم التحصيل" : "Collected"}</span>;
+      case "bounced":
+      case "returned":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">{isAr ? "مرتد / مرفوض" : "Bounced"}</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400">{status}</span>;
+    }
+  };
+
+  // Open Create Modal
   const handleOpenCreateModal = () => {
     setFormError(null);
     setVoucherNumber("RCV-CHK-" + Date.now().toString().slice(-6));
@@ -123,7 +248,7 @@ export default function ReceivableChecksPage() {
         amount: 0
       }
     ]);
-    setIsModalOpen(true);
+    setIsCreateModalOpen(true);
   };
 
   const handleAddCheckRow = () => {
@@ -148,7 +273,7 @@ export default function ReceivableChecksPage() {
     setCheckItems(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
-  const totalVoucherAmount = checkItems.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const totalCreateVoucherAmount = checkItems.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
   const handleSubmitVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +282,7 @@ export default function ReceivableChecksPage() {
       return;
     }
 
-    if (totalVoucherAmount <= 0) {
+    if (totalCreateVoucherAmount <= 0) {
       setFormError(isAr ? "يرجى تحديد مبالغ صحيحة للشيكات" : "Please enter valid check amounts");
       return;
     }
@@ -197,14 +322,14 @@ export default function ReceivableChecksPage() {
         }))
       });
 
-      setIsModalOpen(false);
+      setIsCreateModalOpen(false);
 
       // Trigger Print Modal
       setPrintData({
         voucherType: "check_receipt",
         voucherNumber: voucherNumber,
         date: voucherDate,
-        amount: totalVoucherAmount,
+        amount: totalCreateVoucherAmount,
         currency: organization.currency,
         partyName: finalPartyName,
         accountName: accounts.find(a => a.id === accountId)?.nameAr,
@@ -228,203 +353,262 @@ export default function ReceivableChecksPage() {
     }
   };
 
-  const handlePrintSingle = (chk: CheckRecord) => {
-    const acc = accounts.find(a => a.id === chk.accountId);
-    const cc = costCenters.find(c => c.id === chk.costCenterId);
-
-    setPrintData({
-      voucherType: "check_receipt",
-      voucherNumber: chk.voucherNumber || chk.checkNumber,
-      date: chk.issueDate,
-      amount: chk.amount,
-      currency: organization.currency,
-      partyName: chk.partyName,
-      checkNumber: chk.checkNumber,
-      draweeBank: chk.draweeBank || chk.bankName,
-      dueDate: chk.dueDate,
-      accountName: isAr ? acc?.nameAr : acc?.nameEn,
-      costCenterName: isAr ? cc?.nameAr : cc?.nameEn,
-      notes: chk.notes
-    });
-    setIsPrintModalOpen(true);
+  // -------------------------------------------------------------
+  // Requirement 8: View Voucher Action
+  // -------------------------------------------------------------
+  const handleOpenViewVoucher = (v: VoucherSummary) => {
+    setViewingVoucher(v);
+    setIsViewVoucherModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm(isAr ? "هل أنت متأكد من حذف هذا الشيك؟" : "Are you sure you want to delete this check?")) return;
-    try {
-      await deleteCheck(id);
-    } catch (err: any) {
-      console.error(err);
-    }
+  // -------------------------------------------------------------
+  // Requirement 8: Edit Voucher Action
+  // -------------------------------------------------------------
+  const handleOpenEditVoucher = (v: VoucherSummary) => {
+    setEditingVoucher(v);
+    setEditVoucherDate(v.date);
+    setEditCustomerId(v.customerId || "");
+    setEditPartyName(v.partyName);
+    setEditVoucherNotes(v.notes || "");
+    setEditCheckItems(v.checks.map(c => ({
+      existingId: c.id,
+      checkNumber: c.checkNumber,
+      draweeBank: c.draweeBank || c.bankName || "",
+      dueDate: c.dueDate,
+      amount: c.amount,
+      status: c.status,
+    })));
+    setIsEditVoucherModalOpen(true);
   };
 
-  const handleOpenView = (chk: CheckRecord) => {
-    setViewingCheck(chk);
-    setIsViewModalOpen(true);
+  const handleAddEditCheckRow = () => {
+    setEditCheckItems(prev => [
+      ...prev,
+      {
+        checkNumber: "",
+        draweeBank: availableBanks[0] || "البنك الأهلي المصري",
+        dueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
+        amount: 0,
+        status: "in_treasury"
+      }
+    ]);
   };
 
-  const handleOpenEdit = (chk: CheckRecord) => {
-    setEditingCheck(chk);
-    setEditForm({
-      checkNumber: chk.checkNumber,
-      partyName: chk.partyName,
-      customerId: chk.customerId || "",
-      draweeBank: chk.draweeBank || chk.bankName || "",
-      collectionBank: chk.collectionBank || "",
-      issueDate: chk.issueDate,
-      dueDate: chk.dueDate,
-      amount: chk.amount,
-      status: chk.status,
-      notes: chk.notes || ""
-    });
-    setIsEditModalOpen(true);
+  const handleRemoveEditCheckRow = (idx: number) => {
+    if (editCheckItems.length <= 1) return;
+    setEditCheckItems(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
+  const handleSaveEditVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingCheck) return;
+    if (!editingVoucher) return;
+
+    for (const item of editCheckItems) {
+      if (!item.checkNumber.trim()) {
+        alert(isAr ? "يرجى إدخال رقم الشيك لجميع البنود" : "Please enter check number for all checks");
+        return;
+      }
+      if (item.amount <= 0) {
+        alert(isAr ? "يرجى إدخال مبالغ صحيحة للشيكات" : "Please enter valid amounts for all checks");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      await updateCheck(editingCheck.id, {
-        checkNumber: editForm.checkNumber,
-        partyName: editForm.partyName,
-        customerId: editForm.customerId || undefined,
-        draweeBank: editForm.draweeBank,
-        bankName: editForm.draweeBank,
-        collectionBank: editForm.collectionBank,
-        issueDate: editForm.issueDate,
-        dueDate: editForm.dueDate,
-        amount: Number(editForm.amount) || 0,
-        status: editForm.status,
-        notes: editForm.notes
-      });
-      setIsEditModalOpen(false);
+      const custObj = customers.find(c => c.id === editCustomerId);
+      const finalPartyName = editPartyName || custObj?.nameAr || editingVoucher.partyName;
+
+      // 1. Update existing checks
+      for (const item of editCheckItems) {
+        if (item.existingId) {
+          await updateCheck(item.existingId, {
+            checkNumber: item.checkNumber,
+            bankName: item.draweeBank,
+            draweeBank: item.draweeBank,
+            dueDate: item.dueDate,
+            amount: item.amount,
+            status: item.status,
+            partyName: finalPartyName,
+            customerId: editCustomerId || undefined,
+            issueDate: editVoucherDate,
+            notes: editVoucherNotes
+          });
+        } else {
+          // New row added in edit mode
+          await addCheck({
+            organizationId: organization.id,
+            branchId: activeBranchId,
+            checkNumber: item.checkNumber,
+            bankName: item.draweeBank,
+            draweeBank: item.draweeBank,
+            type: "incoming",
+            partyName: finalPartyName,
+            customerId: editCustomerId || undefined,
+            amount: item.amount,
+            issueDate: editVoucherDate,
+            dueDate: item.dueDate,
+            status: item.status,
+            voucherNumber: editingVoucher.voucherNumber,
+            notes: editVoucherNotes,
+            createdBy: currentUser.name
+          }, true);
+        }
+      }
+
+      // 2. Remove checks that were deleted from the voucher in edit mode
+      const remainingIds = new Set(editCheckItems.filter(i => i.existingId).map(i => i.existingId));
+      for (const origChk of editingVoucher.checks) {
+        if (!remainingIds.has(origChk.id)) {
+          await deleteCheck(origChk.id);
+        }
+      }
+
+      setIsEditVoucherModalOpen(false);
+      showToast(isAr ? `تم تعديل بيانات السند ${editingVoucher.voucherNumber} بنجاح` : `Voucher updated`, "success");
     } catch (err: any) {
       console.error(err);
-      alert(err?.message || (isAr ? "فشل تعديل بيانات الشيك" : "Failed to update check"));
+      alert(err?.message || (isAr ? "فشل تعديل السند" : "Failed to update voucher"));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Filter incoming checks
-  const incomingChecks = checks.filter(c => c.type === "incoming");
+  // -------------------------------------------------------------
+  // Requirement 8: Print Voucher Action
+  // -------------------------------------------------------------
+  const handlePrintVoucher = (v: VoucherSummary) => {
+    const acc = accounts.find(a => a.id === v.accountId);
+    const cc = costCenters.find(c => c.id === v.costCenterId);
 
-  const filteredChecks = incomingChecks.filter(c => {
-    const matchesSearch =
-      c.checkNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.partyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.bankName && c.bankName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (c.draweeBank && c.draweeBank.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (c.collectionBank && c.collectionBank.toLowerCase().includes(searchTerm.toLowerCase()));
+    setPrintData({
+      voucherType: "check_receipt",
+      voucherNumber: v.voucherNumber,
+      date: v.date,
+      amount: v.totalAmount,
+      currency: organization.currency,
+      partyName: v.partyName,
+      accountName: isAr ? acc?.nameAr : acc?.nameEn,
+      costCenterName: isAr ? cc?.nameAr : cc?.nameEn,
+      notes: v.notes,
+      checksList: v.checks.map(c => ({
+        checkNumber: c.checkNumber,
+        draweeBank: c.draweeBank || c.bankName,
+        dueDate: c.dueDate,
+        amount: c.amount,
+        partyName: v.partyName
+      }))
+    });
+    setIsPrintModalOpen(true);
+  };
 
-    const matchesBank = selectedBankFilter === "all" || (c.draweeBank || c.bankName) === selectedBankFilter;
-    const matchesStatus = selectedStatusFilter === "all" || c.status === selectedStatusFilter;
-    const matchesCustomer = selectedCustomerFilter === "all" || c.customerId === selectedCustomerFilter;
-    const matchesDateFrom = !dateFrom || c.dueDate >= dateFrom;
-    const matchesDateTo = !dateTo || c.dueDate <= dateTo;
-    const matchesMinAmount = !minAmount || c.amount >= parseFloat(minAmount);
-    const matchesMaxAmount = !maxAmount || c.amount <= parseFloat(maxAmount);
+  // -------------------------------------------------------------
+  // Requirement 8: Delete Voucher Action
+  // -------------------------------------------------------------
+  const handleDeleteVoucher = async (v: VoucherSummary) => {
+    const confirmMsg = isAr
+      ? `هل أنت متأكد من حذف سند استلام أ.ق رقم (${v.voucherNumber}) بالكامل؟\nسيتم حذف جميع الشيكات المرتبطة به (${v.checks.length} شيك) بمبلغ إجمالي (${formatCurrency(v.totalAmount, organization.currency, locale)}).`
+      : `Are you sure you want to delete voucher (${v.voucherNumber}) and all its ${v.checks.length} checks?`;
 
-    return matchesSearch && matchesBank && matchesStatus && matchesCustomer && matchesDateFrom && matchesDateTo && matchesMinAmount && matchesMaxAmount;
-  });
+    if (!window.confirm(confirmMsg)) return;
 
-  const totalIncomingAmount = filteredChecks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const inTreasuryCount = incomingChecks.filter(c => c.status === "in_treasury").length;
-  const underCollectionCount = incomingChecks.filter(c => c.status === "under_collection").length;
-  const collectedCount = incomingChecks.filter(c => c.status === "collected").length;
-  const bouncedCount = incomingChecks.filter(c => c.status === "bounced" || c.status === "returned").length;
-
-  const getStatusBadge = (status: CheckStatus) => {
-    switch (status) {
-      case "in_treasury":
-        return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">{isAr ? "في الخزينة" : "In Treasury"}</span>;
-      case "under_collection":
-        return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">{isAr ? "برسم التحصيل" : "Under Collection"}</span>;
-      case "collected":
-        return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{isAr ? "تم التحصيل" : "Collected"}</span>;
-      case "bounced":
-      case "returned":
-        return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">{isAr ? "مرتد / مرفوض" : "Bounced"}</span>;
-      default:
-        return <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-400">{status}</span>;
+    try {
+      for (const chk of v.checks) {
+        await deleteCheck(chk.id);
+      }
+      showToast(isAr ? `تم حذف السند رقم ${v.voucherNumber} بنجاح` : `Voucher deleted`, "success");
+    } catch (err: any) {
+      console.error("Failed to delete voucher:", err);
+      alert(err?.message || (isAr ? "فشل حذف السند" : "Failed to delete voucher"));
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header - Renamed to سند استلام أ.ق (Requirement 1 & Requirement 8) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
             <CheckSquare className="w-6 h-6" />
           </div>
           <div>
+            <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+              <Link href="/checks" className="hover:text-emerald-400 transition-colors">
+                {isAr ? "الشيكات والبنوك" : "Banks & Checks"}
+              </Link>
+              <span>/</span>
+              <span className="text-emerald-400 font-bold">{isAr ? "سند استلام أ.ق" : "Receivable Notes Voucher"}</span>
+            </div>
             <h1 className="text-xl font-bold text-white tracking-tight">
-              {isAr ? "شيكات القبض (استلام أوراق القبض)" : "Receivable Checks (Notes Receivable)"}
+              {isAr ? "سند استلام أ.ق (سجل سندات أوراق القبض)" : "Receivable Notes Vouchers Register (أ.ق)"}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              {isAr ? "تسجيل سندات استلام الشيكات المتعددة، التوجيه المحاسبي التلقائي، ومتابعة المحفظة" : "Record multi-check receipt vouchers with automatic journal entries and portfolio tracking"}
+              {isAr
+                ? "سجل معتمد لسندات استلام أوراق القبض بكامل تفاصيل الشيكات، الإدخال، التعديل، والطباعة"
+                : "Receivable Notes Vouchers registry with full check line details, view, edit, print and audit"}
             </p>
           </div>
         </div>
 
-        {canManage && (
-          <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-emerald-900/30 transition-all"
+        <div className="flex items-center gap-3">
+          <Link
+            href="/checks/reports"
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>{isAr ? "سند استلام شيكات جديد" : "New Check Receipt Voucher"}</span>
-          </button>
-        )}
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span>{isAr ? "تقارير الشيكات والبنوك" : "Cheques Reports"}</span>
+          </Link>
+
+          {canManage && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isAr ? "إضافة سند استلام أ.ق جديد" : "New Receivable Notes Voucher"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 block">{isAr ? "إجمالي قيمة الشيكات" : "Total Checks Value"}</span>
+          <span className="text-xs text-slate-400 block">{isAr ? "إجمالي قيمة السندات:" : "Total Vouchers Value:"}</span>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
-            {formatCurrency(totalIncomingAmount, organization.currency, locale)}
+            {formatCurrency(totalRegistryAmount, organization.currency, locale)}
           </div>
         </div>
 
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 block">{isAr ? "في الخزينة (أوراق قبض)" : "In Treasury"}</span>
-          <div className="text-xl font-bold font-mono text-blue-400 mt-1">
-            {inTreasuryCount} {isAr ? "شيك" : "checks"}
+          <span className="text-xs text-slate-400 block">{isAr ? "إجمالي عدد السندات المسجلة:" : "Total Vouchers:"}</span>
+          <div className="text-xl font-bold font-mono text-white mt-1">
+            {filteredVouchers.length} {isAr ? "سند استلام" : "vouchers"}
           </div>
         </div>
 
         <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 block">{isAr ? "برسم التحصيل بالبنك" : "Under Collection"}</span>
+          <span className="text-xs text-slate-400 block">{isAr ? "إجمالي عدد الشيكات:" : "Total Checks Lines:"}</span>
+          <div className="text-xl font-bold font-mono text-sky-400 mt-1">
+            {totalChequesCount} {isAr ? "شيك" : "checks"}
+          </div>
+        </div>
+
+        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+          <span className="text-xs text-slate-400 block">{isAr ? "متوسط قيمة السند:" : "Avg Voucher Amount:"}</span>
           <div className="text-xl font-bold font-mono text-amber-400 mt-1">
-            {underCollectionCount} {isAr ? "شيك" : "checks"}
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 block">{isAr ? "تم تحصيلها وإيداعها" : "Collected & Deposited"}</span>
-          <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
-            {collectedCount} {isAr ? "شيك" : "checks"}
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 block">{isAr ? "مرتدة / مرفوضة" : "Bounced"}</span>
-          <div className="text-xl font-bold font-mono text-rose-400 mt-1">
-            {bouncedCount} {isAr ? "شيك" : "checks"}
+            {formatCurrency(filteredVouchers.length ? totalRegistryAmount / filteredVouchers.length : 0, organization.currency, locale)}
           </div>
         </div>
       </div>
 
-      {/* Filters Bar - Date, Customer, Status, Amount, Bank */}
+      {/* Filters Bar */}
       <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 absolute right-3 top-3 text-slate-500" />
           <input
             type="text"
-            placeholder={isAr ? "بحث برقم الشيك، العميل، أو البنك..." : "Search by check #, customer, bank..."}
+            placeholder={isAr ? "بحث برقم السند، رقم الشيك، العميل، أو البنك..." : "Search by voucher #, check #, customer..."}
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full bg-slate-950 border border-slate-800 rounded-lg pr-9 pl-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
@@ -449,7 +633,7 @@ export default function ReceivableChecksPage() {
           onChange={e => setSelectedStatusFilter(e.target.value)}
           className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
         >
-          <option value="all">{isAr ? "جميع الحالات" : "All Statuses"}</option>
+          <option value="all">{isAr ? "جميع حالات الشيكات" : "All Statuses"}</option>
           <option value="in_treasury">{isAr ? "في الخزينة" : "In Treasury"}</option>
           <option value="under_collection">{isAr ? "برسم التحصيل" : "Under Collection"}</option>
           <option value="collected">{isAr ? "تم التحصيل" : "Collected"}</option>
@@ -462,156 +646,162 @@ export default function ReceivableChecksPage() {
           onChange={e => setSelectedBankFilter(e.target.value)}
           className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
         >
-          <option value="all">{isAr ? "جميع البنوك" : "All Banks"}</option>
-          {availableBanks.map((b, i) => (
-            <option key={i} value={b}>{b}</option>
+          <option value="all">{isAr ? "جميع البنوك المسحوب عليها" : "All Drawee Banks"}</option>
+          {availableBanks.map(b => (
+            <option key={b} value={b}>{b}</option>
           ))}
         </select>
 
-        {/* Date Range Filters */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span>{isAr ? "من:" : "From:"}</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
-          />
-          <span>{isAr ? "إلى:" : "To:"}</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
-          />
-        </div>
+        {/* Date From */}
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+        />
 
-        {/* Amount Range Filters */}
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <input
-            type="number"
-            placeholder={isAr ? "مبلغ من..." : "Min amt..."}
-            value={minAmount}
-            onChange={e => setMinAmount(e.target.value)}
-            className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
-          />
-          <span>-</span>
-          <input
-            type="number"
-            placeholder={isAr ? "إلى..." : "Max amt..."}
-            value={maxAmount}
-            onChange={e => setMaxAmount(e.target.value)}
-            className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
-          />
-        </div>
-
-        {(searchTerm || selectedStatusFilter !== "all" || selectedBankFilter !== "all" || selectedCustomerFilter !== "all" || dateFrom || dateTo || minAmount || maxAmount) && (
-          <button
-            onClick={() => {
-              setSearchTerm("");
-              setSelectedStatusFilter("all");
-              setSelectedBankFilter("all");
-              setSelectedCustomerFilter("all");
-              setDateFrom("");
-              setDateTo("");
-              setMinAmount("");
-              setMaxAmount("");
-            }}
-            className="text-xs text-slate-400 hover:text-white px-2.5 py-1.5 bg-slate-800 rounded-lg"
-          >
-            {isAr ? "إعادة ضبط" : "Reset"}
-          </button>
-        )}
+        {/* Date To */}
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+        />
       </div>
 
-      {/* Checks Table */}
-      <div className="bg-slate-900/80 rounded-2xl border border-slate-800 overflow-hidden">
-        {isLoadingData ? (
-          <div className="p-6">
-            <TableSkeleton rows={5} columns={9} />
+      {/* ------------------------------------------------------------- */}
+      {/* Requirement 8: COMPLETE VOUCHER REGISTRY TABLE                */}
+      {/* Display: Voucher Number | Date | Customer Name | Total Amount */}
+      {/* Actions: View | Edit | Print | Delete                         */}
+      {/* ------------------------------------------------------------- */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-white">
+              {isAr ? "سجل سندات استلام أوراق القبض (أ.ق)" : "Receivable Notes Voucher Registry"}
+            </h2>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              {filteredVouchers.length} {isAr ? "سند" : "vouchers"}
+            </span>
           </div>
-        ) : filteredChecks.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 space-y-3">
-            <CheckSquare className="w-10 h-10 mx-auto text-slate-600" />
-            <p className="text-sm font-medium">
-              {isAr ? "لا توجد شيكات قبض مسجلة مطابقة للبحث" : "No receivable checks found"}
-            </p>
+          <span className="text-xs font-mono font-bold text-emerald-400">
+            {formatCurrency(totalRegistryAmount, organization.currency, locale)}
+          </span>
+        </div>
+
+        {isLoadingData ? (
+          <div className="p-8 text-center text-slate-400">
+            <TableSkeleton rows={5} />
+          </div>
+        ) : filteredVouchers.length === 0 ? (
+          <div className="p-12 text-center text-slate-500">
+            <AlertCircle className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+            <p className="text-sm font-semibold">{isAr ? "لا توجد سندات استلام أ.ق مسجلة مطابقة لمعايير البحث" : "No receivable vouchers found"}</p>
+            <p className="text-xs text-slate-600 mt-1">{isAr ? "انقر على زر «إضافة سند استلام أ.ق جديد» لإدخال سند شيكات جديد" : "Click New Voucher to create one"}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 font-semibold">
-                <tr>
-                  <th className="p-3.5">{isAr ? "رقم الشيك" : "Check #"}</th>
-                  <th className="p-3.5">{isAr ? "العميل / الساحب" : "Customer / Drawer"}</th>
-                  <th className="p-3.5">{isAr ? "البنك المسحوب عليه" : "Drawee Bank"}</th>
-                  <th className="p-3.5">{isAr ? "تاريخ التحرير" : "Issue Date"}</th>
-                  <th className="p-3.5">{isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
-                  <th className="p-3.5">{isAr ? "الحالة" : "Status"}</th>
-                  <th className="p-3.5">{isAr ? "بنك التحصيل" : "Collection Bank"}</th>
-                  <th className="p-3.5 text-left">{isAr ? "المبلغ" : "Amount"}</th>
-                  <th className="p-3.5 text-center">{isAr ? "الإجراءات" : "Actions"}</th>
+            <table className="w-full text-xs text-right border-collapse">
+              <thead>
+                <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
+                  <th className="p-3.5 rounded-r-lg font-mono">1. {isAr ? "رقم السند" : "Voucher #"}</th>
+                  <th className="p-3.5 font-mono">2. {isAr ? "التاريخ" : "Date"}</th>
+                  <th className="p-3.5">3. {isAr ? "اسم العميل / الجهة" : "Customer / Party"}</th>
+                  <th className="p-3.5 text-center font-mono">4. {isAr ? "عدد الشيكات" : "Checks Count"}</th>
+                  <th className="p-3.5 text-center font-mono text-emerald-400">5. {isAr ? "إجمالي السند" : "Total Amount"}</th>
+                  <th className="p-3.5 text-center">6. {isAr ? "حالة الشيكات" : "Checks Status"}</th>
+                  <th className="p-3.5 rounded-l-lg text-center">7. {isAr ? "الإجراءات" : "Actions"}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredChecks.map(chk => (
-                  <tr key={chk.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="p-3.5 font-mono font-bold text-amber-300">
-                      {chk.checkNumber}
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {filteredVouchers.map(v => (
+                  <tr key={v.voucherNumber} className="hover:bg-slate-800/30 transition-colors">
+                    {/* 1. Voucher Number */}
+                    <td className="p-3.5 font-bold text-white">
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {v.voucherNumber}
+                      </span>
                     </td>
-                    <td className="p-3.5 font-medium text-slate-200">
-                      {chk.partyName}
-                    </td>
+
+                    {/* 2. Date */}
                     <td className="p-3.5 text-slate-300">
-                      {chk.draweeBank || chk.bankName}
+                      {formatDate(v.date, locale)}
                     </td>
-                    <td className="p-3.5 text-slate-400 font-mono">
-                      {formatDate(chk.issueDate, locale)}
+
+                    {/* 3. Customer Name */}
+                    <td className="p-3.5 font-sans font-bold text-slate-200">
+                      <div className="flex items-center gap-2">
+                        <User className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        <span>{v.partyName}</span>
+                      </div>
+                      {v.notes && (
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5 truncate max-w-xs">
+                          {v.notes}
+                        </div>
+                      )}
                     </td>
-                    <td className="p-3.5 text-slate-300 font-mono font-medium">
-                      {formatDate(chk.dueDate, locale)}
+
+                    {/* 4. Number of Cheques */}
+                    <td className="p-3.5 text-center text-slate-300 font-bold">
+                      <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700">
+                        {v.checks.length} {isAr ? "شيك" : "checks"}
+                      </span>
                     </td>
-                    <td className="p-3.5">
-                      {getStatusBadge(chk.status)}
+
+                    {/* 5. Total Amount */}
+                    <td className="p-3.5 text-center text-emerald-400 font-black text-sm">
+                      {formatCurrency(v.totalAmount, organization.currency, locale)}
                     </td>
-                    <td className="p-3.5 text-slate-300 font-medium">
-                      {chk.collectionBank || (chk.targetTreasuryId ? treasuryAccounts.find(t => t.id === chk.targetTreasuryId)?.nameAr : "") || "---"}
+
+                    {/* 6. Checks Status Summary */}
+                    <td className="p-3.5 text-center">
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        {v.statuses.map(st => (
+                          <span key={st}>{getStatusBadge(st)}</span>
+                        ))}
+                      </div>
                     </td>
-                    <td className="p-3.5 text-left font-mono font-bold text-emerald-400 text-sm">
-                      {formatCurrency(chk.amount, organization.currency, locale)}
-                    </td>
-                    <td className="p-3.5">
-                      <div className="flex items-center justify-center gap-1">
+
+                    {/* 7. Actions (View | Edit | Print | Delete) - Requirement 8 */}
+                    <td className="p-3.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {/* VIEW ACTION */}
                         <button
-                          onClick={() => handleOpenView(chk)}
-                          title={isAr ? "عرض تفاصيل الشيك" : "View Check"}
-                          className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          onClick={() => handleOpenViewVoucher(v)}
+                          title={isAr ? "عرض السند بكامل التفاصيل" : "View Voucher"}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer"
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* EDIT ACTION */}
                         {canManage && (
                           <button
-                            onClick={() => handleOpenEdit(chk)}
-                            title={isAr ? "تعديل الشيك" : "Edit Check"}
-                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
+                            onClick={() => handleOpenEditVoucher(v)}
+                            title={isAr ? "تعديل السند والشيكات" : "Edit Voucher"}
+                            className="p-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition-all cursor-pointer"
                           >
-                            <Edit2 className="w-4 h-4" />
+                            <Edit2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+
+                        {/* PRINT ACTION */}
                         <button
-                          onClick={() => handlePrintSingle(chk)}
+                          onClick={() => handlePrintVoucher(v)}
                           title={isAr ? "طباعة السند" : "Print Voucher"}
-                          className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all cursor-pointer"
                         >
-                          <Printer className="w-4 h-4" />
+                          <Printer className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* DELETE ACTION */}
                         {canManage && (
                           <button
-                            onClick={() => handleDelete(chk.id)}
-                            title={isAr ? "حذف الشيك" : "Delete Check"}
-                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                            onClick={() => handleDeleteVoucher(v)}
+                            title={isAr ? "حذف السند" : "Delete Voucher"}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -624,498 +814,553 @@ export default function ReceivableChecksPage() {
         )}
       </div>
 
-      {/* Multi-Check Receipt Voucher Creation Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={isAr ? "سند استلام شيكات قبض متعددة" : "Multi-Check Receipt Voucher"}
-        maxWidth="2xl"
-      >
-        <form onSubmit={handleSubmitVoucher} className="space-y-4 text-xs">
-          {formError && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg">
-              {formError}
-            </div>
-          )}
-
-          {/* Header Controls */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "رقم السند:" : "Voucher #:"}</label>
-              <input
-                type="text"
-                value={voucherNumber}
-                onChange={e => setVoucherNumber(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-mono focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "تاريخ السند:" : "Date:"}</label>
-              <input
-                type="date"
-                value={voucherDate}
-                onChange={e => setVoucherDate(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "العميل المسدد:" : "Customer:"}</label>
-              <select
-                value={customerId}
-                onChange={e => {
-                  const id = e.target.value;
-                  const c = customers.find(item => item.id === id);
-                  setCustomerId(id);
-                  if (c) setPartyName(isAr ? c.nameAr : c.nameEn);
-                }}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-              >
-                <option value="">{isAr ? "-- اختيار عميل --" : "-- Select Customer --"}</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {isAr ? c.nameAr : c.nameEn}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "اسم الساحب / الجهة:" : "Drawer Name:"}</label>
-              <input
-                type="text"
-                value={partyName}
-                onChange={e => setPartyName(e.target.value)}
-                placeholder={isAr ? "اسم العميل أو الساحب..." : "Drawer name..."}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "حساب أوراق القبض:" : "Notes Rec Account:"}</label>
-              <select
-                value={accountId}
-                onChange={e => setAccountId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-              >
-                {accounts.filter(a => a.type === "assets").map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} - {isAr ? a.nameAr : a.nameEn}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "مركز التكلفة / المشروع:" : "Cost Center:"}</label>
-              <select
-                value={costCenterId}
-                onChange={e => setCostCenterId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-              >
-                <option value="">{isAr ? "-- بدون مركز تكلفة --" : "-- None --"}</option>
-                {costCenters.map(cc => (
-                  <option key={cc.id} value={cc.id}>
-                    {cc.code} - {isAr ? cc.nameAr : cc.nameEn}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Checks Multi-Row Table */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-slate-300">{isAr ? "بيانات الشيكات المدرجة بالسند:" : "Check Entries:"}</span>
-              <button
-                type="button"
-                onClick={handleAddCheckRow}
-                className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isAr ? "إضافة شيك آخر" : "Add Another Check"}</span>
-              </button>
-            </div>
-
-            <div className="overflow-x-auto border border-slate-800 rounded-xl">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="p-2.5">{isAr ? "رقم الشيك" : "Check #"}</th>
-                    <th className="p-2.5">{isAr ? "البنك المسحوب عليه" : "Drawee Bank"}</th>
-                    <th className="p-2.5">{isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
-                    <th className="p-2.5">{isAr ? "المبلغ" : "Amount"}</th>
-                    <th className="p-2.5 text-center"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {checkItems.map((chk, idx) => (
-                    <tr key={chk.id} className="bg-slate-900/40">
-                      <td className="p-2">
-                        <input
-                          type="text"
-                          value={chk.checkNumber}
-                          placeholder={isAr ? "أدخل رقم الشيك يدوياً..." : "Enter check # manually..."}
-                          onChange={e => handleUpdateCheckRow(chk.id, "checkNumber", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
-                          required
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          list="receivable-banks-list"
-                          type="text"
-                          value={chk.draweeBank}
-                          placeholder={isAr ? "اختر أو ابحث عن البنك..." : "Select / search bank..."}
-                          onChange={e => handleUpdateCheckRow(chk.id, "draweeBank", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
-                          required
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="date"
-                          value={chk.dueDate}
-                          onChange={e => handleUpdateCheckRow(chk.id, "dueDate", e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white focus:outline-none focus:border-emerald-500"
-                          required
-                        />
-                      </td>
-                      <td className="p-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          value={chk.amount || ""}
-                          onChange={e => handleUpdateCheckRow(chk.id, "amount", parseFloat(e.target.value) || 0)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-white font-mono font-bold text-emerald-400"
-                          placeholder="0.00"
-                          required
-                        />
-                      </td>
-                      <td className="p-2 text-center">
-                        {checkItems.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCheckRow(chk.id)}
-                            className="text-slate-500 hover:text-rose-400 p-1"
-                          >
-                            <Trash className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Dynamic banks datalist sourced strictly from COA and Treasury accounts */}
-            <datalist id="receivable-banks-list">
-              {availableBanks.map((b, idx) => (
-                <option key={idx} value={b} />
-              ))}
-            </datalist>
-          </div>
-
-          {/* Total Box */}
-          <div className="flex justify-between items-center bg-slate-950 p-3 rounded-xl border border-slate-800">
-            <span className="text-slate-400 font-semibold">{isAr ? "إجمالي قيمة سند القبض:" : "Total Voucher Amount:"}</span>
-            <span className="text-lg font-bold font-mono text-emerald-400">
-              {formatCurrency(totalVoucherAmount, organization.currency, locale)}
-            </span>
-          </div>
-
-          <div>
-            <label className="block text-slate-400 mb-1">{isAr ? "ملاحظات وبيان السند:" : "Notes:"}</label>
-            <textarea
-              value={voucherNotes}
-              onChange={e => setVoucherNotes(e.target.value)}
-              rows={2}
-              placeholder={isAr ? "بيان السند..." : "Voucher notes..."}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
-            >
-              {isAr ? "إلغاء" : "Cancel"}
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50"
-            >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>{isAr ? "حفظ وترحيل السند" : "Save & Post Voucher"}</span>
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* View Check Modal */}
-      <Modal
-        isOpen={isViewModalOpen}
-        onClose={() => setIsViewModalOpen(false)}
-        title={isAr ? `تفاصيل ورقة القبض (${viewingCheck?.checkNumber || ""})` : "Check Details"}
-        maxWidth="md"
-      >
-        {viewingCheck && (
-          <div className="space-y-4 text-xs">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+      {/* ------------------------------------------------------------- */}
+      {/* Requirement 8: VIEW VOUCHER MODAL                             */}
+      {/* Display the entire voucher exactly as originally entered.     */}
+      {/* Display all cheque lines in full detail without truncation:   */}
+      {/* - Cheque Number | Bank Name | Due Date | Amount | Status      */}
+      {/* ------------------------------------------------------------- */}
+      {viewingVoucher && (
+        <Modal
+          isOpen={isViewVoucherModalOpen}
+          onClose={() => setIsViewVoucherModalOpen(false)}
+          title={isAr ? `عرض سند استلام أ.ق رقم: ${viewingVoucher.voucherNumber}` : `Voucher Details: ${viewingVoucher.voucherNumber}`}
+          size="xl"
+        >
+          <div className="space-y-6 text-xs">
+            {/* Header Voucher Details */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
               <div>
-                <span className="text-slate-400 block">{isAr ? "رقم الشيك:" : "Check #:"}</span>
-                <span className="font-mono font-bold text-base text-amber-300">{viewingCheck.checkNumber}</span>
+                <span className="text-[11px] text-slate-400 block">{isAr ? "رقم السند:" : "Voucher #:"}</span>
+                <span className="text-sm font-mono font-bold text-emerald-400 mt-0.5 block">{viewingVoucher.voucherNumber}</span>
               </div>
-              <div className="text-left">
-                <span className="text-slate-400 block">{isAr ? "المبلغ:" : "Amount:"}</span>
-                <span className="font-mono font-bold text-base text-emerald-400">
-                  {formatCurrency(viewingCheck.amount, organization.currency, locale)}
+              <div>
+                <span className="text-[11px] text-slate-400 block">{isAr ? "تاريخ السند:" : "Voucher Date:"}</span>
+                <span className="text-sm font-mono text-slate-200 mt-0.5 block">{formatDate(viewingVoucher.date, locale)}</span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-400 block">{isAr ? "العميل / المسدد:" : "Customer / Party:"}</span>
+                <span className="text-sm font-bold text-white mt-0.5 block">{viewingVoucher.partyName}</span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-400 block">{isAr ? "إجمالي السند:" : "Total Amount:"}</span>
+                <span className="text-base font-mono font-black text-emerald-400 mt-0.5 block">
+                  {formatCurrency(viewingVoucher.totalAmount, organization.currency, locale)}
                 </span>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-              <div>
-                <span className="text-slate-500 block">{isAr ? "الساحب / العميل:" : "Drawer / Customer:"}</span>
-                <span className="font-semibold text-slate-200">{viewingCheck.partyName}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">{isAr ? "الحالة:" : "Status:"}</span>
-                <div className="mt-0.5">{getStatusBadge(viewingCheck.status)}</div>
-              </div>
-              <div>
-                <span className="text-slate-500 block">{isAr ? "البنك المسحوب عليه:" : "Drawee Bank:"}</span>
-                <span className="text-slate-300">{viewingCheck.draweeBank || viewingCheck.bankName || "---"}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">{isAr ? "بنك التحصيل / المقاصة:" : "Collection Bank:"}</span>
-                <span className="text-emerald-400 font-medium">
-                  {viewingCheck.collectionBank || (viewingCheck.targetTreasuryId ? treasuryAccounts.find(t => t.id === viewingCheck.targetTreasuryId)?.nameAr : "") || (isAr ? "لم يحدد بعد" : "Not specified")}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">{isAr ? "تاريخ التحرير:" : "Issue Date:"}</span>
-                <span className="font-mono text-slate-300">{formatDate(viewingCheck.issueDate, locale)}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">{isAr ? "تاريخ الاستحقاق:" : "Due Date:"}</span>
-                <span className="font-mono font-bold text-amber-300">{formatDate(viewingCheck.dueDate, locale)}</span>
-              </div>
-              {viewingCheck.collectionDate && (
-                <div>
-                  <span className="text-slate-500 block">{isAr ? "تاريخ التحصيل:" : "Collection Date:"}</span>
-                  <span className="font-mono text-emerald-400">{formatDate(viewingCheck.collectionDate, locale)}</span>
+              {viewingVoucher.notes && (
+                <div className="col-span-2 sm:col-span-4 pt-2 border-t border-slate-800/80">
+                  <span className="text-[11px] text-slate-400 block">{isAr ? "ملاحظات السند:" : "Voucher Notes:"}</span>
+                  <p className="text-slate-300 mt-0.5 font-sans leading-relaxed">{viewingVoucher.notes}</p>
                 </div>
               )}
-              <div>
-                <span className="text-slate-500 block">{isAr ? "رقم السند المرجعي:" : "Voucher Ref:"}</span>
-                <span className="font-mono text-slate-300">{viewingCheck.voucherNumber || "---"}</span>
+            </div>
+
+            {/* Complete Cheque Lines Table without truncation */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-white text-xs flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-emerald-400" />
+                  <span>{isAr ? "بيانات أوراق القبض والشيكات التابعة للسند (بالتفصيل الكامل):" : "Full Cheque Lines Details:"}</span>
+                </h3>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {viewingVoucher.checks.length} {isAr ? "شيك" : "checks"}
+                </span>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
+                <table className="w-full text-xs text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
+                      <th className="p-3 rounded-r-lg font-mono">#</th>
+                      <th className="p-3 font-mono">1. {isAr ? "رقم الشيك" : "Cheque Number"}</th>
+                      <th className="p-3">2. {isAr ? "البنك المسحوب عليه" : "Bank Name / Drawee"}</th>
+                      <th className="p-3 font-mono text-center">3. {isAr ? "تاريخ الاستحقاق" : "Due Date"}</th>
+                      <th className="p-3 font-mono text-center text-emerald-400">4. {isAr ? "المبلغ" : "Amount"}</th>
+                      <th className="p-3 text-center rounded-l-lg">5. {isAr ? "الحالة" : "Status"}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {viewingVoucher.checks.map((chk, idx) => (
+                      <tr key={chk.id} className="hover:bg-slate-900/40">
+                        <td className="p-3 text-slate-500">{idx + 1}</td>
+                        <td className="p-3 font-bold text-white text-xs">
+                          <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-400 font-mono font-bold">
+                            {chk.checkNumber}
+                          </span>
+                        </td>
+                        <td className="p-3 font-sans font-medium text-slate-200">
+                          {chk.draweeBank || chk.bankName}
+                        </td>
+                        <td className="p-3 text-center text-slate-300">
+                          {formatDate(chk.dueDate, locale)}
+                        </td>
+                        <td className="p-3 text-center font-bold text-emerald-400 text-sm">
+                          {formatCurrency(chk.amount, organization.currency, locale)}
+                        </td>
+                        <td className="p-3 text-center">
+                          {getStatusBadge(chk.status)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-900/80 font-bold border-t border-slate-800 text-white font-mono">
+                      <td colSpan={4} className="p-3 font-sans">{isAr ? "إجمالي السند:" : "Grand Total:"}</td>
+                      <td className="p-3 text-center text-emerald-400 text-sm font-black">
+                        {formatCurrency(viewingVoucher.totalAmount, organization.currency, locale)}
+                      </td>
+                      <td className="p-3 text-center">-</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
 
-            {viewingCheck.notes && (
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-500 block mb-1">{isAr ? "ملاحظات:" : "Notes:"}</span>
-                <p className="text-slate-300 text-xs">{viewingCheck.notes}</p>
+            {/* Modal Bottom Actions */}
+            <div className="flex justify-between items-center pt-4 border-t border-slate-800">
+              <div className="flex gap-2">
+                {canManage && (
+                  <button
+                    onClick={() => {
+                      setIsViewVoucherModalOpen(false);
+                      handleOpenEditVoucher(viewingVoucher);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold cursor-pointer transition-all"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>{isAr ? "تعديل هذا السند" : "Edit This Voucher"}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    handlePrintVoucher(viewingVoucher);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold cursor-pointer transition-all border border-slate-700"
+                >
+                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isAr ? "طباعة السند" : "Print"}</span>
+                </button>
               </div>
-            )}
 
-            <div className="flex justify-between items-center pt-3 border-t border-slate-800">
               <button
-                type="button"
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  handlePrintSingle(viewingCheck);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white rounded-lg transition-colors border border-emerald-500/30"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>{isAr ? "طباعة إشعار الشيك" : "Print Check Voucher"}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsViewModalOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                onClick={() => setIsViewVoucherModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold cursor-pointer"
               >
                 {isAr ? "إغلاق" : "Close"}
               </button>
             </div>
           </div>
-        )}
-      </Modal>
+        </Modal>
+      )}
 
-      {/* Edit Check Modal */}
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        title={isAr ? `تعديل ورقة القبض (${editingCheck?.checkNumber || ""})` : "Edit Check"}
-        maxWidth="md"
-      >
-        <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "رقم الشيك:" : "Check #:"}</label>
-              <input
-                type="text"
-                value={editForm.checkNumber}
-                onChange={e => setEditForm({ ...editForm, checkNumber: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "المبلغ:" : "Amount:"}</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={editForm.amount}
-                onChange={e => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-          </div>
+      {/* ------------------------------------------------------------- */}
+      {/* Requirement 8: EDIT VOUCHER MODAL                             */}
+      {/* Opens in editable mode for correcting:                         */}
+      {/* - Cheque Number | Amount | Due Date | Bank | Any info          */}
+      {/* ------------------------------------------------------------- */}
+      {editingVoucher && (
+        <Modal
+          isOpen={isEditVoucherModalOpen}
+          onClose={() => setIsEditVoucherModalOpen(false)}
+          title={isAr ? `تعديل سند استلام أ.ق رقم: ${editingVoucher.voucherNumber}` : `Edit Voucher: ${editingVoucher.voucherNumber}`}
+          size="xl"
+        >
+          <form onSubmit={handleSaveEditVoucher} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "تاريخ السند:" : "Voucher Date:"}</label>
+                <input
+                  type="date"
+                  required
+                  value={editVoucherDate}
+                  onChange={e => setEditVoucherDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "الساحب / العميل:" : "Drawer / Customer:"}</label>
-              <input
-                type="text"
-                value={editForm.partyName}
-                onChange={e => setEditForm({ ...editForm, partyName: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "العميل المسدد:" : "Customer:"}</label>
+                <select
+                  value={editCustomerId}
+                  onChange={e => {
+                    setEditCustomerId(e.target.value);
+                    const c = customers.find(item => item.id === e.target.value);
+                    if (c) setEditPartyName(c.nameAr);
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="">{isAr ? "-- اختر العميل --" : "-- Select Customer --"}</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.nameAr}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "اسم الجهة / المسدد:" : "Party Name:"}</label>
+                <input
+                  type="text"
+                  required
+                  value={editPartyName}
+                  onChange={e => setEditPartyName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "البيان / ملاحظات السند:" : "Voucher Notes:"}</label>
+                <input
+                  type="text"
+                  value={editVoucherNotes}
+                  onChange={e => setEditVoucherNotes(e.target.value)}
+                  placeholder={isAr ? "بيان السند والغرض من الاستلام..." : "Notes..."}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "ربط بعميل (اختياري):" : "Linked Customer:"}</label>
-              <select
-                value={editForm.customerId}
-                onChange={e => {
-                  const custId = e.target.value;
-                  const c = customers.find(item => item.id === custId);
-                  setEditForm({
-                    ...editForm,
-                    customerId: custId,
-                    partyName: c ? (isAr ? c.nameAr : c.nameEn) : editForm.partyName
-                  });
-                }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+
+            {/* Editable Cheque Rows */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-white text-xs flex items-center gap-1.5">
+                  <CheckSquare className="w-4 h-4 text-emerald-400" />
+                  <span>{isAr ? "بنود الشيكات (قابلة للتعديل والإضافة والحذف):" : "Editable Cheque Rows:"}</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleAddEditCheckRow}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isAr ? "إضافة سطر شيك" : "Add Check Line"}</span>
+                </button>
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden p-2 space-y-2">
+                {editCheckItems.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-800 items-center">
+                    <div className="col-span-1 text-center font-mono text-slate-500 text-xs">
+                      {idx + 1}
+                    </div>
+
+                    <div className="col-span-3">
+                      <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "رقم الشيك:" : "Check #:"}</label>
+                      <input
+                        type="text"
+                        required
+                        value={item.checkNumber}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setEditCheckItems(prev => prev.map((c, i) => i === idx ? { ...c, checkNumber: val } : c));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono font-bold text-xs"
+                      />
+                    </div>
+
+                    <div className="col-span-3">
+                      <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "البنك المسحوب عليه:" : "Bank:"}</label>
+                      <input
+                        type="text"
+                        required
+                        list={`banks-list-edit-${idx}`}
+                        value={item.draweeBank}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setEditCheckItems(prev => prev.map((c, i) => i === idx ? { ...c, draweeBank: val } : c));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-semibold"
+                      />
+                      <datalist id={`banks-list-edit-${idx}`}>
+                        {availableBanks.map(b => <option key={b} value={b} />)}
+                      </datalist>
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "تاريخ الاستحقاق:" : "Due Date:"}</label>
+                      <input
+                        type="date"
+                        required
+                        value={item.dueDate}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setEditCheckItems(prev => prev.map((c, i) => i === idx ? { ...c, dueDate: val } : c));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "المبلغ:" : "Amount:"}</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={item.amount || ""}
+                        onChange={e => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setEditCheckItems(prev => prev.map((c, i) => i === idx ? { ...c, amount: val } : c));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-emerald-400 font-mono font-bold text-xs"
+                      />
+                    </div>
+
+                    <div className="col-span-1 flex items-center justify-center pt-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEditCheckRow(idx)}
+                        disabled={editCheckItems.length <= 1}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <span className="font-bold text-slate-300">{isAr ? "إجمالي مبالغ الشيكات بعد التعديل:" : "Total Amount:"}</span>
+              <span className="text-base font-black font-mono text-emerald-400">
+                {formatCurrency(editCheckItems.reduce((s, c) => s + (Number(c.amount) || 0), 0), organization.currency, locale)}
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsEditVoucherModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold cursor-pointer"
               >
-                <option value="">{isAr ? "-- بدون ربط بعميل --" : "-- None --"}</option>
+                {isAr ? "إلغاء" : "Cancel"}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                  </>
+                ) : (
+                  <span>{isAr ? "حفظ التعديلات على السند" : "Save Changes"}</span>
+                )}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* CREATE MULTI-CHECK RECEIPT VOUCHER MODAL                      */}
+      {/* ------------------------------------------------------------- */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title={isAr ? "إنشاء سند استلام أ.ق (شيكات قبض متعددة)" : "New Receivable Notes Voucher (أ.ق)"}
+        size="xl"
+      >
+        <form onSubmit={handleSubmitVoucher} className="space-y-4 text-xs">
+          {formError && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl">
+              {formError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "رقم السند *" : "Voucher # *"}</label>
+              <input
+                type="text"
+                required
+                value={voucherNumber}
+                onChange={e => setVoucherNumber(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "تاريخ السند *" : "Date *"}</label>
+              <input
+                type="date"
+                required
+                value={voucherDate}
+                onChange={e => setVoucherDate(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "اختيار العميل المسدد:" : "Customer:"}</label>
+              <select
+                value={customerId}
+                onChange={e => {
+                  setCustomerId(e.target.value);
+                  const c = customers.find(item => item.id === e.target.value);
+                  if (c) setPartyName(c.nameAr);
+                }}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">{isAr ? "-- اختيار عميل --" : "-- Select Customer --"}</option>
                 {customers.map(c => (
-                  <option key={c.id} value={c.id}>{isAr ? c.nameAr : c.nameEn}</option>
+                  <option key={c.id} value={c.id}>{c.nameAr} ({formatCurrency(c.currentBalance, organization.currency, locale)})</option>
                 ))}
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "البنك المسحوب عليه:" : "Drawee Bank:"}</label>
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "اسم المستلم منه (الجهة):" : "Received From (Party):"}</label>
               <input
                 type="text"
-                list="receivable-banks-list"
-                value={editForm.draweeBank}
-                onChange={e => setEditForm({ ...editForm, draweeBank: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
+                value={partyName}
+                onChange={e => setPartyName(e.target.value)}
+                placeholder={isAr ? "اسم العميل أو الجهة..." : "Party Name..."}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-semibold"
               />
             </div>
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "بنك التحصيل / المقاصة:" : "Collection Bank:"}</label>
+
+            <div className="sm:col-span-2">
+              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "البيان / ملاحظات السند:" : "Voucher Notes:"}</label>
               <input
                 type="text"
-                list="receivable-banks-list"
-                value={editForm.collectionBank}
-                onChange={e => setEditForm({ ...editForm, collectionBank: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                value={voucherNotes}
+                onChange={e => setVoucherNotes(e.target.value)}
+                placeholder={isAr ? "سداد فواتير، دفعة تحت الحساب..." : "Notes..."}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-slate-400 mb-1">{isAr ? "تاريخ التحرير:" : "Issue Date:"}</label>
-              <input
-                type="date"
-                value={editForm.issueDate}
-                onChange={e => setEditForm({ ...editForm, issueDate: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "تاريخ الاستحقاق:" : "Due Date:"}</label>
-              <input
-                type="date"
-                value={editForm.dueDate}
-                onChange={e => setEditForm({ ...editForm, dueDate: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1 font-semibold">{isAr ? "الحالة:" : "Status:"}</label>
-              <select
-                value={editForm.status}
-                onChange={e => setEditForm({ ...editForm, status: e.target.value as CheckStatus })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-white focus:outline-none focus:border-emerald-500"
+          {/* Cheque Rows */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-white text-xs flex items-center gap-1.5">
+                <CheckSquare className="w-4 h-4 text-emerald-400" />
+                <span>{isAr ? "شيكات أوراق القبض التابعة لهذا السند:" : "Cheque Items for this Voucher:"}</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleAddCheckRow}
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
               >
-                <option value="in_treasury">{isAr ? "في الخزينة" : "In Treasury"}</option>
-                <option value="under_collection">{isAr ? "برسم التحصيل" : "Under Collection"}</option>
-                <option value="collected">{isAr ? "تم التحصيل" : "Collected"}</option>
-                <option value="bounced">{isAr ? "مرتد / مرفوض" : "Bounced"}</option>
-              </select>
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isAr ? "إضافة شيك آخر" : "Add Check"}</span>
+              </button>
+            </div>
+
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden p-2 space-y-2">
+              {checkItems.map((chk, idx) => (
+                <div key={chk.id} className="grid grid-cols-12 gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-800 items-center">
+                  <div className="col-span-1 text-center font-mono text-slate-500 text-xs">
+                    {idx + 1}
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "رقم الشيك *" : "Check # *"}</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 849301"
+                      value={chk.checkNumber}
+                      onChange={e => handleUpdateCheckRow(chk.id, "checkNumber", e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono font-bold text-xs"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "البنك المسحوب عليه *" : "Drawee Bank *"}</label>
+                    <input
+                      type="text"
+                      required
+                      list={`create-banks-list-${idx}`}
+                      placeholder={isAr ? "اختر أو اكتب اسم البنك..." : "Select or type bank..."}
+                      value={chk.draweeBank}
+                      onChange={e => handleUpdateCheckRow(chk.id, "draweeBank", e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-semibold"
+                    />
+                    <datalist id={`create-banks-list-${idx}`}>
+                      {availableBanks.map(b => <option key={b} value={b} />)}
+                    </datalist>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "تاريخ الاستحقاق *" : "Due Date *"}</label>
+                    <input
+                      type="date"
+                      required
+                      value={chk.dueDate}
+                      onChange={e => handleUpdateCheckRow(chk.id, "dueDate", e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono text-xs"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] text-slate-400 mb-0.5">{isAr ? "المبلغ *" : "Amount *"}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="0.00"
+                      value={chk.amount || ""}
+                      onChange={e => handleUpdateCheckRow(chk.id, "amount", parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-emerald-400 font-mono font-bold text-xs"
+                    />
+                  </div>
+                  <div className="col-span-1 flex items-center justify-center pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCheckRow(chk.id)}
+                      disabled={checkItems.length <= 1}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div>
-            <label className="block text-slate-400 mb-1">{isAr ? "ملاحظات:" : "Notes:"}</label>
-            <textarea
-              value={editForm.notes}
-              onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
-              rows={2}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
+          <div className="flex justify-between items-center p-3.5 bg-slate-950 rounded-xl border border-slate-800">
+            <span className="font-bold text-slate-300">{isAr ? "إجمالي قيمة سند استلام أ.ق:" : "Total Voucher Amount:"}</span>
+            <span className="text-lg font-black font-mono text-emerald-400">
+              {formatCurrency(totalCreateVoucherAmount, organization.currency, locale)}
+            </span>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
-              onClick={() => setIsEditModalOpen(false)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+              onClick={() => setIsCreateModalOpen(false)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold cursor-pointer"
             >
               {isAr ? "إلغاء" : "Cancel"}
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold shadow-lg disabled:opacity-50 cursor-pointer"
             >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>{isAr ? "تحديث بيانات الشيك" : "Update Check"}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isAr ? "جاري الحفظ..." : "Saving..."}</span>
+                </>
+              ) : (
+                <span>{isAr ? "حفظ سند استلام أ.ق والترحيل" : "Save Voucher & Post JE"}</span>
+              )}
             </button>
           </div>
         </form>
       </Modal>
 
       {/* Print Modal */}
-      <VoucherPrintModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-        voucher={printData}
-      />
+      {printData && (
+        <VoucherPrintModal
+          isOpen={isPrintModalOpen}
+          onClose={() => setIsPrintModalOpen(false)}
+          voucher={printData}
+        />
+      )}
     </div>
   );
 }

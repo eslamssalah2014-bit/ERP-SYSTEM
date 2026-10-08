@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useERP } from "@/context/erp-context";
 import { computeStockBalanceReport, computeIncomeStatement } from "@/lib/accounting-engine";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -9,7 +9,8 @@ import TableSkeleton from "@/components/ui/TableSkeleton";
 import {
   BarChart3, FileSpreadsheet, ShieldCheck, Printer, Download,
   Filter, Package, Calendar, Clock, User, ArrowDownRight, ArrowUpRight,
-  TrendingDown, CheckCircle2, AlertCircle, Layers, Image as ImageIcon, Loader2
+  TrendingDown, CheckCircle2, AlertCircle, Layers, Image as ImageIcon, Loader2,
+  Search
 } from "lucide-react";
 
 export default function ReportsPage() {
@@ -35,6 +36,11 @@ export default function ReportsPage() {
   const [chChangeType, setChChangeType] = useState("all");
   const [chDateFrom, setChDateFrom] = useState("");
   const [chDateTo, setChDateTo] = useState("");
+
+  // Inventory Valuation Filter State (Requirement 12)
+  const [invSearchQuery, setInvSearchQuery] = useState("");
+  const [invWarehouseId, setInvWarehouseId] = useState("all");
+  const [invCategoryId, setInvCategoryId] = useState("all");
 
   // Period Closing Form State
   const [isClosingModalOpen, setIsClosingModalOpen] = useState(false);
@@ -94,6 +100,99 @@ export default function ReportsPage() {
   const totalPurchasesTaxable = purchaseInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
   const totalPurchasesVat = purchaseInvoices.reduce((sum, inv) => sum + inv.taxTotal, 0);
   const netVatPayable = totalSalesVat - totalPurchasesVat;
+
+  // -------------------------------------------------------------
+  // Filtered Inventory Valuation Rows & Totals (Requirement 12)
+  // Calculates: Total Quantity, Total Cost Value, Total Expected Sales Value
+  // respecting active filters (warehouse, category, search)
+  // -------------------------------------------------------------
+  const filteredInventoryProducts = useMemo(() => {
+    return products
+      .filter(p => {
+        if (invCategoryId !== "all" && p.categoryId !== invCategoryId) return false;
+        if (invSearchQuery.trim()) {
+          const q = invSearchQuery.toLowerCase().trim();
+          const matchSku = p.sku.toLowerCase().includes(q);
+          const matchName = (p.nameAr || "").toLowerCase().includes(q) || (p.nameEn || "").toLowerCase().includes(q);
+          if (!matchSku && !matchName) return false;
+        }
+        return true;
+      })
+      .map(p => {
+        let qty = 0;
+        if (invWarehouseId === "all") {
+          qty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
+        } else {
+          qty = p.warehouseStock?.[invWarehouseId] || 0;
+        }
+        const costVal = qty * p.costPrice;
+        const sellVal = qty * p.sellingPrice;
+        return {
+          ...p,
+          qty,
+          costVal,
+          sellVal,
+        };
+      });
+  }, [products, invCategoryId, invWarehouseId, invSearchQuery]);
+
+  const invTotals = useMemo(() => {
+    return filteredInventoryProducts.reduce(
+      (acc, p) => ({
+        totalQuantity: acc.totalQuantity + p.qty,
+        totalCostValue: acc.totalCostValue + p.costVal,
+        totalExpectedSalesValue: acc.totalExpectedSalesValue + p.sellVal,
+      }),
+      {
+        totalQuantity: 0,
+        totalCostValue: 0,
+        totalExpectedSalesValue: 0,
+      }
+    );
+  }, [filteredInventoryProducts]);
+
+  // Handle Export Excel for Inventory Valuation Report (Requirement 12)
+  const handleExportInventoryExcel = () => {
+    const headers = [
+      isAr ? "كود SKU" : "SKU",
+      isAr ? "اسم الصنف" : "Item Name",
+      isAr ? "الكمية المتاحة" : "Qty on Hand",
+      isAr ? "تكلفة الوحدة" : "Unit Cost",
+      isAr ? "سعر البيع" : "Selling Price",
+      isAr ? "قيمة المخزون بالتكلفة" : "Total Cost Value",
+      isAr ? "القيمة البيعية المتوقعة" : "Retail Value",
+    ];
+
+    const rows = filteredInventoryProducts.map(p => [
+      p.sku,
+      `"${(isAr ? p.nameAr : p.nameEn).replace(/"/g, '""')}"`,
+      p.qty,
+      p.costPrice,
+      p.sellingPrice,
+      p.costVal,
+      p.sellVal,
+    ]);
+
+    rows.push([
+      isAr ? "المجموع الكلي" : "TOTAL",
+      "",
+      invTotals.totalQuantity,
+      "",
+      "",
+      invTotals.totalCostValue,
+      invTotals.totalExpectedSalesValue,
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `تقييم_المخزون_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Handle Export Excel for Stock Balance Report
   const handleExportStockBalanceExcel = () => {
@@ -902,50 +1001,220 @@ export default function ReportsPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* 5. INVENTORY VALUATION SUMMARY REPORT                                     */}
+      {/* 5. INVENTORY VALUATION SUMMARY REPORT (Requirement 12)                    */}
       {/* ========================================================================= */}
       {selectedReport === "inventory" && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right border-collapse">
-              <thead>
-                <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
-                  <th className="p-3.5 rounded-r-lg">{isAr ? "كود SKU" : "SKU"}</th>
-                  <th className="p-3.5">{isAr ? "اسم الصنف" : "Item Name"}</th>
-                  <th className="p-3.5 text-center font-mono">{isAr ? "الكمية المتاحة" : "Qty on Hand"}</th>
-                  <th className="p-3.5 text-center font-mono">{isAr ? "تكلفة الوحدة" : "Unit Cost"}</th>
-                  <th className="p-3.5 text-center font-mono">{isAr ? "سعر البيع" : "Selling Price"}</th>
-                  <th className="p-3.5 text-center font-mono text-emerald-400">{isAr ? "قيمة المخزون بالتكلفة" : "Total Cost Value"}</th>
-                  <th className="p-3.5 rounded-l-lg text-center font-mono text-sky-400">{isAr ? "القيمة البيعية المتوقعة" : "Retail Value"}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
-                {products.map(p => {
-                  const qty = Object.values(p.warehouseStock || {}).reduce((a, b) => a + b, 0);
-                  const costVal = qty * p.costPrice;
-                  const sellVal = qty * p.sellingPrice;
+        <div className="space-y-5">
+          {/* Summary Totals Cards at Top (Requirement 12) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Quantity */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-400">{isAr ? "إجمالي الكمية المتاحة" : "Total Quantity"}</span>
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                  <Package className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black font-mono text-white">
+                {invTotals.totalQuantity.toLocaleString()}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1 block font-sans">
+                {isAr ? `مجموع الكميات لعدد ${filteredInventoryProducts.length} صنف` : `Total units across ${filteredInventoryProducts.length} items`}
+              </span>
+            </div>
 
-                  return (
+            {/* Total Cost Value */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-emerald-400">{isAr ? "إجمالي قيمة المخزون بالتكلفة" : "Total Cost Value"}</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black font-mono text-emerald-400">
+                {formatCurrency(invTotals.totalCostValue, organization.currency, locale)}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1 block font-sans">
+                {isAr ? "تقييم المخزون بسعر الشراء / التكلفة" : "Inventory value at cost"}
+              </span>
+            </div>
+
+            {/* Total Expected Sales Value */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-sky-400">{isAr ? "إجمالي القيمة البيعية المتوقعة" : "Total Expected Sales Value"}</span>
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center">
+                  <ArrowUpRight className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black font-mono text-sky-400">
+                {formatCurrency(invTotals.totalExpectedSalesValue, organization.currency, locale)}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1 block font-sans">
+                {isAr ? "تقييم المخزون بسعر البيع الحالي" : "Inventory value at retail price"}
+              </span>
+            </div>
+
+            {/* Potential Gross Margin */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-purple-400">{isAr ? "هامش الربح الإجمالي المتوقع" : "Expected Gross Margin"}</span>
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black font-mono text-purple-300">
+                {formatCurrency(invTotals.totalExpectedSalesValue - invTotals.totalCostValue, organization.currency, locale)}
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1 block font-sans">
+                {isAr ? "الربح التقديري عند بيع كامل الكميات" : "Expected margin upon liquidation"}
+              </span>
+            </div>
+          </div>
+
+          {/* Active Filters Bar (Requirement 12) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[300px]">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className={`w-4 h-4 text-slate-400 absolute top-1/2 -translate-y-1/2 ${isAr ? "right-3" : "left-3"}`} />
+                <input
+                  type="text"
+                  value={invSearchQuery}
+                  onChange={e => setInvSearchQuery(e.target.value)}
+                  placeholder={isAr ? "بحث بكود الصنف أو الاسم..." : "Search by SKU or item name..."}
+                  className={`w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl py-2 focus:outline-none focus:border-emerald-500 ${
+                    isAr ? "pr-9 pl-3" : "pl-9 pr-3"
+                  }`}
+                />
+              </div>
+
+              {/* Warehouse Filter */}
+              <div className="w-44">
+                <select
+                  value={invWarehouseId}
+                  onChange={e => setInvWarehouseId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="all">{isAr ? "جميع المستودعات والمخازن" : "All Warehouses"}</option>
+                  {warehouses.map(w => (
+                    <option key={w.id} value={w.id}>
+                      {isAr ? w.nameAr : w.nameEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div className="w-44">
+                <select
+                  value={invCategoryId}
+                  onChange={e => setInvCategoryId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="all">{isAr ? "جميع التصنيفات" : "All Categories"}</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {isAr ? c.nameAr : c.nameEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(invSearchQuery || invWarehouseId !== "all" || invCategoryId !== "all") && (
+                <button
+                  onClick={() => {
+                    setInvSearchQuery("");
+                    setInvWarehouseId("all");
+                    setInvCategoryId("all");
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-bold px-2 py-1"
+                >
+                  {isAr ? "إلغاء التصفية" : "Reset"}
+                </button>
+              )}
+            </div>
+
+            {/* Actions: Export Excel & Print */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportInventoryExcel}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                {isAr ? "تصدير إكسيل" : "Excel"}
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                {isAr ? "طباعة" : "Print"}
+              </button>
+            </div>
+          </div>
+
+          {/* Main Table with Bottom Summary Totals Row (Requirement 12) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-right border-collapse">
+                <thead>
+                  <tr className="bg-slate-800/80 text-slate-400 font-bold border-b border-slate-700">
+                    <th className="p-3.5 rounded-r-lg">{isAr ? "كود SKU" : "SKU"}</th>
+                    <th className="p-3.5">{isAr ? "اسم الصنف" : "Item Name"}</th>
+                    <th className="p-3.5 text-center font-mono">{isAr ? "الكمية المتاحة" : "Qty on Hand"}</th>
+                    <th className="p-3.5 text-center font-mono">{isAr ? "تكلفة الوحدة" : "Unit Cost"}</th>
+                    <th className="p-3.5 text-center font-mono">{isAr ? "سعر البيع" : "Selling Price"}</th>
+                    <th className="p-3.5 text-center font-mono text-emerald-400">{isAr ? "قيمة المخزون بالتكلفة" : "Total Cost Value"}</th>
+                    <th className="p-3.5 rounded-l-lg text-center font-mono text-sky-400">{isAr ? "القيمة البيعية المتوقعة" : "Retail Value"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {filteredInventoryProducts.map(p => (
                     <tr key={p.id} className="hover:bg-slate-800/30">
                       <td className="p-3.5 text-slate-400 font-bold">{p.sku}</td>
                       <td className="p-3.5 font-sans font-bold text-white">{isAr ? p.nameAr : p.nameEn}</td>
-                      <td className="p-3.5 text-center text-white">{qty}</td>
+                      <td className="p-3.5 text-center text-white">{p.qty.toLocaleString()}</td>
                       <td className="p-3.5 text-center text-slate-300">{formatCurrency(p.costPrice, organization.currency, locale)}</td>
                       <td className="p-3.5 text-center text-slate-300">{formatCurrency(p.sellingPrice, organization.currency, locale)}</td>
-                      <td className="p-3.5 text-center font-bold text-emerald-400">{formatCurrency(costVal, organization.currency, locale)}</td>
-                      <td className="p-3.5 text-center font-bold text-sky-400">{formatCurrency(sellVal, organization.currency, locale)}</td>
+                      <td className="p-3.5 text-center font-bold text-emerald-400">{formatCurrency(p.costVal, organization.currency, locale)}</td>
+                      <td className="p-3.5 text-center font-bold text-sky-400">{formatCurrency(p.sellVal, organization.currency, locale)}</td>
                     </tr>
-                  );
-                })}
-                {products.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-center py-12 text-slate-500 font-sans">
-                      {isAr ? "لا توجد أصناف مسجلة بالمخازن لتقييمها حالياً" : "No inventory products registered yet"}
-                    </td>
-                  </tr>
+                  ))}
+                  {filteredInventoryProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center py-12 text-slate-500 font-sans">
+                        {isAr ? "لا توجد أصناف تطابق معايير التصفية والبحث" : "No items match current filter criteria"}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {/* Summary Totals at Bottom of Report (Requirement 12) */}
+                {filteredInventoryProducts.length > 0 && (
+                  <tfoot className="border-t-2 border-emerald-500/40 bg-slate-950/90 text-xs font-bold text-white">
+                    <tr>
+                      <td className="p-3.5 text-right font-sans font-black text-emerald-400">
+                        {isAr ? "المجموع الإجمالي" : "Total Summary"} ({filteredInventoryProducts.length} {isAr ? "صنف" : "items"})
+                      </td>
+                      <td className="p-3.5 text-slate-500 font-sans text-[11px]">
+                        {isAr ? "إجمالي الأصناف المصفاة" : "Filtered items"}
+                      </td>
+                      <td className="p-3.5 text-center font-mono text-white font-black text-sm">
+                        {invTotals.totalQuantity.toLocaleString()}
+                      </td>
+                      <td className="p-3.5 text-center text-slate-500 font-mono">-</td>
+                      <td className="p-3.5 text-center text-slate-500 font-mono">-</td>
+                      <td className="p-3.5 text-center font-mono font-black text-emerald-400 text-sm">
+                        {formatCurrency(invTotals.totalCostValue, organization.currency, locale)}
+                      </td>
+                      <td className="p-3.5 text-center font-mono font-black text-sky-400 text-sm">
+                        {formatCurrency(invTotals.totalExpectedSalesValue, organization.currency, locale)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
       )}

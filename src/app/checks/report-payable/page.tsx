@@ -110,7 +110,7 @@ export default function PayableChecksReportPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">
-              {isAr ? "تقرير الشيكات الصادرة (أوراق الدفع)" : "Payable / Issued Checks Report"}
+              {isAr ? "تقرير أوراق الدفع (سند صرف أ.د)" : "Payable Notes Report (أ.د)"}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
               {isAr ? "متابعة الشيكات الصادرة للموردين، التزامات أوراق الدفع ومواعيد الاستحقاق والصرف" : "Track notes payable commitments, issuing banks, due dates, and paid statuses"}

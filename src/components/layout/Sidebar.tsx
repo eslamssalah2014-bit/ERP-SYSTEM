@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useERP } from "@/context/erp-context";
@@ -8,7 +8,8 @@ import {
   LayoutDashboard, Package, Warehouse, FileSpreadsheet, ShoppingCart,
   ShoppingBag, Users, Truck, Wallet, CheckSquare, BookOpen,
   FileText, BarChart3, ShieldCheck, Settings, MonitorPlay, ChevronDown,
-  Layers, CircleDollarSign, ArrowLeftRight, Landmark, Receipt, CreditCard
+  Layers, CircleDollarSign, ArrowLeftRight, Landmark, Receipt, CreditCard,
+  Building2
 } from "lucide-react";
 
 interface NavItem {
@@ -24,14 +25,16 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { locale, organization, notifications } = useERP();
   const isAr = locale === "ar";
-  const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
-    inventory: true,
-    sales: true,
-    purchases: true,
-    treasury: true,
-    checks: true,
-    accounting: true,
-  });
+  // Requirement 13: Default collapsed state on login/app open
+  const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({});
+
+  useEffect(() => {
+    const handleReset = () => {
+      setOpenSections({});
+    };
+    window.addEventListener("sanad_sidebar_reset", handleReset);
+    return () => window.removeEventListener("sanad_sidebar_reset", handleReset);
+  }, []);
 
   const toggleSection = (sec: string) => {
     setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
@@ -66,8 +69,7 @@ export default function Sidebar() {
         { titleAr: "مرتجعات المبيعات (إشعار دائن)", titleEn: "Sales Returns", href: "/sales/returns" },
         { titleAr: "نقطة البيع السريعة (POS)", titleEn: "POS Terminal", href: "/pos" },
         { titleAr: "سجل العملاء", titleEn: "Customers Directory", href: "/customers" },
-        { titleAr: "كشف حساب عميل", titleEn: "Customer Statement", href: "/customers/statement" },
-        { titleAr: "تقرير أرصدة العملاء", titleEn: "Customer Balances Report", href: "/customers/report" },
+        { titleAr: "تقارير المبيعات", titleEn: "Sales Reports", href: "/sales/reports" },
       ]
     },
     {
@@ -80,8 +82,7 @@ export default function Sidebar() {
         { titleAr: "أوامر الشراء (Purchase Orders)", titleEn: "Purchase Orders", href: "/purchases/orders" },
         { titleAr: "مرتجعات المشتريات (إشعار مدين)", titleEn: "Purchase Returns", href: "/purchases/returns" },
         { titleAr: "سجل الموردين", titleEn: "Suppliers Directory", href: "/suppliers" },
-        { titleAr: "كشف حساب مورد", titleEn: "Supplier Statement", href: "/suppliers/statement" },
-        { titleAr: "تقرير أرصدة الموردين", titleEn: "Supplier Balances Report", href: "/suppliers/report" },
+        { titleAr: "تقارير المشتريات", titleEn: "Purchase Reports", href: "/purchases/reports" },
       ]
     },
     {
@@ -98,17 +99,25 @@ export default function Sidebar() {
       ]
     },
     {
-      titleAr: "البنوك والشيكات",
+      titleAr: "الشيكات والبنوك",
       titleEn: "Banks & Checks",
       href: "/checks",
       icon: Landmark,
       children: [
-        { titleAr: "شيكات القبض (استلام)", titleEn: "Receivable Checks", href: "/checks/receivable" },
-        { titleAr: "شيكات الدفع (إصدار)", titleEn: "Payable Checks", href: "/checks/payable" },
+        { titleAr: "سند استلام أ.ق", titleEn: "Receivable Notes Voucher", href: "/checks/receivable" },
+        { titleAr: "سند صرف أ.د", titleEn: "Payable Notes Voucher", href: "/checks/payable" },
         { titleAr: "حركة وحالات الشيكات", titleEn: "Check Status Manager", href: "/checks/status" },
-        { titleAr: "تقرير شيكات القبض", titleEn: "Receivable Checks Report", href: "/checks/report-receivable" },
-        { titleAr: "تقرير الشيكات الصادرة", titleEn: "Payable Checks Report", href: "/checks/report-payable" },
-        { titleAr: "محفظة الشيكات العامة", titleEn: "Checks Portfolio", href: "/checks" },
+        { titleAr: "تقارير الشيكات والبنوك", titleEn: "Cheques & Banks Reports", href: "/checks/reports" },
+      ]
+    },
+    {
+      titleAr: "الأصول الثابتة والإهلاكات",
+      titleEn: "Fixed Assets & Depreciation",
+      href: "/accounting/fixed-assets",
+      icon: Building2,
+      children: [
+        { titleAr: "سجل الأصول الثابتة", titleEn: "Fixed Assets Register", href: "/accounting/fixed-assets" },
+        { titleAr: "الإهلاكات", titleEn: "Depreciation Module", href: "/accounting/depreciation" },
       ]
     },
     {
@@ -124,8 +133,6 @@ export default function Sidebar() {
         { titleAr: "ميزان المراجعة", titleEn: "Trial Balance", href: "/accounting/trial-balance" },
         { titleAr: "قائمة الدخل (الأرباح والخسائر)", titleEn: "Income Statement", href: "/accounting/income-statement" },
         { titleAr: "الميزانية العمومية", titleEn: "Balance Sheet", href: "/accounting/balance-sheet" },
-        { titleAr: "سجل الأصول الثابتة", titleEn: "Fixed Assets Register", href: "/accounting/fixed-assets" },
-        { titleAr: "الاهلاكات", titleEn: "Depreciation Module", href: "/accounting/depreciation" },
       ]
     },
     {
@@ -179,7 +186,7 @@ export default function Sidebar() {
           const Icon = item.icon;
           const isActive = pathname === item.href || (Boolean(item.children) && (item.children?.some(c => pathname === c.href) || false));
           const hasChildren = Boolean(item.children && item.children.length > 0);
-          const sectionKey = item.href.replace("/", "") || "dashboard";
+          const sectionKey = item.titleEn.toLowerCase().replace(/[^a-z0-9]/g, "_") || item.href;
           const isOpen = openSections[sectionKey] ?? false;
 
           return (

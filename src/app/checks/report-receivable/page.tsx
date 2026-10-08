@@ -120,7 +120,7 @@ export default function ReceivableChecksReportPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">
-              {isAr ? "تقرير حافظة شيكات القبض" : "Receivable Checks Portfolio Report"}
+              {isAr ? "تقرير أوراق القبض (سند استلام أ.ق)" : "Receivable Notes Report (أ.ق)"}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
               {isAr ? "تقرير تحليلي شامل لمتابعة شيكات القبض ومواعيد الاستحقاق وحالات التحصيل والارتداد" : "Comprehensive analytical report for tracking notes receivable, due dates, and collection statuses"}

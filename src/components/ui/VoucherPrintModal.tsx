@@ -50,9 +50,9 @@ export default function VoucherPrintModal({ voucher, isOpen, onClose }: VoucherP
       case "cash_payment":
         return isAr ? "سند صرف نقدي" : "Cash Payment Voucher";
       case "check_receipt":
-        return isAr ? "سند استلام شيكات (أوراق قبض)" : "Check Receipt Voucher (Notes Receivable)";
+        return isAr ? "سند استلام أ.ق (أوراق قبض)" : "Receivable Notes Voucher (سند استلام أ.ق)";
       case "check_payment":
-        return isAr ? "سند إصدار شيك (أوراق دفع)" : "Check Payment Voucher (Notes Payable)";
+        return isAr ? "سند صرف أ.د (أوراق دفع)" : "Payable Notes Voucher (سند صرف أ.د)";
       default:
         return isAr ? "سند مالي" : "Financial Voucher";
     }

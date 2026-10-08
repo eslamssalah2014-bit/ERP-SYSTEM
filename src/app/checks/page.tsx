@@ -145,7 +145,7 @@ export default function ChecksPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/60 transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>{activeTab === "incoming" ? (isAr ? "إضافة شيك وارد (قبض)" : "Add Incoming Check") : (isAr ? "إضافة شيك صادر (دفع)" : "Add Outgoing Check")}</span>
+            <span>{activeTab === "incoming" ? (isAr ? "إضافة سند استلام أ.ق جديد" : "Add Incoming Note") : (isAr ? "إضافة سند صرف أ.د جديد" : "Add Outgoing Note")}</span>
           </button>
         )}
       </div>
@@ -160,7 +160,7 @@ export default function ChecksPage() {
             )}
           >
             <ArrowDownLeft className="w-4 h-4" />
-            <span>{isAr ? "شيكات واردة (أوراق قبض)" : "Incoming Checks"}</span>
+            <span>{isAr ? "سند استلام أ.ق (أوراق قبض)" : "Incoming Notes (أ.ق)"}</span>
           </button>
           <button
             onClick={() => setActiveTab("outgoing")}
@@ -169,7 +169,7 @@ export default function ChecksPage() {
             )}
           >
             <ArrowUpRight className="w-4 h-4" />
-            <span>{isAr ? "شيكات صادرة (أوراق دفع)" : "Outgoing Checks"}</span>
+            <span>{isAr ? "سند صرف أ.د (أوراق دفع)" : "Outgoing Notes (أ.د)"}</span>
           </button>
         </div>
 

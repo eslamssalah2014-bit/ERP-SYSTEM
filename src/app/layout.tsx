@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { ERPProvider } from "@/context/erp-context";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
@@ -13,6 +14,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Requirement 13: Always open the system on Dashboard (لوحة المؤشرات) on initial session open
+  useEffect(() => {
+    try {
+      const isSessionActive = sessionStorage.getItem("sanad_session_active");
+      if (!isSessionActive) {
+        sessionStorage.setItem("sanad_session_active", "true");
+        if (pathname !== "/") {
+          router.replace("/");
+        }
+        window.dispatchEvent(new Event("sanad_sidebar_reset"));
+      }
+    } catch (_) {}
+  }, [pathname, router]);
 
   return (
     <html lang="ar" dir="rtl" className="dark">
